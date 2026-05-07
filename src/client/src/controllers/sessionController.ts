@@ -88,11 +88,11 @@ export class SessionController {
     this.setState({ commandDialog: undefined });
   }
 
-  async closeSession() {
+  async stopSession() {
     const session = this.getState().selectedSession;
     if (!session) return;
     try {
-      await api.close(session.id);
+      await api.stop(session.id);
     } catch (error) {
       this.setState({ error: String(error) });
     } finally {

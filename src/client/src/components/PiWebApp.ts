@@ -107,7 +107,7 @@ export class PiWebApp extends LitElement {
           ${state.selectedSession ? html`
             <status-bar .status=${state.status} .workspace=${state.selectedWorkspace}></status-bar>
             <chat-view .sessionId=${state.selectedSession.id} .messages=${state.messages}></chat-view>
-            <prompt-editor .sessionId=${state.selectedSession.id} .cwd=${state.selectedWorkspace?.path} .onSend=${(text: string) => this.sessions.send(text)} .onCloseSession=${() => this.sessions.closeSession()}></prompt-editor>
+            <prompt-editor .sessionId=${state.selectedSession.id} .cwd=${state.selectedWorkspace?.path} .onSend=${(text: string) => this.sessions.send(text)} .onStopSession=${() => this.sessions.stopSession()}></prompt-editor>
             ${state.commandDialog ? html`<command-picker .title=${state.commandDialog.title} .options=${state.commandDialog.options} .onPick=${(value: string) => this.sessions.respondToCommand(state.commandDialog!.requestId, value)} .onCancel=${() => this.sessions.cancelCommand()}></command-picker>` : null}
           ` : html`<div class="empty">Select or start a session.</div>`}
         </main>

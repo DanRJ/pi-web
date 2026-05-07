@@ -6,7 +6,7 @@ import { composerStyles } from "./shared";
 export class Composer extends LitElement {
   @property({ type: Boolean }) disabled = false;
   @property({ attribute: false }) onSend?: (text: string) => void;
-  @property({ attribute: false }) onCloseSession?: () => void;
+  @property({ attribute: false }) onStopSession?: () => void;
   @state() private draft = "";
 
   render() {
@@ -25,7 +25,7 @@ export class Composer extends LitElement {
           placeholder="Message pi..."
         ></textarea>
         <button ?disabled=${this.disabled} @click=${this.send}>Send</button>
-        <button ?disabled=${this.disabled} @click=${() => this.onCloseSession?.()}>Close</button>
+        <button ?disabled=${this.disabled} @click=${() => this.onStopSession?.()}>Stop session</button>
       </footer>
     `;
   }

@@ -104,9 +104,9 @@ app.post<{ Params: { sessionId: string } }>("/api/sessions/:sessionId/abort", as
   return { aborted: true };
 });
 
-app.post<{ Params: { sessionId: string } }>("/api/sessions/:sessionId/close", async (request) => {
-  sessions.close(request.params.sessionId);
-  return { closed: true };
+app.post<{ Params: { sessionId: string } }>("/api/sessions/:sessionId/stop", async (request) => {
+  sessions.stop(request.params.sessionId);
+  return { stopped: true };
 });
 
 app.get<{ Params: { sessionId: string } }>("/api/sessions/:sessionId/events", { websocket: true }, (socket, request) => {

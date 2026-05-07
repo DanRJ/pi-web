@@ -108,11 +108,11 @@ export class PiSessionService {
     if (active) await active.runtime.session.abort();
   }
 
-  close(sessionId: string): void {
+  stop(sessionId: string): void {
     const active = this.active.get(sessionId);
     if (!active) return;
     active.unsubscribe();
-    void active.runtime.dispose();
+    void active.runtime.session.abort().finally(() => active.runtime.dispose());
     this.active.delete(sessionId);
   }
 

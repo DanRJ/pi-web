@@ -86,7 +86,7 @@ export const api = {
   prompt: (sessionId: string, text: string) => request<{ accepted: true }>(`/api/sessions/${sessionId}/prompt`, { method: "POST", body: JSON.stringify({ text }) }),
   runCommand: (sessionId: string, text: string) => request<CommandResult>(`/api/sessions/${sessionId}/commands/run`, { method: "POST", body: JSON.stringify({ text }) }),
   respondToCommand: (sessionId: string, requestId: string, value: string) => request<CommandResult>(`/api/sessions/${sessionId}/commands/respond`, { method: "POST", body: JSON.stringify({ requestId, value }) }),
-  close: (sessionId: string) => request<{ closed: true }>(`/api/sessions/${sessionId}/close`, { method: "POST" }),
+  stop: (sessionId: string) => request<{ stopped: true }>(`/api/sessions/${sessionId}/stop`, { method: "POST" }),
 };
 
 export function sessionEvents(sessionId: string): WebSocket {

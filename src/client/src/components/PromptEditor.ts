@@ -10,7 +10,7 @@ export class PromptEditor extends LitElement {
   @property() sessionId?: string;
   @property() cwd?: string;
   @property({ attribute: false }) onSend?: (text: string) => void;
-  @property({ attribute: false }) onCloseSession?: () => void;
+  @property({ attribute: false }) onStopSession?: () => void;
   @query("textarea") private textarea?: HTMLTextAreaElement;
   @state() private draft = "";
   @state() private completions: CompletionItem[] = [];
@@ -31,7 +31,7 @@ export class PromptEditor extends LitElement {
           <autocomplete-menu .items=${this.completions} .selectedIndex=${this.selectedIndex} .onPick=${(item: CompletionItem) => this.pick(item)}></autocomplete-menu>
         </div>
         <button ?disabled=${this.disabled} @click=${this.send}>Send</button>
-        <button ?disabled=${this.disabled} title="Stop this session runtime on the server" @click=${() => this.onCloseSession?.()}>Stop</button>
+        <button ?disabled=${this.disabled} title="Stop only this Pi session from continuing" @click=${() => this.onStopSession?.()}>Stop session</button>
       </footer>
     `;
   }
