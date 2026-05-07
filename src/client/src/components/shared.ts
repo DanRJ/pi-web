@@ -24,7 +24,7 @@ export interface CompletionItem {
 }
 
 export const appStyles = css`
-  :host { display: block; height: 100vh; color: #e6edf3; background: #0d1117; font: 14px system-ui, sans-serif; }
+  :host { display: block; height: 100dvh; box-sizing: border-box; padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); color: #e6edf3; background: #0d1117; font: 14px system-ui, sans-serif; }
   .shell { display: grid; grid-template-columns: 340px 1fr; height: 100%; min-height: 0; }
   aside { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid #30363d; overflow: hidden; }
   header { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; padding: 12px; border-bottom: 1px solid #30363d; }
