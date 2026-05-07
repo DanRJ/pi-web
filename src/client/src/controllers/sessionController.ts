@@ -1,4 +1,4 @@
-import { api, type SessionInfo } from "../api";
+import { api, type CommandResult, type SessionInfo } from "../api";
 import { appendText, normalizeMessages, textMessage } from "../chatMessages";
 import { SessionSocket, type SessionUiEvent } from "../sessionSocket";
 import type { GetState, SetState, UpdateUrl } from "./types";
@@ -41,6 +41,7 @@ export class SessionController {
   }
 
   async send(text: string) {
+    if (text.trim().startsWith("/")) return this.runCommand(text);
     const session = this.getState().selectedSession;
     if (!session) return;
     this.setState({ messages: [...this.getState().messages, textMessage("user", text)] });
@@ -49,6 +50,31 @@ export class SessionController {
     } catch (error) {
       this.setState({ error: String(error) });
     }
+  }
+
+  async runCommand(text: string) {
+    const session = this.getState().selectedSession;
+    if (!session) return;
+    try {
+      this.applyCommandResult(await api.runCommand(session.id, text));
+    } catch (error) {
+      this.setState({ error: String(error) });
+    }
+  }
+
+  async respondToCommand(requestId: string, value: string) {
+    const session = this.getState().selectedSession;
+    if (!session) return;
+    this.setState({ commandDialog: undefined });
+    try {
+      this.applyCommandResult(await api.respondToCommand(session.id, requestId, value));
+    } catch (error) {
+      this.setState({ error: String(error) });
+    }
+  }
+
+  cancelCommand() {
+    this.setState({ commandDialog: undefined });
   }
 
   async closeSession() {
@@ -61,6 +87,20 @@ export class SessionController {
     } finally {
       this.clearActiveSession();
       this.updateUrl();
+    }
+  }
+
+  private applyCommandResult(result: CommandResult) {
+    if (result.type === "select") {
+      this.setState({ commandDialog: result });
+      return;
+    }
+    const message = result.type === "unsupported" ? result.message : result.message;
+    if (message) this.setState({ messages: [...this.getState().messages, textMessage(result.type === "unsupported" ? "system" : "tool", message)] });
+    if (result.type === "done" && result.session) {
+      const sessions = [result.session, ...this.getState().sessions.filter((session) => session.id !== result.session?.id)];
+      this.setState({ sessions });
+      void this.selectSession(result.session);
     }
   }
 

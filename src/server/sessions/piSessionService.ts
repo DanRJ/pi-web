@@ -1,16 +1,27 @@
+import crypto from "node:crypto";
 import {
   AuthStorage,
-  createAgentSession,
+  createAgentSessionFromServices,
+  createAgentSessionRuntime,
+  createAgentSessionServices,
+  getAgentDir,
   ModelRegistry,
   SessionManager,
   type AgentSession,
+  type AgentSessionRuntime,
+  type CreateAgentSessionRuntimeFactory,
 } from "@mariozechner/pi-coding-agent";
-import type { ClientCommand, ClientSession, ClientSessionStatus } from "../types.js";
+import type { ClientCommand, ClientCommandResult, ClientSession, ClientSessionStatus } from "../types.js";
 import type { SessionEventHub } from "../realtime/sessionEventHub.js";
 
 interface ActiveSession {
-  session: AgentSession;
+  runtime: AgentSessionRuntime;
   unsubscribe: () => void;
+}
+
+interface PendingCommandSelect {
+  sessionId: string;
+  command: "fork";
 }
 
 const BUILTIN_COMMANDS: ClientCommand[] = [
@@ -39,8 +50,15 @@ const BUILTIN_COMMANDS: ClientCommand[] = [
 
 export class PiSessionService {
   private readonly active = new Map<string, ActiveSession>();
+  private readonly pendingSelects = new Map<string, PendingCommandSelect>();
+  private readonly agentDir = getAgentDir();
   private readonly authStorage = AuthStorage.create();
   private readonly modelRegistry = ModelRegistry.create(this.authStorage);
+  private readonly createRuntime: CreateAgentSessionRuntimeFactory = async ({ cwd, agentDir, sessionManager, sessionStartEvent }) => {
+    const services = await createAgentSessionServices({ cwd, agentDir, authStorage: this.authStorage, modelRegistry: this.modelRegistry });
+    const result = await createAgentSessionFromServices({ services, sessionManager, sessionStartEvent });
+    return { ...result, services, diagnostics: services.diagnostics };
+  };
 
   constructor(private readonly events: SessionEventHub) {}
 
@@ -59,7 +77,8 @@ export class PiSessionService {
   }
 
   async start(cwd: string): Promise<ClientSession> {
-    const { session } = await this.create(SessionManager.create(cwd), cwd);
+    const active = await this.create(SessionManager.create(cwd), cwd);
+    const { session } = active.runtime;
     return {
       id: session.sessionId,
       path: session.sessionFile ?? "",
@@ -102,45 +121,146 @@ export class PiSessionService {
     });
   }
 
+  async runCommand(sessionId: string, text: string): Promise<ClientCommandResult> {
+    const active = await this.getActive(sessionId);
+    const session = active.runtime.session;
+    const [name = "", ...args] = text.trim().replace(/^\//, "").split(/\s+/);
+    const rest = args.join(" ").trim();
+
+    if (!BUILTIN_COMMANDS.some((command) => command.name === name)) {
+      if (this.isRuntimeCommand(session, name)) {
+        await this.prompt(sessionId, text);
+        return { type: "done", message: `Accepted ${text}` };
+      }
+      return { type: "unsupported", message: `Unknown command: /${name}` };
+    }
+
+    if (name === "session") return { type: "done", message: this.formatSessionStats(session) };
+    if (name === "name") {
+      if (!rest) return { type: "unsupported", message: "Usage: /name <session name>" };
+      session.setSessionName(rest);
+      return { type: "done", message: `Session named ${rest}` };
+    }
+    if (name === "compact") {
+      void session.compact(rest || undefined).catch((error) => {
+        this.events.publish(session.sessionId, { type: "session.error", message: error instanceof Error ? error.message : String(error) });
+      });
+      return { type: "done", message: "Compaction started" };
+    }
+    if (name === "clone") {
+      const leafId = session.sessionManager.getLeafId();
+      if (!leafId) return { type: "unsupported", message: "Cannot clone: no current session entry" };
+      const result = await active.runtime.fork(leafId, { position: "at" });
+      if (result.cancelled) return { type: "done", message: "Clone cancelled" };
+      return { type: "done", message: "Session cloned", session: this.clientSessionFromRuntime(active.runtime) };
+    }
+    if (name === "fork") {
+      const messages = session.getUserMessagesForForking();
+      if (!messages.length) return { type: "unsupported", message: "No user messages to fork from" };
+      const requestId = crypto.randomUUID();
+      this.pendingSelects.set(requestId, { sessionId: session.sessionId, command: "fork" });
+      return {
+        type: "select",
+        requestId,
+        title: "Fork from message",
+        options: messages.map((message) => ({ value: message.entryId, label: truncate(message.text, 140) })),
+      };
+    }
+
+    return { type: "unsupported", message: `/${name} is not implemented in the web UI yet` };
+  }
+
+  async respondToCommand(sessionId: string, requestId: string, value: string): Promise<ClientCommandResult> {
+    const pending = this.pendingSelects.get(requestId);
+    if (!pending || pending.sessionId !== sessionId) return { type: "unsupported", message: "Command request expired" };
+    this.pendingSelects.delete(requestId);
+    const active = await this.getActive(sessionId);
+    if (pending.command === "fork") {
+      const result = await active.runtime.fork(value);
+      if (result.cancelled) return { type: "done", message: "Fork cancelled" };
+      return { type: "done", message: "Session forked", session: this.clientSessionFromRuntime(active.runtime) };
+    }
+    return { type: "unsupported", message: "Unsupported command response" };
+  }
+
   async abort(sessionId: string): Promise<void> {
     const active = this.active.get(sessionId);
-    if (active) await active.session.abort();
+    if (active) await active.runtime.session.abort();
   }
 
   close(sessionId: string): void {
     const active = this.active.get(sessionId);
     if (!active) return;
     active.unsubscribe();
-    active.session.dispose();
+    void active.runtime.dispose();
     this.active.delete(sessionId);
   }
 
   private async getOrOpen(sessionId: string): Promise<AgentSession> {
+    return (await this.getActive(sessionId)).runtime.session;
+  }
+
+  private async getActive(sessionId: string): Promise<ActiveSession> {
     const active = this.active.get(sessionId);
-    if (active) return active.session;
+    if (active) return active;
 
     const match = (await SessionManager.listAll()).find((s) => s.id === sessionId || s.id.startsWith(sessionId));
     if (!match) throw new Error("Session not found");
-    return (await this.create(SessionManager.open(match.path), match.cwd)).session;
+    return this.create(SessionManager.open(match.path), match.cwd);
   }
 
   private async create(sessionManager: SessionManager, cwd: string): Promise<ActiveSession> {
-    const { session } = await createAgentSession({
-      cwd,
-      sessionManager,
-      authStorage: this.authStorage,
-      modelRegistry: this.modelRegistry,
-    });
+    const runtime = await createAgentSessionRuntime(this.createRuntime, { cwd, agentDir: this.agentDir, sessionManager });
+    const active: ActiveSession = { runtime, unsubscribe: () => {} };
+    this.bindRuntime(active);
+    runtime.setRebindSession(async () => this.bindRuntime(active));
+    this.active.set(runtime.session.sessionId, active);
+    this.events.publish(runtime.session.sessionId, { type: "status.update", status: this.statusFromSession(runtime.session) });
+    return active;
+  }
 
-    const unsubscribe = session.subscribe((event) => {
+  private bindRuntime(active: ActiveSession): void {
+    active.unsubscribe();
+    for (const [sessionId, candidate] of this.active.entries()) {
+      if (candidate === active) this.active.delete(sessionId);
+    }
+    const { session } = active.runtime;
+    active.unsubscribe = session.subscribe((event) => {
       this.events.publish(session.sessionId, toClientEvent(event));
       this.events.publish(session.sessionId, { type: "status.update", status: this.statusFromSession(session) });
     });
-
-    const active = { session, unsubscribe };
     this.active.set(session.sessionId, active);
-    this.events.publish(session.sessionId, { type: "status.update", status: this.statusFromSession(session) });
-    return active;
+  }
+
+  private isRuntimeCommand(session: AgentSession, name: string): boolean {
+    return session.extensionRunner.getRegisteredCommands().some((command) => command.invocationName === name)
+      || session.promptTemplates.some((template) => template.name === name)
+      || session.resourceLoader.getSkills().skills.some((skill) => `skill:${skill.name}` === name);
+  }
+
+  private clientSessionFromRuntime(runtime: AgentSessionRuntime): ClientSession {
+    const session = runtime.session;
+    return {
+      id: session.sessionId,
+      path: session.sessionFile ?? "",
+      cwd: runtime.cwd,
+      name: session.sessionName,
+      created: new Date().toISOString(),
+      modified: new Date().toISOString(),
+      messageCount: session.messages.length,
+      firstMessage: "",
+    };
+  }
+
+  private formatSessionStats(session: AgentSession): string {
+    const stats = session.getSessionStats();
+    return [
+      `Session: ${stats.sessionId}`,
+      `Messages: ${stats.totalMessages} (${stats.userMessages} user, ${stats.assistantMessages} assistant)`,
+      `Tool calls: ${stats.toolCalls}`,
+      `Tokens: ↑${stats.tokens.input} ↓${stats.tokens.output} total ${stats.tokens.total}`,
+      `Cost: $${stats.cost.toFixed(4)}`,
+    ].join("\n");
   }
 
   private statusFromSession(session: AgentSession): ClientSessionStatus {
@@ -166,6 +286,11 @@ export class PiSessionService {
       contextUsage: session.getContextUsage(),
     };
   }
+}
+
+function truncate(text: string, maxLength: number): string {
+  const singleLine = text.replace(/\s+/g, " ").trim();
+  return singleLine.length <= maxLength ? singleLine : `${singleLine.slice(0, maxLength - 1)}…`;
 }
 
 function toClientEvent(event: any): unknown {

@@ -1,4 +1,4 @@
-import type { Project, SessionInfo, SessionStatus, Workspace } from "./api";
+import type { CommandResult, Project, SessionInfo, SessionStatus, Workspace } from "./api";
 import type { ChatLine } from "./components/shared";
 
 export interface AppState {
@@ -10,6 +10,7 @@ export interface AppState {
   selectedWorkspace?: Workspace;
   selectedSession?: SessionInfo;
   status?: SessionStatus;
+  commandDialog?: Extract<CommandResult, { type: "select" }>;
   error: string;
 }
 

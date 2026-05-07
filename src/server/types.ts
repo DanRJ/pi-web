@@ -49,3 +49,14 @@ export interface ClientFileSuggestion {
   path: string;
   kind: "tracked" | "untracked" | "other";
 }
+
+export interface ClientCommandOption {
+  value: string;
+  label: string;
+  description?: string;
+}
+
+export type ClientCommandResult =
+  | { type: "done"; message?: string; session?: ClientSession }
+  | { type: "select"; requestId: string; title: string; options: ClientCommandOption[] }
+  | { type: "unsupported"; message: string };

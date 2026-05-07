@@ -83,6 +83,22 @@ app.post<{ Params: { sessionId: string }; Body: { text: string } }>("/api/sessio
   }
 });
 
+app.post<{ Params: { sessionId: string }; Body: { text: string } }>("/api/sessions/:sessionId/commands/run", async (request, reply) => {
+  try {
+    return await sessions.runCommand(request.params.sessionId, request.body.text);
+  } catch (error) {
+    return reply.code(400).send({ error: error instanceof Error ? error.message : String(error) });
+  }
+});
+
+app.post<{ Params: { sessionId: string }; Body: { requestId: string; value: string } }>("/api/sessions/:sessionId/commands/respond", async (request, reply) => {
+  try {
+    return await sessions.respondToCommand(request.params.sessionId, request.body.requestId, request.body.value);
+  } catch (error) {
+    return reply.code(400).send({ error: error instanceof Error ? error.message : String(error) });
+  }
+});
+
 app.post<{ Params: { sessionId: string } }>("/api/sessions/:sessionId/abort", async (request) => {
   await sessions.abort(request.params.sessionId);
   return { aborted: true };

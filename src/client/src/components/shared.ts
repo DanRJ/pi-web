@@ -106,6 +106,19 @@ export const autocompleteStyles = css`
   small { grid-column: 1 / -1; color: #8b949e; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 `;
 
+export const commandPickerStyles = css`
+  :host { position: fixed; inset: 0; z-index: 10; color: #e6edf3; font: 14px system-ui, sans-serif; }
+  .backdrop { display: grid; place-items: center; width: 100%; height: 100%; background: #0008; }
+  section { width: min(720px, calc(100vw - 40px)); max-height: min(640px, calc(100vh - 40px)); display: flex; flex-direction: column; border: 1px solid #30363d; border-radius: 12px; background: #0d1117; box-shadow: 0 20px 60px #000b; overflow: hidden; }
+  header { display: flex; align-items: center; justify-content: space-between; padding: 12px; border-bottom: 1px solid #30363d; }
+  .options { min-height: 0; overflow: auto; outline: none; }
+  button { border: 0; background: transparent; color: #e6edf3; cursor: pointer; }
+  header button { font-size: 20px; color: #8b949e; }
+  .options button { display: block; width: 100%; padding: 10px 12px; border-bottom: 1px solid #21262d; text-align: left; }
+  .options button.selected, .options button:hover { background: #0d2847; }
+  small { display: block; margin-top: 4px; color: #8b949e; }
+`;
+
 export const promptEditorStyles = css`
   :host { display: block; color: #e6edf3; font: 14px system-ui, sans-serif; }
   footer { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; padding: 12px; border-top: 1px solid #30363d; }
