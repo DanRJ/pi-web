@@ -2,10 +2,6 @@ import { textMessage } from "./chatMessages";
 import type { ChatLine } from "./components/shared";
 import type { SessionUiEvent } from "./sessionSocket";
 
-export function isShellInput(text: string): boolean {
-  return text.trim().startsWith("!");
-}
-
 export function shellStartMessage(command: string, excludeFromContext?: boolean): ChatLine {
   return textMessage("bash", `$ ${command}${excludeFromContext ? "\n\nexcluded from context" : ""}`);
 }

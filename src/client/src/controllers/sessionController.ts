@@ -1,7 +1,7 @@
 import { api, type CommandResult, type SessionActivity, type SessionInfo, type SessionStatus } from "../api";
 import { normalizeMessages, textMessage } from "../chatMessages";
 import { applyTranscriptEvent } from "../chatTranscript";
-import { isShellInput } from "../shellMessages";
+import { isShellInput } from "../inputModes";
 import { GlobalSessionSocket, SessionSocket, type SessionUiEvent } from "../sessionSocket";
 import type { GetState, SetState, UpdateUrl } from "./types";
 
