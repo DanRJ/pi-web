@@ -117,7 +117,7 @@ export class WorkspacePanel extends LitElement {
     if (diff === undefined) return html`<p class="muted">Loading diff…</p>`;
     return html`
       <div class="viewer-header"><strong>${diff.path ?? "diff"}</strong><small>${diff.staged ? "staged" : "unstaged"}${diff.truncated ? " · truncated" : ""}</small></div>
-      <code-viewer .content=${diff.diff !== "" ? diff.diff : "No unstaged diff."}></code-viewer>
+      <code-viewer .content=${diff.diff !== "" ? diff.diff : "No unstaged diff."} .language=${"diff"}></code-viewer>
     `;
   }
 
