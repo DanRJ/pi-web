@@ -21,6 +21,7 @@ export class TerminalPanel extends LitElement {
   private socket: WebSocket | undefined;
   private resizeObserver: ResizeObserver | undefined;
   private intersectionObserver: IntersectionObserver | undefined;
+  private suppressTerminalInput = false;
   private observedCwd: string | undefined;
   private loadedCwd: string | undefined;
 
@@ -128,7 +129,11 @@ export class TerminalPanel extends LitElement {
     this.fitAddon = fitAddon;
     this.resizeObserver = new ResizeObserver(() => { this.fitAndNotify(); });
     this.resizeObserver.observe(this.terminalHost);
-    terminal.onData((data) => { this.send({ type: "input", data }); });
+    terminal.onData((data) => {
+      if (this.suppressTerminalInput) return;
+      const filtered = filterTerminalInput(data);
+      if (filtered !== "") this.send({ type: "input", data: filtered });
+    });
     this.connectSocket(workspace.projectId, workspace.id, this.selectedId, terminal);
     requestAnimationFrame(() => { this.fitAndNotify(); });
     terminal.focus();
@@ -150,7 +155,9 @@ export class TerminalPanel extends LitElement {
   private async handleSocketMessage(data: unknown, terminalId: string, terminal: Terminal): Promise<void> {
     try {
       const message = parseServerMessage(await socketDataToString(data));
-      if (message.type === "output") terminal.write(message.data);
+      if (message.type === "output") {
+        this.writeTerminalOutput(terminal, message.data, message.replay === true);
+      }
       if (message.type === "exit") {
         terminal.writeln(`\r\n[process exited${message.exitCode === undefined ? "" : ` with code ${String(message.exitCode)}`}]`);
         this.terminals = this.terminals.map((item) => item.id === terminalId ? { ...item, exited: true, ...(message.exitCode === undefined ? {} : { exitCode: message.exitCode }) } : item);
@@ -159,6 +166,17 @@ export class TerminalPanel extends LitElement {
     } catch (error) {
       terminal.writeln(`\r\n[terminal error: ${error instanceof Error ? error.message : String(error)}]`);
     }
+  }
+
+  private writeTerminalOutput(terminal: Terminal, data: string, replay: boolean): void {
+    if (!replay) {
+      terminal.write(data);
+      return;
+    }
+    this.suppressTerminalInput = true;
+    terminal.write(data, () => {
+      this.suppressTerminalInput = false;
+    });
   }
 
   private fitAndNotify(): void {
@@ -232,7 +250,7 @@ export class TerminalPanel extends LitElement {
 }
 
 type ServerTerminalMessage =
-  | { type: "output"; data: string }
+  | { type: "output"; data: string; replay?: boolean }
   | { type: "exit"; exitCode?: number }
   | { type: "error"; message: string };
 
@@ -240,10 +258,17 @@ function parseServerMessage(data: string): ServerTerminalMessage {
   const value: unknown = JSON.parse(data);
   if (!isRecord(value)) return { type: "error", message: "Invalid terminal message" };
   const record = value;
-  if (record["type"] === "output" && typeof record["data"] === "string") return { type: "output", data: record["data"] };
+  if (record["type"] === "output" && typeof record["data"] === "string") return { type: "output", data: record["data"], ...(typeof record["replay"] === "boolean" ? { replay: record["replay"] } : {}) };
   if (record["type"] === "exit") return { type: "exit", ...(typeof record["exitCode"] === "number" ? { exitCode: record["exitCode"] } : {}) };
   if (record["type"] === "error" && typeof record["message"] === "string") return { type: "error", message: record["message"] };
   return { type: "error", message: "Invalid terminal message" };
+}
+
+export function filterTerminalInput(data: string): string {
+  // Xterm can emit focus-in/focus-out sequences when replayed output leaves focus
+  // tracking enabled. Bash/readline treats those sequences as typed text, which
+  // leaves stray characters on the prompt after reconnecting to an active shell.
+  return data.replaceAll("\x1b[I", "").replaceAll("\x1b[O", "");
 }
 
 async function socketDataToString(data: unknown): Promise<string> {

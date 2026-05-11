@@ -25,7 +25,7 @@ export function registerTerminalRoutes(app: FastifyInstance, terminals: Terminal
     let detach: (() => void) | undefined;
     try {
       detach = terminals.attach(request.params.terminalId, {
-        output: (data) => { socket.send(JSON.stringify({ type: "output", data })); },
+        output: (data, replay) => { socket.send(JSON.stringify({ type: "output", data, replay })); },
         exit: (exitCode) => { socket.send(JSON.stringify({ type: "exit", exitCode })); },
       });
     } catch (error) {

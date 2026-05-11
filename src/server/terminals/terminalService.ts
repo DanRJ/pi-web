@@ -76,11 +76,11 @@ export class TerminalService {
     return terminal === undefined ? undefined : toInfo(terminal);
   }
 
-  attach(id: string, handlers: { output: (data: string) => void; exit: (exitCode: number | undefined) => void }): () => void {
+  attach(id: string, handlers: { output: (data: string, replay: boolean) => void; exit: (exitCode: number | undefined) => void }): () => void {
     const terminal = this.require(id);
-    if (terminal.buffer !== "") handlers.output(terminal.buffer);
+    if (terminal.buffer !== "") handlers.output(terminal.buffer, true);
     if (terminal.exited) handlers.exit(terminal.exitCode);
-    const onOutput = (data: string) => { handlers.output(data); };
+    const onOutput = (data: string) => { handlers.output(data, false); };
     const onExit = (exitCode: number | undefined) => { handlers.exit(exitCode); };
     terminal.events.on("output", onOutput);
     terminal.events.on("exit", onExit);
