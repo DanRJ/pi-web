@@ -11,6 +11,8 @@ import "./FormattedText";
 interface PrependScrollAnchor {
   scrollTop: number;
   scrollHeight: number;
+  key?: string;
+  offset?: number;
 }
 
 function isScrollPosition(value: unknown): value is { index?: number; key?: string; offset: number } {
@@ -88,10 +90,10 @@ export class ChatView extends LitElement {
           ${this.renderHistoryBoundary()}
           ${repeat(
             groupChatMessages(this.messages, this.messageStart),
-            (group) => group.kind === "message" ? this.messageAnchorKey(group.index) : this.groupAnchorKey(group.startIndex),
+            (group) => group.kind === "message" ? this.messageAnchorKey(group.index) : this.groupAnchorKey(group.endIndex),
             (group) => group.kind === "message"
               ? this.renderMessage(group.message, group.index)
-              : this.renderMessageGroup(group.messages, group.startIndex),
+              : this.renderMessageGroup(group.messages, group.startIndex, group.endIndex),
           )}
           ${this.renderQueuedMessages()}
           ${this.renderSessionActivity()}
@@ -211,10 +213,10 @@ export class ChatView extends LitElement {
     `;
   }
 
-  private renderMessageGroup(messages: ChatLine[], startIndex: number) {
-    const key = this.groupKey(startIndex);
+  private renderMessageGroup(messages: ChatLine[], startIndex: number, endIndex: number) {
+    const key = this.groupKey(endIndex);
     return html`
-      <details class="msg event-group" data-index=${startIndex} data-anchor-key=${this.groupAnchorKey(startIndex)} ?open=${this.openGroupKeys.has(key)} @toggle=${(event: Event) => { this.onGroupToggle(key, event); }}>
+      <details class="msg event-group" data-index=${startIndex} data-anchor-key=${this.groupAnchorKey(endIndex)} ?open=${this.openGroupKeys.has(key)} @toggle=${(event: Event) => { this.onGroupToggle(key, event); }}>
         <summary>
           <b class="label">events</b>
           <span>${summarizeChatGroup(messages)}</span>
@@ -489,14 +491,28 @@ export class ChatView extends LitElement {
   capturePrependScrollAnchor(): PrependScrollAnchor | undefined {
     const chat = this.chat;
     if (!chat) return undefined;
-    return { scrollTop: chat.scrollTop, scrollHeight: chat.scrollHeight };
+    const firstVisible = this.firstVisibleArticle();
+    if (!firstVisible) return { scrollTop: chat.scrollTop, scrollHeight: chat.scrollHeight };
+    const chatTop = chat.getBoundingClientRect().top;
+    const key = firstVisible.dataset["anchorKey"];
+    const anchor = { scrollTop: chat.scrollTop, scrollHeight: chat.scrollHeight };
+    return key === undefined
+      ? anchor
+      : { ...anchor, key, offset: firstVisible.getBoundingClientRect().top - chatTop };
   }
 
   restorePrependScrollAnchor(anchor: PrependScrollAnchor | undefined): void {
     const chat = this.chat;
     if (!chat || !anchor) return;
     this.withSuppressedScrollSave(() => {
-      chat.scrollTop = anchor.scrollTop + (chat.scrollHeight - anchor.scrollHeight);
+      const article = anchor.key === undefined ? undefined : this.articleAt({ key: anchor.key });
+      if (article !== undefined && anchor.offset !== undefined) {
+        const chatTop = chat.getBoundingClientRect().top;
+        const currentOffset = article.getBoundingClientRect().top - chatTop;
+        chat.scrollTop += currentOffset - anchor.offset;
+      } else {
+        chat.scrollTop = anchor.scrollTop + (chat.scrollHeight - anchor.scrollHeight);
+      }
       this.lastScrollTop = chat.scrollTop;
     });
     this.requestLoadMoreIfNeeded();
@@ -584,16 +600,16 @@ export class ChatView extends LitElement {
     return `pi-web:chat-groups:${sessionId}`;
   }
 
-  private groupKey(startIndex: number): string {
-    return `${this.sessionId}:${String(startIndex)}`;
+  private groupKey(endIndex: number): string {
+    return `${this.sessionId}:${String(endIndex)}`;
   }
 
   private messageAnchorKey(index: number): string {
     return `m:${String(index)}`;
   }
 
-  private groupAnchorKey(startIndex: number): string {
-    return `g:${String(startIndex)}`;
+  private groupAnchorKey(endIndex: number): string {
+    return `g:${String(endIndex)}`;
   }
 
   private readOpenGroupKeys(): Set<string> {

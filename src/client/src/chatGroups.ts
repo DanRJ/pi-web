@@ -2,7 +2,7 @@ import type { ChatLine, ChatPart } from "./components/shared";
 
 export type ChatGroup =
   | { kind: "message"; message: ChatLine; index: number }
-  | { kind: "group"; messages: ChatLine[]; startIndex: number };
+  | { kind: "group"; messages: ChatLine[]; startIndex: number; endIndex: number };
 
 export function groupChatMessages(messages: ChatLine[], indexOffset = 0): ChatGroup[] {
   const groups: ChatGroup[] = [];
@@ -15,7 +15,7 @@ export function groupChatMessages(messages: ChatLine[], indexOffset = 0): ChatGr
   };
   const flushEvents = () => {
     if (!eventMessages.length) return;
-    groups.push({ kind: "group", messages: eventMessages, startIndex: eventStartIndex });
+    groups.push({ kind: "group", messages: eventMessages, startIndex: eventStartIndex, endIndex: eventStartIndex + eventMessages.length - 1 });
     eventMessages = [];
   };
 

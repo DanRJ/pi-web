@@ -13,9 +13,9 @@ describe("groupChatMessages", () => {
     ];
 
     expect(groupChatMessages(messages, 10)).toEqual([
-      { kind: "group", startIndex: 10, messages: [messages[0]] },
+      { kind: "group", startIndex: 10, endIndex: 10, messages: [messages[0]] },
       { kind: "message", index: 11, message: text("assistant", "visible answer") },
-      { kind: "group", startIndex: 12, messages: [messages[2]] },
+      { kind: "group", startIndex: 12, endIndex: 12, messages: [messages[2]] },
     ]);
   });
 
@@ -25,7 +25,7 @@ describe("groupChatMessages", () => {
     ];
 
     expect(groupChatMessages(messages)).toEqual([
-      { kind: "group", startIndex: 0, messages: [{ role: "assistant", parts: [{ type: "thinking", text: "hidden" }] }] },
+      { kind: "group", startIndex: 0, endIndex: 0, messages: [{ role: "assistant", parts: [{ type: "thinking", text: "hidden" }] }] },
       { kind: "message", index: 0, message: { role: "assistant", parts: [{ type: "text", text: "shown" }] } },
     ]);
   });
@@ -36,7 +36,7 @@ describe("groupChatMessages", () => {
     ];
 
     expect(groupChatMessages(messages)).toEqual([
-      { kind: "group", startIndex: 0, messages: [{ role: "assistant", parts: [{ type: "thinking", text: "plan" }] }] },
+      { kind: "group", startIndex: 0, endIndex: 0, messages: [{ role: "assistant", parts: [{ type: "thinking", text: "plan" }] }] },
       { kind: "message", index: 0, message: { role: "skill", parts: [{ type: "skillRead", name: "playwright", path: "/skills/playwright/SKILL.md" }] } },
     ]);
   });
@@ -45,7 +45,7 @@ describe("groupChatMessages", () => {
     const message: ChatLine = { role: "assistant", parts: [{ type: "thinking", text: "hidden" }, { type: "text", text: "shown" }], meta: { timestamp: "2026-05-09T12:00:00.000Z", model: { provider: "test", id: "model" } } };
 
     expect(groupChatMessages([message])).toEqual([
-      { kind: "group", startIndex: 0, messages: [{ role: "assistant", parts: [{ type: "thinking", text: "hidden" }], meta: message.meta }] },
+      { kind: "group", startIndex: 0, endIndex: 0, messages: [{ role: "assistant", parts: [{ type: "thinking", text: "hidden" }], meta: message.meta }] },
       { kind: "message", index: 0, message: { role: "assistant", parts: [{ type: "text", text: "shown" }], meta: message.meta } },
     ]);
   });
@@ -59,7 +59,15 @@ describe("groupChatMessages", () => {
     const groups = groupChatMessages(messages);
 
     expect(groups).toHaveLength(1);
-    expect(groups[0]).toMatchObject({ kind: "group", startIndex: 0 });
+    expect(groups[0]).toMatchObject({ kind: "group", startIndex: 0, endIndex: 1 });
+  });
+
+  it("keeps a stable group end index when older events are prepended into a group", () => {
+    expect(groupChatMessages([
+      { role: "tool", parts: [{ type: "toolResult", toolName: "read", text: "older", isError: false }] },
+      { role: "assistant", parts: [{ type: "toolCall", toolName: "read", summary: "newer" }] },
+      text("assistant", "answer"),
+    ], 8)[0]).toMatchObject({ kind: "group", startIndex: 8, endIndex: 9 });
   });
 });
 
