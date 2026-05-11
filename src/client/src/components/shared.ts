@@ -169,6 +169,7 @@ export const chatStyles = css`
   .history-boundary { display: grid; gap: 3px; justify-items: center; margin: 0 0 14px; color: #8b949e; font-size: 12px; text-align: center; }
   .history-load-button { border: 1px solid #30363d; border-radius: 999px; background: #161b22; color: #c9d1d9; padding: 5px 12px; font: 12px system-ui, sans-serif; cursor: pointer; }
   .history-load-button:hover, .history-load-button:focus { border-color: #58a6ff; color: #f0f6fc; }
+  .history-load-button:disabled { cursor: default; opacity: .55; }
   .queued-messages { max-width: 100%; min-width: 0; box-sizing: border-box; display: grid; gap: 8px; margin: 0 0 14px; padding: 12px; border: 1px solid #6e5200; border-radius: 10px; background: #1f1a10; color: #e6edf3; overflow: hidden; }
   .queued-header { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
   .queued-header strong { color: #d29922; }

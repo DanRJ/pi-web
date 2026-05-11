@@ -45,7 +45,7 @@ export class ChatView extends LitElement {
   private lastScrollTop = 0;
   private lastClientHeight = 0;
   private touchStartY: number | undefined;
-  private loadMoreRequested = false;
+  @state() private loadMoreRequested = false;
   private readonly onViewportResize = () => {
     if (this.pinnedToBottom) this.scrollToBottom();
     else this.lastClientHeight = this.chat?.clientHeight ?? 0;
@@ -186,7 +186,7 @@ export class ChatView extends LitElement {
     if (this.loadingMore) return html`<div class="history-boundary"><span>Loading earlier messages…</span>${range}</div>`;
     if (this.hasMore) return html`
       <div class="history-boundary">
-        <button type="button" class="history-load-button" @click=${() => { this.requestLoadMore(true); }}>Load earlier messages</button>
+        <button type="button" class="history-load-button" ?disabled=${this.loadMoreRequested} @click=${() => { this.requestLoadMore(); }}>Load earlier messages</button>
         <span>Scroll up to load earlier messages</span>
         ${range}
       </div>
@@ -415,8 +415,8 @@ export class ChatView extends LitElement {
     });
   }
 
-  private requestLoadMore(force = false): void {
-    if (!force && this.loadMoreRequested) return;
+  private requestLoadMore(): void {
+    if (this.loadMoreRequested) return;
     if (!this.hasMore || this.loadingMore || this.onLoadMore === undefined) return;
     this.loadMoreRequested = true;
     this.onLoadMore();
