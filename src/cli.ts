@@ -2,7 +2,7 @@
 import { existsSync } from "node:fs";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { homedir, userInfo } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { defaultPiWebConfigPath, examplePiWebConfig } from "./config.js";
 
@@ -14,6 +14,16 @@ interface InstallOptions {
   host: string;
   port: string;
   config?: string;
+}
+
+type Check = [string, string[]];
+type SupportedShell = "bash" | "zsh" | "fish";
+
+interface ServiceShell {
+  name: SupportedShell;
+  executable: string;
+  detected?: string;
+  fallback: boolean;
 }
 
 function run(command: string, args: string[], options: { check?: boolean } = {}): number {
@@ -29,7 +39,7 @@ function capture(command: string, args: string[]): { status: number; stdout: str
 }
 
 function hasCommand(command: string): boolean {
-  return capture("/usr/bin/env", ["bash", "-lc", `command -v ${command}`]).status === 0;
+  return capture("/usr/bin/env", ["sh", "-c", `command -v ${command}`]).status === 0;
 }
 
 function isLingerEnabled(): boolean | undefined {
@@ -81,6 +91,10 @@ function shellSingleQuote(value: string): string {
   return `'${value.replaceAll("'", "'\\''")}'`;
 }
 
+function fishSingleQuote(value: string): string {
+  return `'${value.replaceAll("\\", "\\\\").replaceAll("'", "\\'")}'`;
+}
+
 function systemdEscape(value: string): string {
   return value.replaceAll("\\", "\\\\").replaceAll('"', '\\"');
 }
@@ -95,13 +109,50 @@ function webExec(): string {
   return configured === undefined || configured === "" ? "pi-web-server" : configured;
 }
 
+function detectServiceShell(): ServiceShell {
+  const userShell = userInfo().shell ?? undefined;
+  const envShell = process.env["SHELL"]?.trim();
+  const detected = envShell === undefined || envShell === "" ? userShell : envShell;
+  const name = basename(detected ?? "").replace(/^-/u, "");
+  if (name === "bash" || name === "zsh" || name === "fish") {
+    return { name, executable: detected ?? name, detected: detected ?? name, fallback: false };
+  }
+  return { name: "bash", executable: "bash", ...(detected === undefined ? {} : { detected }), fallback: true };
+}
+
+function serviceShellCommand(command: string): string[] {
+  return ["/usr/bin/env", detectServiceShell().executable, "-lc", command];
+}
+
+function serviceShellExecPrefix(): string {
+  return `/usr/bin/env ${detectServiceShell().executable} -lc`;
+}
+
+function serviceShellQuote(value: string): string {
+  return detectServiceShell().name === "fish" ? fishSingleQuote(value) : shellSingleQuote(value);
+}
+
+function systemdServiceShellQuote(value: string): string {
+  return serviceShellQuote(value.replaceAll("%", "%%").replaceAll("$", "$$"));
+}
+
+function describeServiceShell(): string {
+  const shell = detectServiceShell();
+  if (shell.fallback) {
+    return shell.detected === undefined
+      ? "could not detect a supported login shell; using bash"
+      : `detected ${shell.detected}; using bash because Pi Web currently supports bash, zsh, and fish`;
+  }
+  return shell.detected === undefined ? shell.name : `${shell.name} (${shell.detected})`;
+}
+
 function sessiondUnit(): string {
   return `[Unit]
 Description=Pi Web session daemon
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/env bash -lc ${shellSingleQuote(`exec ${sessiondExec()}`)}
+ExecStart=${serviceShellExecPrefix()} ${systemdServiceShellQuote(`exec ${sessiondExec()}`)}
 Restart=on-failure
 RestartSec=2
 
@@ -119,7 +170,7 @@ Wants=${sessiondServiceName}
 
 [Service]
 Type=simple
-${configEnvironment}ExecStart=/usr/bin/env bash -lc ${shellSingleQuote(`exec ${webExec()}`)}
+${configEnvironment}ExecStart=${serviceShellExecPrefix()} ${systemdServiceShellQuote(`exec ${webExec()}`)}
 Restart=on-failure
 RestartSec=2
 
@@ -139,9 +190,13 @@ async function writeInitialConfig(options: InstallOptions): Promise<string> {
 
 async function install(args: string[]): Promise<void> {
   const options = parseInstallOptions(args);
-  if (!hasCommand("systemctl")) throw new Error("systemctl was not found in a bash login shell");
-  if (process.env["PI_WEB_SERVER_EXEC"] === undefined && !hasCommand("pi-web-server")) throw new Error("pi-web-server was not found in a bash login shell. Is pi-web installed globally?");
-  if (process.env["PI_WEB_SESSIOND_EXEC"] === undefined && !hasCommand("pi-web-sessiond")) throw new Error("pi-web-sessiond was not found in a bash login shell. Is pi-web installed globally?");
+
+  console.log("Running Pi Web install preflight checks...");
+  console.log(`Service shell: ${describeServiceShell()}`);
+  if (!runChecks(installPreflightChecks())) {
+    printPathSetupAdvice();
+    throw new Error("Install preflight checks failed. Fix the missing commands above, then run `pi-web doctor` for more detail.");
+  }
 
   const configPath = await writeInitialConfig(options);
 
@@ -189,16 +244,66 @@ function logs(): void {
   run("journalctl", ["--user", "-u", sessiondServiceName, "-u", webServiceName, "-f"]);
 }
 
-function doctor(): void {
-  const checks: [string, string[]][] = [
-    ["systemctl --user", ["systemctl", "--user", "--version"]],
-    ["bash login shell can find node", ["/usr/bin/env", "bash", "-lc", "command -v node"]],
-    ["bash login shell can find npm", ["/usr/bin/env", "bash", "-lc", "command -v npm"]],
-    ["bash login shell can find pi", ["/usr/bin/env", "bash", "-lc", "command -v pi"]],
-    ["bash login shell can find pi-web-server", ["/usr/bin/env", "bash", "-lc", "command -v pi-web-server"]],
-    ["bash login shell can find pi-web-sessiond", ["/usr/bin/env", "bash", "-lc", "command -v pi-web-sessiond"]],
-  ];
+function serviceShellLabel(): string {
+  return `${detectServiceShell().name} -lc`;
+}
 
+function systemdUserServiceShellCommand(command: string): string[] {
+  return [
+    "systemd-run",
+    "--user",
+    "--wait",
+    "--collect",
+    "--pipe",
+    "--quiet",
+    ...serviceShellCommand(command),
+  ];
+}
+
+function commandCheck(command: string): string {
+  return `command -v ${command}`;
+}
+
+function nodeVersionCheck(): string {
+  return [
+    commandCheck("node"),
+    "node -e \"const major = Number(process.versions.node.split('.')[0]); console.log(process.version); process.exit(major >= 22 ? 0 : 1);\"",
+  ].join(" && ");
+}
+
+function installPreflightChecks(): Check[] {
+  const shell = serviceShellLabel();
+  const checks: Check[] = [
+    ["systemctl --user", ["systemctl", "--user", "--version"]],
+    [`${shell} can find node >= 22`, serviceShellCommand(nodeVersionCheck())],
+    [`systemd user ${shell} can find node >= 22`, systemdUserServiceShellCommand(nodeVersionCheck())],
+  ];
+  if (process.env["PI_WEB_SERVER_EXEC"] === undefined) {
+    checks.push(
+      [`${shell} can find pi-web-server`, serviceShellCommand(commandCheck("pi-web-server"))],
+      [`systemd user ${shell} can find pi-web-server`, systemdUserServiceShellCommand(commandCheck("pi-web-server"))],
+    );
+  }
+  if (process.env["PI_WEB_SESSIOND_EXEC"] === undefined) {
+    checks.push(
+      [`${shell} can find pi-web-sessiond`, serviceShellCommand(commandCheck("pi-web-sessiond"))],
+      [`systemd user ${shell} can find pi-web-sessiond`, systemdUserServiceShellCommand(commandCheck("pi-web-sessiond"))],
+    );
+  }
+  return checks;
+}
+
+function doctorChecks(): Check[] {
+  const shell = serviceShellLabel();
+  return [
+    ...installPreflightChecks(),
+    [`${shell} can find npm`, serviceShellCommand(commandCheck("npm"))],
+    [`${shell} can find pi`, serviceShellCommand(commandCheck("pi"))],
+    [`systemd user ${shell} can find pi`, systemdUserServiceShellCommand(commandCheck("pi"))],
+  ];
+}
+
+function runChecks(checks: Check[]): boolean {
   let failed = false;
   for (const [label, command] of checks) {
     const [bin, ...args] = command;
@@ -208,8 +313,34 @@ function doctor(): void {
     failed ||= !ok;
     console.log(`${ok ? "✓" : "✗"} ${label}`);
     const output = (result.stdout || result.stderr).trim();
-    if (output !== "") console.log(`  ${output.split("\n")[0] ?? ""}`);
+    if (output !== "") {
+      const lines = output.split("\n");
+      for (const line of lines.slice(0, 3)) console.log(`  ${line}`);
+      if (lines.length > 3) console.log("  ...");
+    }
   }
+  return !failed;
+}
+
+function printPathSetupAdvice(): void {
+  const shell = detectServiceShell();
+  console.log("\nPATH setup advice:");
+  if (shell.name === "bash") {
+    console.log("  Detected bash. Put PATH setup for node/version managers/tools in ~/.bash_profile or ~/.profile.");
+    console.log("  If ~/.bash_profile exists, bash will not read ~/.profile unless you source it from ~/.bash_profile.");
+    console.log("  Do not rely only on ~/.bashrc or prompt hooks for tools needed by services or agents.");
+  } else if (shell.name === "zsh") {
+    console.log("  Detected zsh. Put PATH setup for node/version managers/tools in ~/.zprofile, not only ~/.zshrc.");
+    console.log("  Avoid relying on prompt hooks; Pi Web services run non-interactive login shells.");
+  } else {
+    console.log("  Detected fish. Prefer universal PATH setup such as `fish_add_path -U ...` for tools needed by services or agents.");
+    console.log("  Avoid relying on prompt hooks; Pi Web services run non-interactive login shells.");
+  }
+}
+
+function doctor(): void {
+  console.log(`Service shell: ${describeServiceShell()}`);
+  const ok = runChecks(doctorChecks());
 
   const linger = isLingerEnabled();
   if (linger === true) {
@@ -222,8 +353,9 @@ function doctor(): void {
     console.log(`  Recommended on servers: sudo loginctl enable-linger ${userInfo().username}`);
   }
 
-  if (failed) {
-    console.log("\nIf a command works in your terminal but fails here, make sure your bash login files set PATH the same way.");
+  if (!ok) {
+    console.log("\nIf a command works in your terminal but fails here, make sure your service shell login files set PATH the same way.");
+    printPathSetupAdvice();
     process.exitCode = 1;
   }
 }
