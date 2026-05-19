@@ -65,11 +65,19 @@ After editing, check the manifest endpoint and browser-console failure cases.
 
 Pi Web ships a real bundled `info` plugin. Use it as the reference example because it is intentionally small while still exercising all core contribution types: an action, a workspace label, and a workspace panel.
 
-Files:
+Bundled Pi Web plugins are developed as TypeScript in the repository, but their `package.json` metadata still points at built JavaScript because plugins are loaded by the browser as JS ES modules. `npm run dev:web` watches and rebuilds bundled plugin TS into `dist/pi-web-plugins/` during development, and `npm run build` emits the JS before packaging a release.
+
+Source files:
 
 ```text
 pi-web-plugins/info/package.json
-pi-web-plugins/info/pi-web-plugin.js
+pi-web-plugins/info/pi-web-plugin.ts
+```
+
+Built module:
+
+```text
+dist/pi-web-plugins/info/pi-web-plugin.js
 ```
 
 Package metadata:
@@ -538,7 +546,7 @@ Pi Web does not provide a plugin cache/invalidation framework. Keep host callbac
 
 If you are an AI agent building or editing a Pi Web plugin, follow this checklist:
 
-1. Create or update a plugin folder with `package.json` and `pi-web-plugin.js`.
+1. Create or update a plugin folder with `package.json` and a JavaScript module such as `pi-web-plugin.js`.
 2. Use the single supported package metadata shape: `piWeb.plugins` array with `{ id, module }` entries.
 3. Default-export `{ apiVersion: 1, name, activate }` from the module.
 4. Return `{ contributions: { actions, workspacePanels, workspaceLabels } }` from `activate()`.

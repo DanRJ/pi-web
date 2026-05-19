@@ -8,7 +8,7 @@ export default defineConfig([
     ignores: ["dist/**", "node_modules/**"],
   },
   {
-    files: ["src/**/*.ts", "extensions/**/*.ts", "vite.config.ts", "vitest.config.ts"],
+    files: ["src/**/*.ts", "extensions/**/*.ts", "pi-web-plugins/**/*.ts", "vite.config.ts", "vitest.config.ts"],
     extends: [
       js.configs.recommended,
       tseslint.configs.strictTypeChecked,

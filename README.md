@@ -101,7 +101,7 @@ Pi Web keeps its own state intentionally small:
 
 Pi Web production installs can load trusted local UI plugins without rebuilding Pi Web. Plugins are browser-side ES modules that can add action-palette actions, workspace panels, and workspace-label metadata. They do not run in the session daemon and are not sandboxed.
 
-The supported package shape is intentionally singular: `piWeb.plugins` entries with explicit `id` and `module`, plus a browser module that exports `{ apiVersion: 1, name, activate }`. The bundled `pi-web-plugins/info` plugin is the canonical minimal real example, and `pi-web-plugins/pi-web` demonstrates a dynamic status panel.
+The supported package shape is intentionally singular: `piWeb.plugins` entries with explicit `id` and `module`, plus a browser module that exports `{ apiVersion: 1, name, activate }`. The bundled `pi-web-plugins/info` TypeScript source is the canonical minimal real example, and `pi-web-plugins/pi-web` demonstrates a dynamic status panel.
 
 A useful prompt for AI agents:
 
@@ -211,7 +211,7 @@ npm run dev:web
 npm run dev:client
 ```
 
-You can restart `dev:web` or `dev:client` without stopping active Pi sessions.
+`dev:web` also watches bundled plugin TypeScript and rebuilds the browser-loaded plugin JavaScript under `dist/pi-web-plugins/`. You can restart `dev:web` or `dev:client` without stopping active Pi sessions.
 
 ## Production-style run from a checkout
 
@@ -229,7 +229,7 @@ npm run pack:dry
 npm publish --access public
 ```
 
-`prepack` builds `dist/` before npm creates the tarball, and `prepublishOnly` runs verification before publishing. Releases can also be published by the GitHub Actions npm workflow when a GitHub release is published.
+`prepack` builds `dist/` and bundled plugin JavaScript before npm creates the tarball, and `prepublishOnly` runs verification before publishing. Releases can also be published by the GitHub Actions npm workflow when a GitHub release is published.
 
 Pi Web uses a single-line CalVer-inspired npm version: `MAJOR.YYYYMM.SEQUENCE`, for example `1.202605.1`. The major number signals breaking-change eras; the middle number is the release month; the final number increments for additional releases in that month. Older major eras may be deprecated rather than maintained in parallel.
 
@@ -260,7 +260,7 @@ Environment variables:
 A practical local or server setup is two user services:
 
 - `pi-web-sessiond.service` runs `npm run start:sessiond` without autoreload.
-- `pi-web-ui-dev.service` runs `npm run dev:web` and `npm run dev:client` for API reloads and Vite HMR.
+- `pi-web-ui-dev.service` runs `npm run dev:web` and `npm run dev:client` for API reloads, bundled plugin rebuilds, and Vite HMR.
 
 Example units:
 

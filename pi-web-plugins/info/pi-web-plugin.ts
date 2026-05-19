@@ -1,4 +1,6 @@
-export default {
+import type { PiWebPlugin } from "../../src/client/src/plugins/types";
+
+const plugin: PiWebPlugin = {
   apiVersion: 1,
   name: "Info Plugin",
   activate: ({ html }) => ({
@@ -40,3 +42,5 @@ export default {
     },
   }),
 };
+
+export default plugin;

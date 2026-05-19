@@ -143,9 +143,16 @@ After editing, check the manifest endpoint and browser-console failure cases.</c
                 Pi Web ships a real bundled <strong>Info</strong> plugin. It is intentionally small while still using all
                 core contribution types: one action, one workspace label, and one workspace panel.
               </p>
+              <p>
+                Bundled Pi Web plugins are developed as TypeScript in the repository, while their package metadata
+                points at the built JavaScript ES modules that the browser loads. <code>npm run dev:web</code> watches and
+                rebuilds bundled plugin TS into <code>dist/pi-web-plugins/</code> during development, and <code>npm run build</code>
+                emits JS before release packaging.
+              </p>
               <ul>
                 <li><code>pi-web-plugins/info/package.json</code> shows the required metadata shape.</li>
-                <li><code>pi-web-plugins/info/pi-web-plugin.js</code> shows the browser module shape.</li>
+                <li><code>pi-web-plugins/info/pi-web-plugin.ts</code> shows the TypeScript source shape.</li>
+                <li><code>dist/pi-web-plugins/info/pi-web-plugin.js</code> is the built browser module in a checkout.</li>
               </ul>
               <p>
                 Read it on GitHub:

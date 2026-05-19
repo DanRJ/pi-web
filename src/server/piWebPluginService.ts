@@ -150,10 +150,15 @@ export class PiWebPluginService {
 
 function defaultPluginRoots(): LocalPluginRoot[] {
   const moduleDir = dirname(fileURLToPath(import.meta.url));
+  const packageRoot = join(moduleDir, "..", "..");
   return [
-    { path: join(moduleDir, "..", "..", "pi-web-plugins"), source: "bundled", scope: "bundled" },
+    { path: bundledPluginRoot(packageRoot), source: "bundled", scope: "bundled" },
     { path: join(piWebDataDir(), "plugins"), source: "local", scope: "local" },
   ];
+}
+
+function bundledPluginRoot(packageRoot: string): string {
+  return join(packageRoot, "dist", "pi-web-plugins");
 }
 
 async function discoverLocalRoot(root: LocalPluginRoot): Promise<PluginRecord[]> {

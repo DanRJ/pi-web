@@ -1,20 +1,25 @@
-function messagesFor(state) {
-  return state?.piWebStatus?.messages ?? [];
+import type { TemplateResult } from "lit";
+import type { AppState } from "../../src/client/src/appState";
+import type { HtmlTemplateTag, PiWebPlugin } from "../../src/client/src/plugins/types";
+import type { PiWebComponentStatus, PiWebInstallationInfo, PiWebStatusMessage, PiWebStatusResponse } from "../../src/shared/apiTypes";
+
+function messagesFor(state: AppState): PiWebStatusMessage[] {
+  return state.piWebStatus?.messages ?? [];
 }
 
-function statusFor(state) {
-  return state?.piWebStatus;
+function statusFor(state: AppState): PiWebStatusResponse | undefined {
+  return state.piWebStatus;
 }
 
-function messageCount(state) {
+function messageCount(state: AppState): number {
   return messagesFor(state).length;
 }
 
-function isLocalOrUnknownInstallation(installation) {
+function isLocalOrUnknownInstallation(installation: PiWebInstallationInfo | undefined): boolean {
   return installation === undefined || installation.kind === "local" || installation.kind === "unknown";
 }
 
-function shouldShowStatusPanel(state) {
+function shouldShowStatusPanel(state: AppState): boolean {
   const status = statusFor(state);
   if (messageCount(state) > 0) return true;
   if (status === undefined) return false;
@@ -22,15 +27,15 @@ function shouldShowStatusPanel(state) {
     || isLocalOrUnknownInstallation(status.components.sessiond.installation);
 }
 
-function formatVersion(version) {
+function formatVersion(version: string | undefined): string {
   return version === undefined || version === "" ? "unknown" : version;
 }
 
-function installationLabel(installation) {
+function installationLabel(installation: PiWebInstallationInfo | undefined): string {
   if (installation === undefined) return "installation unknown";
   if (installation.kind === "pi-package") {
     const scope = installation.scope === undefined ? "" : ` · ${installation.scope}`;
-    const source = installation.source === undefined ? "Pi package" : installation.source;
+    const source = installation.source ?? "Pi package";
     return `${source}${scope}`;
   }
   if (installation.kind === "npm-global") return "global npm package";
@@ -38,8 +43,8 @@ function installationLabel(installation) {
   return "installation unknown";
 }
 
-function renderComponent(html, component) {
-  const status = component.available === false
+function renderComponent(html: HtmlTemplateTag, component: PiWebComponentStatus): TemplateResult {
+  const status = !component.available
     ? "unavailable"
     : component.stale
       ? "restart needed"
@@ -54,17 +59,17 @@ function renderComponent(html, component) {
   `;
 }
 
-function renderCommand(html, label, command) {
+function renderCommand(html: HtmlTemplateTag, label: string, command: string): TemplateResult {
   return html`
     <div class="pi-web-command">
       <span>${label}</span>
       <code>${command}</code>
-      <button @click=${() => { void navigator.clipboard?.writeText(command); }}>Copy</button>
+      <button @click=${() => { void navigator.clipboard.writeText(command); }}>Copy</button>
     </div>
   `;
 }
 
-function renderStatusPanel(html, state) {
+function renderStatusPanel(html: HtmlTemplateTag, state: AppState): TemplateResult {
   const status = statusFor(state);
   if (status === undefined) {
     return html`
@@ -125,7 +130,7 @@ function renderStatusPanel(html, state) {
   `;
 }
 
-export default {
+const plugin: PiWebPlugin = {
   apiVersion: 1,
   name: "Pi Web Status",
   activate: ({ html }) => ({
@@ -146,3 +151,5 @@ export default {
     },
   }),
 };
+
+export default plugin;
