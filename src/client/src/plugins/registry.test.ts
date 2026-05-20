@@ -66,7 +66,9 @@ describe("PluginRegistry", () => {
     const active = registry.getActions(createContext({ selectedWorkspace: testWorkspace() }).context);
 
     expect(inactive.find((action) => action.id === "core:view.files")?.enabled).toBe(false);
+    expect(inactive.find((action) => action.id === "core:view.terminal")?.enabled).toBe(false);
     expect(active.find((action) => action.id === "core:view.files")?.enabled).toBe(true);
+    expect(active.find((action) => action.id === "core:view.terminal")?.enabled).toBe(true);
   });
 
   it("routes refresh current to the active core workspace panel", () => {
@@ -81,6 +83,40 @@ describe("PluginRegistry", () => {
     if (action !== undefined) void action.run();
 
     expect(calls).toEqual(["refreshGit"]);
+  });
+
+  it("exposes terminal navigation as a shortcut-backed action", () => {
+    const registry = new PluginRegistry();
+    registry.register({ id: "core", plugin: corePlugin });
+    const { context, calls } = createContext({ selectedWorkspace: testWorkspace() });
+    const action = registry.getActions(context).find((candidate) => candidate.id === "core:view.terminal");
+
+    expect(action?.shortcut).toBe("mod+4");
+    if (action !== undefined) void action.run();
+
+    expect(calls).toEqual(["selectMainView:core:workspace.terminal"]);
+  });
+
+  it("keeps built-in keyboard shortcuts unique and action-backed", () => {
+    const registry = new PluginRegistry();
+    registry.register({ id: "core", plugin: corePlugin });
+    const shortcuts = registry.getActions(createContext({ selectedWorkspace: testWorkspace() }).context)
+      .filter((action) => action.shortcut !== undefined)
+      .map((action) => [action.id, action.shortcut]);
+
+    expect(shortcuts).toEqual([
+      ["core:actions.show", "mod+k"],
+      ["core:view.chat", "mod+1"],
+      ["core:view.files", "mod+2"],
+      ["core:view.git", "mod+3"],
+      ["core:view.terminal", "mod+4"],
+      ["core:workspace.refresh-files", "mod+shift+f"],
+      ["core:workspace.refresh-git", "mod+shift+g"],
+      ["core:workspace.refresh-current", "mod+shift+r"],
+      ["core:session.start", "mod+enter"],
+      ["core:session.stop", "mod+."],
+    ]);
+    expect(new Set(shortcuts.map(([, shortcut]) => shortcut)).size).toBe(shortcuts.length);
   });
 
   it("collects built-in Pi Web themes from an in-app plugin", () => {

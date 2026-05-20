@@ -71,6 +71,14 @@ export function createCoreActions(): PluginAction[] {
       run: (context) => { context.selectMainView("core:workspace.git"); },
     },
     {
+      id: "view.terminal",
+      title: "Go to Terminal",
+      shortcut: "mod+4",
+      group: "Navigation",
+      enabled: hasWorkspace,
+      run: (context) => { context.selectMainView("core:workspace.terminal"); },
+    },
+    {
       id: "workspace.refresh-files",
       title: "Refresh Files",
       shortcut: "mod+shift+f",

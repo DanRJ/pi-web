@@ -326,7 +326,15 @@ Notes:
 - Other `state` fields may exist at runtime, but they are Pi Web internals and can change quickly.
 - `enabled` is evaluated when the action palette asks for actions.
 - `selectWorkspaceTool()` expects a qualified panel id such as `my-plugin:workspace.info`.
-- `shortcut` is displayed/handled the same way app actions are; choose shortcuts carefully to avoid conflicts.
+
+#### Keyboard shortcuts
+
+- App-level keyboard shortcuts must be attached to actions. Pi Web does not support standalone plugin keyboard commands; contribute an action first, then add a `shortcut` if it needs a keybinding.
+- `shortcut` is the action's default keybinding. It is displayed in the action palette and handled by the global shortcut dispatcher when the action is enabled.
+- Use modified shortcuts such as `mod+shift+p`; plain letter shortcuts are intentionally ignored so normal typing is never captured.
+- Future Pi Web versions may allow users to override or disable action shortcuts by action id, so plugins should treat `shortcut` as a default rather than a guaranteed final binding.
+- Choose shortcuts carefully to avoid conflicts. There is no user-facing shortcut override or conflict resolver yet.
+- Local text input, terminal input, list navigation, and dialog keys such as Enter, Escape, and arrow keys do not need to be plugin actions unless they are app-level commands.
 
 ### Workspace panels
 
