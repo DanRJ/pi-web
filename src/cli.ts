@@ -6,6 +6,7 @@ import { basename, dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { defaultPiWebConfigPath, examplePiWebConfig } from "./config.js";
+import { checkNodePtyDarwinSpawnHelper, formatNodePtyDarwinSpawnHelperCheck } from "./server/diagnostics/nodePtySpawnHelper.js";
 
 const serviceDir = join(homedir(), ".config", "systemd", "user");
 const sessiondServiceName = "pi-web-sessiond.service";
@@ -394,6 +395,7 @@ function printPathSetupAdvice(): void {
 function doctor(): void {
   console.log(`Service shell: ${describeServiceShell()}`);
   const ok = runChecks(doctorChecks());
+  const nodePtySpawnHelperOk = printNodePtyDarwinSpawnHelperCheck();
 
   const linger = isLingerEnabled();
   if (linger === true) {
@@ -410,8 +412,14 @@ function doctor(): void {
     console.log("\nIf a command works in your terminal but fails here, make sure your service shell login files set PATH the same way.");
     console.log("If a bundled entrypoint is not accessible, reinstall or update the PI WEB package.");
     printPathSetupAdvice();
-    process.exitCode = 1;
   }
+  if (!ok || !nodePtySpawnHelperOk) process.exitCode = 1;
+}
+
+function printNodePtyDarwinSpawnHelperCheck(): boolean {
+  const result = formatNodePtyDarwinSpawnHelperCheck(checkNodePtyDarwinSpawnHelper());
+  for (const line of result.lines) console.log(line);
+  return result.ok;
 }
 
 function help(): void {
