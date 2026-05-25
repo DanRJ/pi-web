@@ -98,7 +98,7 @@ export function formatNodePtyDarwinSpawnHelperCheck(check: NodePtyDarwinSpawnHel
         `  PI WEB tracking issue: ${PI_WEB_SPAWN_HELPER_ISSUE_URL}`,
         "  Proposed workaround:",
         `    ${check.fixCommand}`,
-        "  Then restart the pi-web-sessiond/pi-web-server processes.",
+        "  Then run `pi-web doctor` again and retry opening a terminal.",
       ],
     };
   }

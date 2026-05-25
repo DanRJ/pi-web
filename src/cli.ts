@@ -21,6 +21,38 @@ interface InstallOptions {
 type Check = [string, string[]];
 type SupportedShell = "bash" | "zsh" | "fish";
 
+function platformLabel(): string {
+  if (process.platform === "darwin") return "macOS";
+  if (process.platform === "linux") return "Linux";
+  if (process.platform === "win32") return "Windows";
+  return process.platform;
+}
+
+function supportsSystemdUserServices(): boolean {
+  return process.platform === "linux";
+}
+
+function manualRunAdvice(): string {
+  return [
+    "Run PI WEB manually from a checkout:",
+    "  npm run start:sessiond",
+    "  PI_WEB_PORT=8504 npm start",
+    "",
+    "For development in one terminal:",
+    "  npm run dev",
+    "",
+    "For split development, keep sessiond separate and run web/API plus Vite UI separately:",
+    "  npm run dev:sessiond",
+    "  npm run dev:web",
+    "  npm run dev:client",
+  ].join("\n");
+}
+
+function assertSystemdUserServicesSupported(command: string): void {
+  if (supportsSystemdUserServices()) return;
+  throw new Error(`\`${command}\` requires Linux systemd user services and is not supported on ${platformLabel()}.\n\n${manualRunAdvice()}`);
+}
+
 interface ServiceShell {
   name: SupportedShell;
   executable: string;
@@ -45,9 +77,15 @@ function run(command: string, args: string[], options: { check?: boolean } = {})
   return status;
 }
 
+function outputText(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
 function capture(command: string, args: string[]): { status: number; stdout: string; stderr: string } {
   const result = spawnSync(command, args, { encoding: "utf8" });
-  return { status: result.status ?? 1, stdout: result.stdout, stderr: result.stderr };
+  const errorMessage = result.error instanceof Error ? result.error.message : "";
+  const stderr = outputText(result.stderr);
+  return { status: result.status ?? 1, stdout: outputText(result.stdout), stderr: stderr === "" ? errorMessage : stderr };
 }
 
 function hasCommand(command: string): boolean {
@@ -252,6 +290,7 @@ async function writeInitialConfig(options: InstallOptions): Promise<string> {
 }
 
 async function install(args: string[]): Promise<void> {
+  assertSystemdUserServicesSupported("pi-web install");
   const options = parseInstallOptions(args);
 
   const executables = resolveServiceExecutables();
@@ -292,6 +331,7 @@ async function install(args: string[]): Promise<void> {
 }
 
 async function uninstall(): Promise<void> {
+  assertSystemdUserServicesSupported("pi-web uninstall");
   run("systemctl", ["--user", "disable", "--now", webServiceName]);
   run("systemctl", ["--user", "disable", "--now", sessiondServiceName]);
   await rm(join(serviceDir, webServiceName), { force: true });
@@ -301,10 +341,12 @@ async function uninstall(): Promise<void> {
 }
 
 function serviceAction(action: "start" | "stop" | "restart" | "status"): void {
+  assertSystemdUserServicesSupported(`pi-web ${action}`);
   run("systemctl", ["--user", action, sessiondServiceName, webServiceName], { check: action !== "status" });
 }
 
 function logs(): void {
+  assertSystemdUserServicesSupported("pi-web logs");
   run("journalctl", ["--user", "-u", sessiondServiceName, "-u", webServiceName, "-f"]);
 }
 
@@ -348,6 +390,13 @@ function installPreflightChecks(executables: ServiceExecutables = resolveService
 
 function doctorChecks(): Check[] {
   const shell = serviceShellLabel();
+  if (!supportsSystemdUserServices()) {
+    return [
+      [`${shell} can find node >= 22`, serviceShellCommand(nodeVersionCheck())],
+      [`${shell} can find npm`, serviceShellCommand(commandCheck("npm"))],
+      [`${shell} can find pi`, serviceShellCommand(commandCheck("pi"))],
+    ];
+  }
   const executables = resolveServiceExecutables();
   return [
     ...installPreflightChecks(executables),
@@ -393,26 +442,39 @@ function printPathSetupAdvice(): void {
 }
 
 function doctor(): void {
+  console.log(`Platform: ${platformLabel()}`);
   console.log(`Service shell: ${describeServiceShell()}`);
+  if (!supportsSystemdUserServices()) {
+    console.log(`- Linux systemd user service checks skipped on ${platformLabel()}`);
+  }
   const ok = runChecks(doctorChecks());
   const nodePtySpawnHelperOk = printNodePtyDarwinSpawnHelperCheck();
 
-  const linger = isLingerEnabled();
-  if (linger === true) {
-    console.log("✓ systemd user lingering enabled");
-  } else if (linger === false) {
-    console.log("✗ systemd user lingering disabled");
-    console.log(`  Recommended on servers: sudo loginctl enable-linger ${userInfo().username}`);
+  if (supportsSystemdUserServices()) {
+    const linger = isLingerEnabled();
+    if (linger === true) {
+      console.log("✓ systemd user lingering enabled");
+    } else if (linger === false) {
+      console.log("✗ systemd user lingering disabled");
+      console.log(`  Recommended on servers: sudo loginctl enable-linger ${userInfo().username}`);
+    } else {
+      console.log("? systemd user lingering unknown");
+      console.log(`  Recommended on servers: sudo loginctl enable-linger ${userInfo().username}`);
+    }
   } else {
-    console.log("? systemd user lingering unknown");
-    console.log(`  Recommended on servers: sudo loginctl enable-linger ${userInfo().username}`);
+    console.log(`- systemd user lingering skipped on ${platformLabel()}`);
   }
 
   if (!ok) {
     console.log("\nIf a command works in your terminal but fails here, make sure your service shell login files set PATH the same way.");
-    console.log("If a bundled entrypoint is not accessible, reinstall or update the PI WEB package.");
+    if (supportsSystemdUserServices()) console.log("If a bundled entrypoint is not accessible, reinstall or update the PI WEB package.");
     printPathSetupAdvice();
   }
+
+  if (ok && !supportsSystemdUserServices()) {
+    console.log(`\n${manualRunAdvice()}`);
+  }
+
   if (!ok || !nodePtySpawnHelperOk) process.exitCode = 1;
 }
 

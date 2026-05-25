@@ -1,4 +1,4 @@
-import { mkdtemp, rm, truncate, writeFile } from "node:fs/promises";
+import { mkdtemp, realpath, rm, truncate, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import type { FastifyInstance } from "fastify";
@@ -15,7 +15,7 @@ let tempDir: string;
 let projectDir: string;
 
 beforeEach(async () => {
-  tempDir = await mkdtemp(join(tmpdir(), "pi-web-app-test-"));
+  tempDir = await realpath(await mkdtemp(join(tmpdir(), "pi-web-app-test-")));
   projectDir = join(tempDir, "project");
   app = await buildApp({
     projects: new ProjectService(new ProjectStore(join(tempDir, "projects.json"))),
