@@ -182,7 +182,7 @@ Built-in plugins can be managed from **Settings → Plugins** or with the top-le
 
 ### Updates
 
-**Plugin id:** `updates`  
+**Plugin id:** `updates`
 **What it does:** adds a conditional **Updates** workspace tab with PI WEB update, restart, and installed-service guidance.
 
 Updates is enabled by default. To hide it, disable `updates` in **Settings → Plugins** or set:
@@ -197,8 +197,8 @@ Updates is enabled by default. To hide it, disable `updates` in **Settings → P
 
 ### Workspace Tasks
 
-**Plugin id:** `workspace-tasks`  
-**Config file:** `.pi-web/tasks.json`  
+**Plugin id:** `workspace-tasks`
+**Config file:** `.pi-web/tasks.json`
 **What it does:** adds a **Tasks** workspace tab for running configured shell commands in dedicated PI WEB terminals.
 
 Workspace Tasks is enabled by default. To hide it, disable `workspace-tasks` in **Settings → Plugins** or set:
@@ -533,6 +533,8 @@ interface WorkspacePanelContext {
 `icon` is optional and is used in the compact mobile tab bar. Prefer an SVG rendered with the `svg` helper from `PluginActivationContext`; use `currentColor` so PI WEB themes can style it. If `icon` is omitted, mobile tabs fall back to initials from the panel title, or to the full title when initials collide.
 
 `machine`, `workspace`, `files`, `terminal`, and `host` are documented as stable for panel callbacks. Use `terminal.open()` to switch to the built-in terminal panel; pass `{ terminalId }` to deep-link to a specific terminal. Call `host.requestRender()` when async plugin-owned state changes should make PI WEB re-evaluate panel callbacks such as `badge`, `visible`, or `render`.
+
+For compatibility, PI WEB still provides the old `context.openTerminal()` workspace-panel helper at runtime. It is deprecated, intentionally omitted from the public TypeScript declarations, and planned for removal in v2. Existing JavaScript plugins keep working, while typed plugins should migrate to `context.terminal.open()`.
 
 Useful workspace and machine shapes:
 

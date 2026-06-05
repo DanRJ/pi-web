@@ -212,4 +212,3 @@ export interface ThemePairContribution {
   light: LocalContributionId;
   dark: LocalContributionId;
 }
-
