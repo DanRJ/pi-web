@@ -902,8 +902,12 @@ function commandCheck(command: string): string {
   return `command -v ${command}`;
 }
 
-function commandWithVersionCheck(command: string): string {
-  return `${commandCheck(command)} && (${command} --version 2>&1 || true)`;
+export function commandWithVersionCheck(command: string): string {
+  const found = commandCheck(command);
+  if (detectServiceShell().name === "fish") {
+    return `${found} && begin; ${command} --version 2>&1 || true; end`;
+  }
+  return `${found} && (${command} --version 2>&1 || true)`;
 }
 
 function nodeVersionCheck(): string {
@@ -1088,7 +1092,9 @@ async function main(): Promise<void> {
   else throw new Error(`Unknown command: ${command}`);
 }
 
-main().catch((error: unknown) => {
-  console.error(error instanceof Error ? error.message : String(error));
-  process.exit(1);
-});
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  main().catch((error: unknown) => {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exit(1);
+  });
+}
