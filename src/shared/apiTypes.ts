@@ -61,6 +61,13 @@ export interface PiWebUploadsConfig {
   defaultFolder?: string;
 }
 
+export interface PiWebAgentConfig {
+  /** Agent CLI command used for diagnostics and package-managed updates. */
+  command?: string;
+  /** Agent config/state directory containing auth.json, models.json, settings.json, and sessions/. */
+  dir?: string;
+}
+
 export interface PiWebConfigValues {
   host?: string;
   port?: number;
@@ -82,6 +89,8 @@ export interface PiWebConfigValues {
    * while the capability stabilizes. Requires spawnSessions to be enabled.
    */
   subsessions?: boolean;
+  /** Agent runtime state used by the session daemon (Pi by default; OMP compatible). */
+  agent?: PiWebAgentConfig;
 }
 
 export type PiWebPluginScope = "bundled" | "local" | "user" | "project";
@@ -105,6 +114,9 @@ export interface PiWebConfigEnvOverrides {
   allowedHosts: boolean;
   spawnSessions: boolean;
   subsessions: boolean;
+  agentCommand: boolean;
+  agentDir: boolean;
+  agentSessionDir: boolean;
 }
 
 export interface PiWebConfigResponse {
