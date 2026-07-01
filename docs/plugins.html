@@ -145,12 +145,20 @@
                 and does not ask for an install location.
               </p>
               <p>
+                When machine federation is enabled, <strong>Settings → Pi packages</strong> targets the currently selected
+                machine. The panel labels whether changes will run on the local/gateway machine or on a selected remote
+                PI WEB machine. If an older or unavailable remote PI WEB server does not expose package-management routes,
+                PI WEB reports the package management operation as unsupported or unavailable instead of silently falling
+                back to the gateway.
+              </p>
+              <p>
                 Use <strong>Settings → PI WEB plugins</strong> to enable or disable discovered PI WEB browser plugins
-                before the browser imports them. After installing, removing, or updating a Pi package, type
-                <code>/reload</code> in each idle PI WEB session to refresh Pi runtime resources such as extensions,
-                skills, prompt templates, themes, and context/system prompt files as supported by Pi. Reload the browser
-                page separately for newly discovered or changed PI WEB browser plugins. A routine session daemon restart
-                is not required.
+                before the browser imports them. This plugin enablement surface is for the PI WEB gateway you opened; to
+                change remote plugin enablement, open that remote machine directly or edit its PI WEB config on that
+                machine. After installing, removing, or updating a Pi package, type <code>/reload</code> in each idle
+                PI WEB session on the target machine to refresh Pi runtime resources such as extensions, skills, prompt
+                templates, themes, and context/system prompt files as supported by Pi. Reload the browser page separately
+                for newly discovered or changed PI WEB browser plugins. A routine session daemon restart is not required.
               </p>
             </section>
 
@@ -323,7 +331,9 @@ After editing, check the manifest endpoint and browser-console failure cases.</c
               </p>
               <p>
                 This surface is only for PI WEB plugin enablement. To install, remove, or update Pi packages that may
-                provide plugins or other Pi resources, use <strong>Settings → Pi packages</strong>.
+                provide plugins or other Pi resources, use <strong>Settings → Pi packages</strong>. In a federated setup,
+                the Pi packages panel targets the selected machine; the PI WEB plugins panel still controls gateway plugin
+                enablement.
               </p>
               <div class="code-card">
                 <div class="copy-row">
