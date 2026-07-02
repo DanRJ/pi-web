@@ -212,9 +212,7 @@ After editing, check the manifest endpoint and browser-console failure cases.</c
               <p>
                 <strong>Updates</strong> adds a conditional <strong>Updates</strong> workspace tab with PI WEB update,
                 restart, and installed-service guidance. It is built into PI WEB, enabled by default, and uses the
-                selected machine's plugin copy when machine federation is active. Docker runtimes also publish a small
-                manifest hint so federated gateways can keep the remote Updates tab visible and expose Docker commands
-                while gateway status parsing catches up.
+                selected machine's plugin copy when machine federation is active.
               </p>
               <ul>
                 <li>Plugin id: <code>updates</code></li>
@@ -260,11 +258,11 @@ After editing, check the manifest endpoint and browser-console failure cases.</c
   "version": 1,
   "tasks": [
     {
-      "id": "docker.start",
-      "title": "Start Docker",
-      "group": "Docker",
-      "description": "Start the local Docker Compose environment.",
-      "command": "./docker/pi-web-docker --dev start"
+      "id": "app.start",
+      "title": "Start app",
+      "group": "Development",
+      "description": "Start the local development server.",
+      "command": "npm run dev"
     },
     {
       "id": "db.reset",

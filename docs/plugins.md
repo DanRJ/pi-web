@@ -190,7 +190,7 @@ Built-in plugins can be managed from **Settings → Plugins** or with the top-le
 **Plugin id:** `updates`
 **What it does:** adds a conditional **Updates** workspace tab with PI WEB update, restart, and installed-service guidance.
 
-Updates is enabled by default. It declares `machineSpecific: true` so the gateway Updates tab only appears for the local machine; while a remote machine is selected, that remote machine's Updates plugin is used if available. Docker runtimes add a small manifest hint so federated gateways can keep the remote Updates tab visible and expose Docker commands while gateway status parsing catches up. To hide it, disable `updates` in **Settings → Plugins** or set:
+Updates is enabled by default. It declares `machineSpecific: true` so the gateway Updates tab only appears for the local machine; while a remote machine is selected, that remote machine's Updates plugin is used if available. To hide it, disable `updates` in **Settings → Plugins** or set:
 
 ```json
 {
@@ -223,11 +223,11 @@ Configure workspace tasks in `.pi-web/tasks.json`:
   "version": 1,
   "tasks": [
     {
-      "id": "docker.start",
-      "title": "Start Docker",
-      "group": "Docker",
-      "description": "Start the local Docker Compose environment.",
-      "command": "./docker/pi-web-docker --dev start"
+      "id": "app.start",
+      "title": "Start app",
+      "group": "Development",
+      "description": "Start the local development server.",
+      "command": "npm run dev"
     },
     {
       "id": "db.reset",
@@ -743,7 +743,7 @@ Labels should use the same helper through a plugin-owned cache because `items()`
 const envCache = new Map();
 
 function envKey(machine, workspace) {
-  return `${machine.id}:${workspace.id}:docker/development.be-go.local.env`;
+  return `${machine.id}:${workspace.id}:.env.local`;
 }
 
 function loadEnvLabel(context) {
@@ -753,7 +753,7 @@ function loadEnvLabel(context) {
 
   const pending = { status: "loading", label: undefined };
   envCache.set(key, pending);
-  context.files.readFile("docker/development.be-go.local.env")
+  context.files.readFile(".env.local")
     .then((file) => {
       pending.status = "ready";
       pending.label = file.content.match(/^DEV_URL=(.+)$/m)?.[1];

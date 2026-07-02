@@ -8,17 +8,27 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const dockerOneLine = "curl -fsSL https://raw.githubusercontent.com/jmfederico/pi-web/main/docker/install.sh | sh";
 
 describe("pi-web-docker documentation", () => {
-  it("documents the Docker one-line install in the Docker guide, root README, and install page", async () => {
-    const [dockerReadme, rootReadme, installPage] = await Promise.all([
-      readRepoFile("docker/README.md"),
-      readRepoFile("README.md"),
-      readRepoFile("docs/install.html"),
-    ]);
+  it("documents the Docker one-line install in the Docker guide", async () => {
+    const dockerReadme = await readRepoFile("docker/README.md");
 
     expect(dockerReadme).toContain(dockerOneLine);
     expect(dockerReadme).toContain("does not require Node.js or npm on the host");
-    expect(rootReadme).toContain(dockerOneLine);
-    expect(installPage).toContain(dockerOneLine);
+  });
+
+  it("keeps Docker setup documentation scoped to the Docker folder", async () => {
+    const nonDockerDocs = await Promise.all([
+      readRepoFile("README.md"),
+      readRepoFile("docs/install.html"),
+      readRepoFile("docs/plugins.md"),
+      readRepoFile("docs/plugins.html"),
+    ]);
+
+    for (const content of nonDockerDocs) {
+      expect(content).not.toContain(dockerOneLine);
+      expect(content).not.toContain("pi-web-docker");
+      expect(content).not.toContain("Docker beta");
+      expect(content).not.toContain("Docker guide");
+    }
   });
 
   it("keeps the Docker command matrix aligned with the canonical user command surface", async () => {

@@ -92,7 +92,6 @@
             <a href="#requirements">Requirements</a>
             <a href="#user-services">User service install</a>
             <a href="#one-line">One-line install</a>
-            <a href="#docker-beta">Docker beta install</a>
             <a href="#pi-package">Install through Pi</a>
             <a href="#manual-run">WSL / manual run</a>
             <a href="#remote-access">Remote access</a>
@@ -148,27 +147,6 @@
                 </div>
                 <pre id="one-line-install"><code><span class="prompt">$</span> curl -fsSL https://raw.githubusercontent.com/jmfederico/pi-web/main/install.sh | sh</code></pre>
               </div>
-            </section>
-
-            <section id="docker-beta">
-              <h2>Docker beta install</h2>
-              <p>
-                The beta Docker runtime builds a local image and runs split <code>sessiond</code> + <code>web</code> services. It does not require
-                Node.js or npm on the host; it requires a supported Docker/Compose setup and trusted host paths.
-              </p>
-              <div class="code-card">
-                <div class="copy-row">
-                  <strong>Docker one-liner</strong>
-                  <button class="copy-button" data-copy="#docker-one-line-install">Copy</button>
-                </div>
-                <pre id="docker-one-line-install"><code><span class="prompt">$</span> curl -fsSL https://raw.githubusercontent.com/jmfederico/pi-web/main/docker/install.sh | sh</code></pre>
-              </div>
-              <p>
-                After installation, manage it with <code>~/.local/share/pi-web-docker/pi-web-docker status</code>, <code>update</code>,
-                <code>restart</code>, <code>logs</code>, and related commands. Development mode uses
-                <code>./docker/pi-web-docker --dev &lt;command&gt;</code> from a checkout.
-              </p>
-              <p><a href="https://github.com/jmfederico/pi-web/blob/main/docker/README.md">Read the Docker guide</a> for the trust model, supported host profiles, command matrix, root-safety notes, and development mode.</p>
             </section>
 
             <section id="pi-package">

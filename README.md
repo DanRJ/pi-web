@@ -80,14 +80,6 @@ pi install npm:@jmfederico/pi-web
 
 In Pi, use `/pi-web install`, `/pi-web status`, `/pi-web logs`, `/pi-web restart`, `/pi-web doctor`, and `/pi-web version`.
 
-Docker beta runtime/server install is available when you want a local image and do not want Node.js or npm on the host:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/jmfederico/pi-web/main/docker/install.sh | sh
-```
-
-See the [Docker guide](https://github.com/jmfederico/pi-web/blob/main/docker/README.md) for trust model, supported host profiles, commands, and development mode.
-
 ## Core model
 
 PI WEB organizes work like this:
