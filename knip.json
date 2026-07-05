@@ -1,20 +1,37 @@
 {
   "$schema": "https://unpkg.com/knip@5/schema.json",
-  "entry": [
-    "src/cli.ts",
-    "src/plugin-api.ts",
-    "src/plugin-api/unstable.ts",
-    "extensions/pi-web.ts",
-    "pi-web-plugins/**/pi-web-plugin.ts",
-    "scripts/*.mjs",
-    "packages/*/src/index.ts",
-    "packages/*/src/cli.ts"
-  ],
-  "project": [
-    "src/**/*.ts",
-    "extensions/**/*.ts",
-    "pi-web-plugins/**/*.ts",
-    "packages/**/*.ts"
-  ],
+  "workspaces": {
+    ".": {
+      "entry": [
+        "src/cli.ts",
+        "src/plugin-api.ts",
+        "src/plugin-api/unstable.ts",
+        "extensions/pi-web.ts",
+        "pi-web-plugins/**/pi-web-plugin.ts",
+        "scripts/*.mjs"
+      ],
+      "project": [
+        "src/**/*.ts",
+        "extensions/**/*.ts",
+        "pi-web-plugins/**/*.ts"
+      ],
+      "ignoreExportsUsedInFile": true
+    },
+    "packages/tunnel-connector": {
+      "entry": ["src/**/*.test.ts"],
+      "project": ["src/**/*.ts"],
+      "paths": {
+        "@jmfederico/pi-web-tunnel-frp-engine": [
+          "../tunnel-frp-engine/src/index.ts"
+        ]
+      },
+      "ignoreExportsUsedInFile": true
+    },
+    "packages/tunnel-frp-engine": {
+      "entry": ["src/**/*.test.ts"],
+      "project": ["src/**/*.ts"],
+      "ignoreExportsUsedInFile": true
+    }
+  },
   "ignoreExportsUsedInFile": true
 }

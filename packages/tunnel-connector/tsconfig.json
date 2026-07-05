@@ -1,0 +1,13 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "baseUrl": "../..",
+    "paths": {
+      "@jmfederico/pi-web-tunnel-frp-engine": [
+        "packages/tunnel-frp-engine/src/index.ts"
+      ]
+    }
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["dist"]
+}
