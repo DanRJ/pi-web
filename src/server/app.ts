@@ -28,6 +28,8 @@ import { MachineService } from "./machines/machineService.js";
 import { registerMachineRoutes } from "./machines/machineRoutes.js";
 import { registerMachineProxyRoutes } from "./machines/machineProxyRoutes.js";
 import { proxyMachinePluginAsset, registerMachinePluginProxyRoutes } from "./machines/machinePluginProxyRoutes.js";
+import { registerSafeTunnelRoutes } from "./safeTunnel/safeTunnelRoutes.js";
+import type { SafeTunnelBridgeService } from "./safeTunnel/safeTunnelBridgeService.js";
 import type { Project, Workspace } from "./types.js";
 
 export interface AppDependencies {
@@ -38,6 +40,7 @@ export interface AppDependencies {
   piWebPlugins?: Pick<PiWebPluginService, "manifest" | "plugins" | "readAsset">;
   piPackages?: PiPackageService;
   config?: PiWebConfigService;
+  safeTunnel?: SafeTunnelBridgeService;
   clientDist?: string | false;
   logger?: FastifyServerOptions["logger"];
   /** Maximum accepted HTTP request body size in bytes. */
@@ -128,6 +131,7 @@ export async function buildApp(deps: AppDependencies = {}): Promise<FastifyInsta
   const piPackages = deps.piPackages ?? createDefaultPiPackageService();
   const configService = deps.config ?? createFilePiWebConfigService();
   const sessionDaemon = deps.sessionDaemon ?? new SessionDaemonClient();
+  const safeTunnel = deps.safeTunnel;
   const piWebStatusCache = createPiWebStatusCache(() => getPiWebStatus(sessionDaemon), {
     onError: (error) => { app.log.warn({ err: error }, "failed to refresh PI WEB status cache"); },
   });
@@ -152,6 +156,7 @@ export async function buildApp(deps: AppDependencies = {}): Promise<FastifyInsta
   app.get("/api/machines/local/plugins", async () => piWebPlugins.plugins());
   registerPiPackageRoutes(app, piPackages);
   registerPiPackageRoutes(app, piPackages, "/api/machines/local");
+  registerSafeTunnelRoutes(app, safeTunnel);
   registerConfigRoutes(app, configService);
   registerLocalMachineConfigRoutes(app, configService);
 

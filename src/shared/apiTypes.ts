@@ -139,6 +139,96 @@ export interface PiPackageMutationResponse extends PiPackagesResponse {
   removed?: boolean;
 }
 
+export type SafeTunnelConnectorState = "available" | "unavailable";
+export type SafeTunnelConfigState = "missing" | "unregistered" | "registered" | "invalid";
+export type SafeTunnelRuntimeState = "stopped" | "running" | "stale" | "unknown";
+export type SafeTunnelOperationKind = "login";
+export type SafeTunnelOperationStatus = "running" | "succeeded" | "failed";
+
+export interface SafeTunnelConnectorStatus {
+  command: string;
+  state: SafeTunnelConnectorState;
+  error?: string;
+}
+
+export interface SafeTunnelConfigStatus {
+  path: string;
+  exists: boolean;
+  state: SafeTunnelConfigState;
+  localPiWebUrl?: string;
+  frpcPathConfigured?: boolean;
+  machine?: {
+    controlApiBaseUrl: string;
+    machineId: string;
+  };
+  error?: string;
+}
+
+export interface SafeTunnelRuntimeStatus {
+  pidFilePath: string;
+  state: SafeTunnelRuntimeState;
+  pid?: number;
+  error?: string;
+}
+
+export interface SafeTunnelCommandOutput {
+  exitCode: number | null;
+  stdout: string;
+  stderr: string;
+  signal?: string;
+}
+
+export interface SafeTunnelOperationResponse {
+  id: string;
+  kind: SafeTunnelOperationKind;
+  status: SafeTunnelOperationStatus;
+  startedAt: string;
+  stdout: string;
+  stderr: string;
+  error?: string;
+  exitCode?: number | null;
+  finishedAt?: string;
+  publicUrl?: string;
+  signal?: string;
+  userCode?: string;
+  verificationUriComplete?: string;
+}
+
+export interface SafeTunnelStatusResponse {
+  connector: SafeTunnelConnectorStatus;
+  config: SafeTunnelConfigStatus;
+  runtime: SafeTunnelRuntimeStatus;
+  activeOperation?: SafeTunnelOperationResponse;
+}
+
+export interface SafeTunnelLoginRequest {
+  controlApiUrl: string;
+  machineName: string;
+  machineSlug: string;
+  localPiWebUrl?: string;
+  frpcPath?: string;
+}
+
+export interface SafeTunnelLoginResponse {
+  operation: SafeTunnelOperationResponse;
+  status: SafeTunnelStatusResponse;
+}
+
+export interface SafeTunnelStartRequest {
+  frpcPath?: string;
+}
+
+export interface SafeTunnelStartResponse {
+  accepted: true;
+  connectorProcessId?: number;
+  status: SafeTunnelStatusResponse;
+}
+
+export interface SafeTunnelStopResponse {
+  command: SafeTunnelCommandOutput;
+  status: SafeTunnelStatusResponse;
+}
+
 export interface PiWebConfigEnvOverrides {
   host: boolean;
   port: boolean;

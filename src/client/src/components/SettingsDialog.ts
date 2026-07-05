@@ -7,6 +7,7 @@ import "./settings/SettingsGeneralPanel";
 import "./settings/SettingsSessiondPanel";
 import "./settings/SettingsPackagesPanel";
 import "./settings/SettingsPluginsPanel";
+import "./settings/SettingsSafeTunnelPanel";
 import "./settings/SettingsShortcutsPanel";
 import { friendlyPiPackageErrorMessage, isPiPackageManagementUnsupported, piPackageManagementSupport, piPackageManagementSupportKey, piPackageMutationFollowUpMessage, piPackageTargetLabel, shouldRefreshGatewayPluginsAfterPiPackageMutation, type PiPackageManagementSupport, type PiPackageOperationState, type PiPackageTargetContext } from "./settings/piPackageSettings";
 import { loadGatewaySettingsData, loadPiPackagesData } from "./settings/settingsDataLoading";
@@ -116,6 +117,7 @@ export class SettingsDialog extends LitElement {
               ${this.renderNavButton("sessiond", "Session daemon", "Selected machine")}
               ${this.renderNavButton("packages", "Pi packages", "Selected machine")}
               ${this.renderNavButton("plugins", "PI WEB plugins", "Selected machine")}
+              ${this.renderNavButton("safe-tunnel", "Safe Tunnel", "Local connector")}
               ${this.renderNavButton("shortcuts", "Keyboard", "Gateway shortcuts")}
             </nav>
             <main class="settings-content">
@@ -188,6 +190,7 @@ export class SettingsDialog extends LitElement {
         ></settings-plugins-panel>
       `;
     }
+    if (this.section === "safe-tunnel") return html`<settings-safe-tunnel-panel></settings-safe-tunnel-panel>`;
     return html`
       <settings-general-panel
         .configResponse=${this.configResponse}

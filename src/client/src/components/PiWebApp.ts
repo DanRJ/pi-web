@@ -1383,7 +1383,19 @@ export class PiWebApp extends LitElement {
   }
 
   private getDefaultActions(): AppAction[] {
-    return [...this.plugins.getActions(this.createPluginRuntimeContext()), ...this.sessionActions(), ...this.navigationFocusActions(), ...this.panelLayoutActions()];
+    return [...this.plugins.getActions(this.createPluginRuntimeContext()), ...this.safeTunnelActions(), ...this.sessionActions(), ...this.navigationFocusActions(), ...this.panelLayoutActions()];
+  }
+
+  private safeTunnelActions(): AppAction[] {
+    return [
+      {
+        id: "app.safe-tunnel.expose-safely",
+        title: "Expose Safely",
+        description: "Register, start, stop, and copy the PI WEB Safe Tunnel URL",
+        group: "Safe Tunnels",
+        run: () => { this.openSettings("safe-tunnel"); },
+      },
+    ];
   }
 
   private sessionActions(): AppAction[] {

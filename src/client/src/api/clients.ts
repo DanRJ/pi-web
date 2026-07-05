@@ -1,4 +1,4 @@
-import type { DeleteWorkspaceFileResponse, FileSuggestion, MoveWorkspaceFileOptions, PiPackageInstallRequest, PiPackageRemoveRequest, PiPackageScope, PiPackageUpdateRequest, PiWebConfigValues, PromptAttachment, RunTerminalCommandInput, SessionBulkMutationRef, SessionCleanupRequest, SessionRef, TerminalCommandRun, TerminalCommandRunFilter, WriteWorkspaceFileOptions } from "../../../shared/apiTypes";
+import type { DeleteWorkspaceFileResponse, FileSuggestion, MoveWorkspaceFileOptions, PiPackageInstallRequest, PiPackageRemoveRequest, PiPackageScope, PiPackageUpdateRequest, PiWebConfigValues, PromptAttachment, RunTerminalCommandInput, SafeTunnelLoginRequest, SafeTunnelStartRequest, SessionBulkMutationRef, SessionCleanupRequest, SessionRef, TerminalCommandRun, TerminalCommandRunFilter, WriteWorkspaceFileOptions } from "../../../shared/apiTypes";
 import { request } from "./http";
 import {
   arrayOf,
@@ -31,6 +31,11 @@ import {
   parsePiWebRuntimeResponse,
   parsePiWebStatusResponse,
   parseProject,
+  parseSafeTunnelLoginResponse,
+  parseSafeTunnelOperationResponse,
+  parseSafeTunnelStartResponse,
+  parseSafeTunnelStatusResponse,
+  parseSafeTunnelStopResponse,
   parseReloaded,
   parseRestored,
   parseSavedAttachments,
@@ -148,6 +153,14 @@ export const piPackagesApi = {
     const body: PiPackageUpdateRequest | undefined = source === undefined ? undefined : { source };
     return request(piPackageUrl("update", machineId), parsePiPackageMutationResponse, { method: "POST", ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
   },
+};
+
+export const safeTunnelApi = {
+  status: () => request("/api/safe-tunnel/status", parseSafeTunnelStatusResponse),
+  login: (input: SafeTunnelLoginRequest) => request("/api/safe-tunnel/login", parseSafeTunnelLoginResponse, { method: "POST", body: JSON.stringify(input) }),
+  operation: (operationId: string) => request(`/api/safe-tunnel/operations/${encodeURIComponent(operationId)}`, parseSafeTunnelOperationResponse),
+  start: (input: SafeTunnelStartRequest = {}) => request("/api/safe-tunnel/start", parseSafeTunnelStartResponse, { method: "POST", body: JSON.stringify(input) }),
+  stop: () => request("/api/safe-tunnel/stop", parseSafeTunnelStopResponse, { method: "POST" }),
 };
 
 export const activityApi = {

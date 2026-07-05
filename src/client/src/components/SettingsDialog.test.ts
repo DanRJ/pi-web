@@ -146,6 +146,17 @@ describe("settings-dialog session daemon machine targeting", () => {
   });
 });
 
+describe("settings-dialog Safe Tunnel section", () => {
+  it("renders the Safe Tunnel settings panel", () => {
+    const dialog = new SettingsDialog();
+    dialog.section = "safe-tunnel";
+
+    const strings = collectTemplateStrings(dialog.render()).join("");
+
+    expect(strings).toContain("<settings-safe-tunnel-panel");
+  });
+});
+
 describe("settings-dialog general settings machine targeting", () => {
   it("renders the active settings panel without the old global scope note", () => {
     const dialog = new SettingsDialog();

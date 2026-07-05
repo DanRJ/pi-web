@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { PI_WEB_CAPABILITIES } from "../../../shared/capabilities";
 import type { PiWebConfigValues, TerminalCommandRun, Workspace } from "../../../shared/apiTypes";
-import { configApi, filesApi, machinesApi, piPackagesApi, piWebApi, pluginsApi, sessionsApi, terminalsApi, workspacesApi } from "./clients";
+import { configApi, filesApi, machinesApi, piPackagesApi, piWebApi, pluginsApi, safeTunnelApi, sessionsApi, terminalsApi, workspacesApi } from "./clients";
 
 const workspace: Workspace = {
   id: "w/1",
@@ -99,6 +99,38 @@ describe("settings config and plugin APIs", () => {
     ]);
     expect(fetchCall(fetchMock, 1)[1]?.method).toBe("PUT");
     expect(JSON.parse(requestBody(fetchCall(fetchMock, 1)[1]))).toEqual({ config: { spawnSessions: true } });
+  });
+});
+
+describe("Safe Tunnel API", () => {
+  it("calls the local Safe Tunnel bridge routes", async () => {
+    const status = safeTunnelStatusResponse();
+    const operation = safeTunnelOperationResponse();
+    const fetchMock = stubSequenceFetch([
+      jsonResponse(status),
+      jsonResponse({ operation, status: { ...status, activeOperation: operation } }),
+      jsonResponse(operation),
+      jsonResponse({ accepted: true, connectorProcessId: 321, status }),
+      jsonResponse({ command: { exitCode: 0, stdout: "Stopped\n", stderr: "" }, status }),
+    ]);
+
+    await expect(safeTunnelApi.status()).resolves.toEqual(status);
+    await expect(safeTunnelApi.login({ controlApiUrl: "https://control.example.test", machineName: "Dev Box", machineSlug: "dev-box" })).resolves.toEqual({ operation, status: { ...status, activeOperation: operation } });
+    await expect(safeTunnelApi.operation("op 1")).resolves.toEqual(operation);
+    await expect(safeTunnelApi.start({ frpcPath: "/opt/frpc" })).resolves.toEqual({ accepted: true, connectorProcessId: 321, status });
+    await expect(safeTunnelApi.stop()).resolves.toEqual({ command: { exitCode: 0, stdout: "Stopped\n", stderr: "" }, status });
+
+    expect(fetchMock.mock.calls.map((call) => call[0])).toEqual([
+      "/api/safe-tunnel/status",
+      "/api/safe-tunnel/login",
+      "/api/safe-tunnel/operations/op%201",
+      "/api/safe-tunnel/start",
+      "/api/safe-tunnel/stop",
+    ]);
+    expect(fetchCall(fetchMock, 1)[1]?.method).toBe("POST");
+    expect(JSON.parse(requestBody(fetchCall(fetchMock, 1)[1]))).toEqual({ controlApiUrl: "https://control.example.test", machineName: "Dev Box", machineSlug: "dev-box" });
+    expect(JSON.parse(requestBody(fetchCall(fetchMock, 3)[1]))).toEqual({ frpcPath: "/opt/frpc" });
+    expect(fetchCall(fetchMock, 4)[1]?.method).toBe("POST");
   });
 });
 
@@ -412,6 +444,34 @@ function piWebConfigResponse(config: PiWebConfigValues) {
 
 function piWebPluginsResponse() {
   return { plugins: [{ id: "info", module: "/pi-web-plugins/info/plugin.js", source: "test", scope: "local", machineSpecific: false, enabled: true }] };
+}
+
+function safeTunnelStatusResponse() {
+  return {
+    connector: { command: "pi-web-tunnel", state: "available" },
+    config: {
+      path: "/home/test/.config/pi-web-tunnel/config.json",
+      exists: true,
+      state: "registered",
+      localPiWebUrl: "http://127.0.0.1:8504",
+      frpcPathConfigured: true,
+      machine: { controlApiBaseUrl: "https://control.example.test", machineId: "machine_1" },
+    },
+    runtime: { pidFilePath: "/home/test/.config/pi-web-tunnel/connector.pid", state: "running", pid: 123 },
+  };
+}
+
+function safeTunnelOperationResponse() {
+  return {
+    id: "op 1",
+    kind: "login",
+    status: "running",
+    startedAt: "2026-07-03T00:00:00.000Z",
+    stdout: "Open this URL to authorize the connector:\nhttps://control.example.test/device?userCode=ABCD-EFGH\nUser code: ABCD-EFGH\n",
+    stderr: "",
+    userCode: "ABCD-EFGH",
+    verificationUriComplete: "https://control.example.test/device?userCode=ABCD-EFGH",
+  };
 }
 
 function jsonResponse(value: unknown): Response {

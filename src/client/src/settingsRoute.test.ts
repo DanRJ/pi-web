@@ -40,6 +40,8 @@ describe("settings route helpers", () => {
     expect(parseSettingsSection("packages")).toBe("packages");
     expect(parseSettingsSection("pi-packages")).toBe("packages");
     expect(parseSettingsSection("plugins")).toBe("plugins");
+    expect(parseSettingsSection("safe-tunnel")).toBe("safe-tunnel");
+    expect(parseSettingsSection("safeTunnel")).toBe("safe-tunnel");
     expect(parseSettingsSection("shortcuts")).toBe("shortcuts");
     expect(parseSettingsSection("keyboard")).toBe("shortcuts");
     expect(parseSettingsSection("unknown")).toBeUndefined();

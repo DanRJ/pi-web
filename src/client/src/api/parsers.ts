@@ -1,4 +1,4 @@
-import type { ArchiveSessionsResponse, AuthProviderOption, AuthProviderStatus, AuthProvidersResponse, AuthStatusSource, AuthType, CommandOption, CommandResult, DeleteWorkspaceFileResponse, FileContentResponse, FileSuggestion, FileTreeEntry, FileTreeResponse, GitDiffResponse, GitFileState, GitStatusFile, GitStatusResponse, Machine, MachineHealth, MachineKind, MachineRuntime, MachineStatus, MessagePage, ModelSelectionResponse, MoveWorkspaceFileResponse, OAuthFlowState, PiWebCapability, PiWebComponentStatus, PiWebConfigEnvOverrides, PiWebConfigResponse, PiWebConfigValues, PiWebInstallationInfo, PiWebPluginConfigMap, PiWebPluginInfo, PiWebPluginsResponse, PiWebPluginScope, PiWebReleaseStatus, PiWebRuntimeComponent, PiWebRuntimeResponse, PiWebServiceComponent, PiWebShortcutConfig, PiWebStatusMessage, PiWebStatusResponse, PiWebStatusSeverity, Project, QueuedSessionMessage, SavedPromptAttachment, SessionBulkArchiveResponse, SessionBulkDeleteArchivedResponse, SessionBulkFailure, SessionCleanupExecuteResponse, SessionCleanupPreviewResponse, SessionCleanupProjectSummary, SessionCleanupThresholds, SessionCleanupTotals, SessionInfo, SessionModel, SessionStatus, SlashCommand, TerminalCommandRun, TerminalCommandRunStatus, TerminalInfo, ThinkingLevelsResponse, WriteWorkspaceFileResponse, Workspace, WorkspaceActivity, WorkspaceActivityResponse } from "../../../shared/apiTypes";
+import type { ArchiveSessionsResponse, AuthProviderOption, AuthProviderStatus, AuthProvidersResponse, AuthStatusSource, AuthType, CommandOption, CommandResult, DeleteWorkspaceFileResponse, FileContentResponse, FileSuggestion, FileTreeEntry, FileTreeResponse, GitDiffResponse, GitFileState, GitStatusFile, GitStatusResponse, Machine, MachineHealth, MachineKind, MachineRuntime, MachineStatus, MessagePage, ModelSelectionResponse, MoveWorkspaceFileResponse, OAuthFlowState, PiWebCapability, PiWebComponentStatus, PiWebConfigEnvOverrides, PiWebConfigResponse, PiWebConfigValues, PiWebInstallationInfo, PiWebPluginConfigMap, PiWebPluginInfo, PiWebPluginsResponse, PiWebPluginScope, PiWebReleaseStatus, PiWebRuntimeComponent, PiWebRuntimeResponse, PiWebServiceComponent, PiWebShortcutConfig, PiWebStatusMessage, PiWebStatusResponse, PiWebStatusSeverity, Project, QueuedSessionMessage, SafeTunnelCommandOutput, SafeTunnelConfigState, SafeTunnelConfigStatus, SafeTunnelConnectorState, SafeTunnelConnectorStatus, SafeTunnelLoginResponse, SafeTunnelOperationResponse, SafeTunnelOperationStatus, SafeTunnelRuntimeState, SafeTunnelRuntimeStatus, SafeTunnelStartResponse, SafeTunnelStatusResponse, SafeTunnelStopResponse, SavedPromptAttachment, SessionBulkArchiveResponse, SessionBulkDeleteArchivedResponse, SessionBulkFailure, SessionCleanupExecuteResponse, SessionCleanupPreviewResponse, SessionCleanupProjectSummary, SessionCleanupThresholds, SessionCleanupTotals, SessionInfo, SessionModel, SessionStatus, SlashCommand, TerminalCommandRun, TerminalCommandRunStatus, TerminalInfo, ThinkingLevelsResponse, WriteWorkspaceFileResponse, Workspace, WorkspaceActivity, WorkspaceActivityResponse } from "../../../shared/apiTypes";
 import type { PiPackageInfo, PiPackageMutationAction, PiPackageMutationResponse, PiPackageScope, PiPackagesResponse } from "../../../shared/apiTypes";
 import { parseKnownPiWebCapabilities } from "../../../shared/capabilities";
 
@@ -110,6 +110,158 @@ export function parseMachineRuntime(value: unknown): MachineRuntime {
     ...(record["capabilities"] === undefined ? {} : { capabilities: parsePiWebCapabilities(record["capabilities"]) }),
     ...(error === undefined ? {} : { error }),
   };
+}
+
+export function parseSafeTunnelStatusResponse(value: unknown): SafeTunnelStatusResponse {
+  const record = requireRecord(value);
+  const activeOperation = record["activeOperation"] === undefined ? undefined : parseSafeTunnelOperationResponse(record["activeOperation"]);
+  return {
+    connector: parseSafeTunnelConnectorStatus(record["connector"]),
+    config: parseSafeTunnelConfigStatus(record["config"]),
+    runtime: parseSafeTunnelRuntimeStatus(record["runtime"]),
+    ...(activeOperation === undefined ? {} : { activeOperation }),
+  };
+}
+
+export function parseSafeTunnelLoginResponse(value: unknown): SafeTunnelLoginResponse {
+  const record = requireRecord(value);
+  return {
+    operation: parseSafeTunnelOperationResponse(record["operation"]),
+    status: parseSafeTunnelStatusResponse(record["status"]),
+  };
+}
+
+export function parseSafeTunnelOperationResponse(value: unknown): SafeTunnelOperationResponse {
+  const record = requireRecord(value);
+  const exitCode = optionalNumberOrNull(record, "exitCode");
+  const finishedAt = optionalString(record, "finishedAt");
+  const publicUrl = optionalString(record, "publicUrl");
+  const signal = optionalString(record, "signal");
+  const userCode = optionalString(record, "userCode");
+  const verificationUriComplete = optionalString(record, "verificationUriComplete");
+  const error = optionalString(record, "error");
+  return {
+    id: requireString(record, "id"),
+    kind: requireSafeTunnelOperationKind(record, "kind"),
+    status: requireSafeTunnelOperationStatus(record, "status"),
+    startedAt: requireString(record, "startedAt"),
+    stdout: requireString(record, "stdout"),
+    stderr: requireString(record, "stderr"),
+    ...(error === undefined ? {} : { error }),
+    ...(exitCode === undefined ? {} : { exitCode }),
+    ...(finishedAt === undefined ? {} : { finishedAt }),
+    ...(publicUrl === undefined ? {} : { publicUrl }),
+    ...(signal === undefined ? {} : { signal }),
+    ...(userCode === undefined ? {} : { userCode }),
+    ...(verificationUriComplete === undefined ? {} : { verificationUriComplete }),
+  };
+}
+
+export function parseSafeTunnelStartResponse(value: unknown): SafeTunnelStartResponse {
+  const record = requireRecord(value);
+  const connectorProcessId = optionalNumber(record, "connectorProcessId");
+  if (record["accepted"] !== true) throw new Error("Expected Safe Tunnel start accepted response");
+  return {
+    accepted: true,
+    ...(connectorProcessId === undefined ? {} : { connectorProcessId }),
+    status: parseSafeTunnelStatusResponse(record["status"]),
+  };
+}
+
+export function parseSafeTunnelStopResponse(value: unknown): SafeTunnelStopResponse {
+  const record = requireRecord(value);
+  return {
+    command: parseSafeTunnelCommandOutput(record["command"]),
+    status: parseSafeTunnelStatusResponse(record["status"]),
+  };
+}
+
+function parseSafeTunnelConnectorStatus(value: unknown): SafeTunnelConnectorStatus {
+  const record = requireRecord(value);
+  const error = optionalString(record, "error");
+  return {
+    command: requireString(record, "command"),
+    state: requireSafeTunnelConnectorState(record, "state"),
+    ...(error === undefined ? {} : { error }),
+  };
+}
+
+function parseSafeTunnelConfigStatus(value: unknown): SafeTunnelConfigStatus {
+  const record = requireRecord(value);
+  const localPiWebUrl = optionalString(record, "localPiWebUrl");
+  const frpcPathConfigured = parseOptionalBoolean(record["frpcPathConfigured"], "frpcPathConfigured");
+  const machine = record["machine"] === undefined ? undefined : parseSafeTunnelConfigMachine(record["machine"]);
+  const error = optionalString(record, "error");
+  return {
+    path: requireString(record, "path"),
+    exists: requireBoolean(record, "exists"),
+    state: requireSafeTunnelConfigState(record, "state"),
+    ...(localPiWebUrl === undefined ? {} : { localPiWebUrl }),
+    ...(frpcPathConfigured === undefined ? {} : { frpcPathConfigured }),
+    ...(machine === undefined ? {} : { machine }),
+    ...(error === undefined ? {} : { error }),
+  };
+}
+
+function parseSafeTunnelConfigMachine(value: unknown): NonNullable<SafeTunnelConfigStatus["machine"]> {
+  const record = requireRecord(value);
+  return {
+    controlApiBaseUrl: requireString(record, "controlApiBaseUrl"),
+    machineId: requireString(record, "machineId"),
+  };
+}
+
+function parseSafeTunnelRuntimeStatus(value: unknown): SafeTunnelRuntimeStatus {
+  const record = requireRecord(value);
+  const pid = optionalNumber(record, "pid");
+  const error = optionalString(record, "error");
+  return {
+    pidFilePath: requireString(record, "pidFilePath"),
+    state: requireSafeTunnelRuntimeState(record, "state"),
+    ...(pid === undefined ? {} : { pid }),
+    ...(error === undefined ? {} : { error }),
+  };
+}
+
+function parseSafeTunnelCommandOutput(value: unknown): SafeTunnelCommandOutput {
+  const record = requireRecord(value);
+  const signal = optionalString(record, "signal");
+  return {
+    exitCode: numberOrNull(record, "exitCode"),
+    stdout: requireString(record, "stdout"),
+    stderr: requireString(record, "stderr"),
+    ...(signal === undefined ? {} : { signal }),
+  };
+}
+
+function requireSafeTunnelConnectorState(record: Record<string, unknown>, key: string): SafeTunnelConnectorState {
+  const value = requireString(record, key);
+  if (value !== "available" && value !== "unavailable") throw new Error(`Expected Safe Tunnel connector state field: ${key}`);
+  return value;
+}
+
+function requireSafeTunnelConfigState(record: Record<string, unknown>, key: string): SafeTunnelConfigState {
+  const value = requireString(record, key);
+  if (value !== "missing" && value !== "unregistered" && value !== "registered" && value !== "invalid") throw new Error(`Expected Safe Tunnel config state field: ${key}`);
+  return value;
+}
+
+function requireSafeTunnelRuntimeState(record: Record<string, unknown>, key: string): SafeTunnelRuntimeState {
+  const value = requireString(record, key);
+  if (value !== "stopped" && value !== "running" && value !== "stale" && value !== "unknown") throw new Error(`Expected Safe Tunnel runtime state field: ${key}`);
+  return value;
+}
+
+function requireSafeTunnelOperationKind(record: Record<string, unknown>, key: string): "login" {
+  const value = requireString(record, key);
+  if (value !== "login") throw new Error(`Expected Safe Tunnel operation kind field: ${key}`);
+  return value;
+}
+
+function requireSafeTunnelOperationStatus(record: Record<string, unknown>, key: string): SafeTunnelOperationStatus {
+  const value = requireString(record, key);
+  if (value !== "running" && value !== "succeeded" && value !== "failed") throw new Error(`Expected Safe Tunnel operation status field: ${key}`);
+  return value;
 }
 
 function requireMachineKind(record: Record<string, unknown>, key: string): MachineKind {
@@ -927,6 +1079,14 @@ function optionalNumber(record: Record<string, unknown>, key: string): number | 
   const value = record[key];
   if (value === undefined) return undefined;
   if (typeof value !== "number") throw new Error(`Expected optional number field: ${key}`);
+  return value;
+}
+
+function optionalNumberOrNull(record: Record<string, unknown>, key: string): number | null | undefined {
+  const value = record[key];
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  if (typeof value !== "number") throw new Error(`Expected optional number|null field: ${key}`);
   return value;
 }
 

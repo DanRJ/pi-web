@@ -93,6 +93,8 @@ Instead of tying agent work to your laptop session, run PI WEB on a machine that
 
 Use a private network, SSH tunnel, trusted reverse proxy, or federated PI WEB machine setup when accessing it remotely.
 
+Local builds also include a first-party **Expose Safely** action and **Settings → Safe Tunnel** panel backed by server-side bridge endpoints under `/api/safe-tunnel/*`. The UI calls the separate `pi-web-tunnel` connector for status, login, start, and stop actions while keeping connector credentials in the connector's private config file. Set `PI_WEB_SAFE_TUNNEL_CONNECTOR_COMMAND` if the connector binary is not on `PATH`.
+
 Read more: [Remote-first development](https://pi-web.dev/remote-first)
 
 ## Machines and fleets

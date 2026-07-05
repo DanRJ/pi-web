@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { PI_WEB_CAPABILITIES } from "../../../shared/capabilities";
-import { parseCommandResult, parseFileContentResponse, parseFileSuggestion, parseGitStatusResponse, parseMessagePage, parsePiPackageMutationResponse, parsePiPackagesResponse, parsePiWebConfigResponse, parsePiWebPluginsResponse, parsePiWebRuntimeResponse, parsePiWebStatusResponse, parseSessionBulkArchiveResponse, parseSessionBulkDeleteArchivedResponse, parseSessionCleanupExecuteResponse, parseSessionCleanupPreviewResponse, parseSessionInfo, parseSessionStatus, parseSlashCommand, parseTerminalCommandRun, parseTerminalInfo, parseWorkspace, parseWorkspaceActivityResponse } from "./parsers";
+import { parseCommandResult, parseFileContentResponse, parseFileSuggestion, parseGitStatusResponse, parseMessagePage, parsePiPackageMutationResponse, parsePiPackagesResponse, parsePiWebConfigResponse, parsePiWebPluginsResponse, parsePiWebRuntimeResponse, parsePiWebStatusResponse, parseSafeTunnelLoginResponse, parseSafeTunnelOperationResponse, parseSafeTunnelStartResponse, parseSafeTunnelStatusResponse, parseSafeTunnelStopResponse, parseSessionBulkArchiveResponse, parseSessionBulkDeleteArchivedResponse, parseSessionCleanupExecuteResponse, parseSessionCleanupPreviewResponse, parseSessionInfo, parseSessionStatus, parseSlashCommand, parseTerminalCommandRun, parseTerminalInfo, parseWorkspace, parseWorkspaceActivityResponse } from "./parsers";
 
 describe("API parsers", () => {
   it("parses PI WEB config responses", () => {
@@ -29,6 +29,44 @@ describe("API parsers", () => {
       },
       capabilities: [PI_WEB_CAPABILITIES.sessionsDeleteArchived, PI_WEB_CAPABILITIES.piPackagesManage, "future.capability"],
     })).toMatchObject({ capabilities: [PI_WEB_CAPABILITIES.sessionsDeleteArchived, PI_WEB_CAPABILITIES.piPackagesManage] });
+  });
+
+  it("parses Safe Tunnel bridge responses", () => {
+    const operation = {
+      id: "op_1",
+      kind: "login",
+      status: "running",
+      startedAt: "2026-07-03T00:00:00.000Z",
+      stdout: "Open this URL to authorize the connector:\nhttps://control.example.test/device?userCode=ABCD-EFGH\nUser code: ABCD-EFGH\n",
+      stderr: "",
+      userCode: "ABCD-EFGH",
+      verificationUriComplete: "https://control.example.test/device?userCode=ABCD-EFGH",
+    };
+    const status = {
+      connector: { command: "pi-web-tunnel", state: "available" },
+      config: {
+        path: "/home/test/.config/pi-web-tunnel/config.json",
+        exists: true,
+        state: "registered",
+        localPiWebUrl: "http://127.0.0.1:8504",
+        frpcPathConfigured: true,
+        machine: { controlApiBaseUrl: "https://control.example.test", machineId: "machine_1" },
+      },
+      runtime: { pidFilePath: "/home/test/.config/pi-web-tunnel/connector.pid", state: "running", pid: 123 },
+      activeOperation: operation,
+    };
+
+    expect(parseSafeTunnelOperationResponse({ ...operation, status: "succeeded", exitCode: 0, finishedAt: "2026-07-03T00:01:00.000Z", publicUrl: "https://dev.example.test" })).toMatchObject({ status: "succeeded", exitCode: 0, publicUrl: "https://dev.example.test" });
+    expect(parseSafeTunnelStatusResponse(status)).toEqual(status);
+    expect(parseSafeTunnelLoginResponse({ operation, status })).toEqual({ operation, status });
+    expect(parseSafeTunnelStartResponse({ accepted: true, connectorProcessId: 456, status })).toEqual({ accepted: true, connectorProcessId: 456, status });
+    expect(parseSafeTunnelStopResponse({ command: { exitCode: null, stdout: "", stderr: "", signal: "SIGTERM" }, status })).toEqual({ command: { exitCode: null, stdout: "", stderr: "", signal: "SIGTERM" }, status });
+  });
+
+  it("rejects malformed Safe Tunnel bridge responses", () => {
+    expect(() => parseSafeTunnelStatusResponse({ connector: { command: "pi-web-tunnel", state: "missing" }, config: { path: "/tmp/config", exists: false, state: "missing" }, runtime: { pidFilePath: "/tmp/pid", state: "stopped" } })).toThrow("Expected Safe Tunnel connector state field: state");
+    expect(() => parseSafeTunnelOperationResponse({ id: "op_1", kind: "login", status: "waiting", startedAt: "now", stdout: "", stderr: "" })).toThrow("Expected Safe Tunnel operation status field: status");
+    expect(() => parseSafeTunnelStartResponse({ accepted: false, status: { connector: { command: "pi-web-tunnel", state: "available" }, config: { path: "/tmp/config", exists: false, state: "missing" }, runtime: { pidFilePath: "/tmp/pid", state: "stopped" } } })).toThrow("Expected Safe Tunnel start accepted response");
   });
 
   it("parses Pi package list and mutation responses", () => {
