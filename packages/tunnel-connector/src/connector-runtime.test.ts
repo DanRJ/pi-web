@@ -122,10 +122,13 @@ async function waitFor(predicate: () => boolean): Promise<void> {
   throw new Error("waitFor predicate never became true");
 }
 
-function createTunnelConfigFetch(): FetchLike {
-  return (input) => {
-    if (input !== "http://127.0.0.1:8787/v1/machines/machine_abc/tunnel-config") {
-      return Promise.reject(new Error(`unexpected url: ${input}`));
+function createTunnelConfigFetch(input: {
+  readonly frpcConfigToml?: string;
+  readonly localPiWebUrl?: string;
+} = {}): FetchLike {
+  return (url) => {
+    if (url !== "http://127.0.0.1:8787/v1/machines/machine_abc/tunnel-config") {
+      return Promise.reject(new Error(`unexpected url: ${url}`));
     }
     return Promise.resolve({
       ok: true,
@@ -135,8 +138,8 @@ function createTunnelConfigFetch(): FetchLike {
           machine: { id: "machine_abc" },
           publicHostname: "my-dev-box.ns.tunnels.pi-web.dev",
           publicUrl: "https://my-dev-box.ns.tunnels.pi-web.dev",
-          localPiWebUrl: "http://127.0.0.1:8504",
-          frp: { proxyName: "p", configFormat: "toml", frpcConfigToml: "[[proxies]]\n" },
+          localPiWebUrl: input.localPiWebUrl ?? "http://127.0.0.1:8504",
+          frp: { proxyName: "p", configFormat: "toml", frpcConfigToml: input.frpcConfigToml ?? "[[proxies]]\n" },
         }),
     });
   };
@@ -228,6 +231,50 @@ describe("runConnectorStart", () => {
     expect(runtime.files.get(paths.frpcConfigPath)).toBe("[[proxies]]\n");
     expect(runtime.removed()).toContain(paths.pidFilePath);
     expect(stdout.output()).toContain("Public URL: https://my-dev-box.ns.tunnels.pi-web.dev\n");
+  });
+
+  it("uses the connector config local target when writing frpc config", async () => {
+    const runtime = createFakeRuntime();
+    const child = new FakeFrpcChildProcess();
+    const manager = new FrpcProcessManager({
+      spawnFrpc: (): ManagedFrpcChildProcess => child,
+    });
+    const stdout = createCapturedSink();
+    const signalHandlers = new Map<NodeJS.Signals, () => void>();
+
+    const startPromise = runConnectorStart({
+      ...runtime.dependencies,
+      config: { ...createConfig(), localPiWebUrl: "http://127.0.0.1:18504" },
+      fetch: createTunnelConfigFetch({
+        frpcConfigToml: [
+          'serverAddr = "127.0.0.1"',
+          "serverPort = 7000",
+          "",
+          "[[proxies]]",
+          'name = "p"',
+          'type = "http"',
+          'localIP = "127.0.0.1"',
+          "localPort = 8504",
+          'customDomains = ["my-dev-box.ns.tunnels.pi-web.dev"]',
+          "",
+        ].join("\n"),
+      }),
+      paths,
+      pid: 7777,
+      processManager: manager,
+      registerSignalHandler: (signal, handler) => {
+        signalHandlers.set(signal, handler);
+      },
+      stdout: stdout.sink,
+    });
+
+    await waitFor(() => signalHandlers.has("SIGTERM"));
+    signalHandlers.get("SIGTERM")?.();
+
+    await expect(startPromise).resolves.toBe(0);
+    expect(runtime.files.get(paths.frpcConfigPath)).toContain("localPort = 18504\n");
+    expect(runtime.files.get(paths.frpcConfigPath)).not.toContain("localPort = 8504\n");
+    expect(stdout.output()).toContain("Local target: http://127.0.0.1:18504\n");
   });
 
   it("throws when no machine credentials are present", async () => {

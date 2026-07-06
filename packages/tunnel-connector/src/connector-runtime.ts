@@ -152,10 +152,13 @@ export async function runConnectorStart(
   const credentials = requireMachineCredentials(dependencies.config);
   const frpcPath = resolveFrpcPath(dependencies);
 
-  const tunnelConfig = await fetchMachineTunnelConfig({
-    credentials,
-    fetch: dependencies.fetch,
-  });
+  const tunnelConfig = applyLocalPiWebTarget(
+    await fetchMachineTunnelConfig({
+      credentials,
+      fetch: dependencies.fetch,
+    }),
+    dependencies.config.localPiWebUrl,
+  );
 
   ensureRuntimeDirectory(dependencies, dependencies.paths.runtimeDirectory);
   writeRuntimeFile(dependencies, dependencies.paths.frpcConfigPath, tunnelConfig.frpcConfigToml);
@@ -286,6 +289,111 @@ function applyPrivateMode(
   }
 
   dependencies.chmod(path, mode);
+}
+
+function applyLocalPiWebTarget(
+  tunnelConfig: MachineTunnelConfig,
+  localPiWebUrl: string,
+): MachineTunnelConfig {
+  const connectorTarget = normalizeLocalPiWebUrl(localPiWebUrl);
+  const controlApiTarget = normalizeLocalPiWebUrl(tunnelConfig.localPiWebUrl);
+
+  if (connectorTarget.url === controlApiTarget.url) {
+    return tunnelConfig;
+  }
+
+  return {
+    ...tunnelConfig,
+    localPiWebUrl: connectorTarget.url,
+    frpcConfigToml: replaceFrpcLocalTarget(
+      tunnelConfig.frpcConfigToml,
+      controlApiTarget,
+      connectorTarget,
+    ),
+  };
+}
+
+interface LocalPiWebTarget {
+  readonly localIP: string;
+  readonly localPort: number;
+  readonly url: string;
+}
+
+function normalizeLocalPiWebUrl(value: string): LocalPiWebTarget {
+  let parsedUrl: URL;
+
+  try {
+    parsedUrl = new URL(value.trim());
+  } catch {
+    throw new Error("Connector config localPiWebUrl must be a valid URL.");
+  }
+
+  if (parsedUrl.protocol !== "http:") {
+    throw new Error("Connector config localPiWebUrl must use http.");
+  }
+
+  if (parsedUrl.username !== "" || parsedUrl.password !== "") {
+    throw new Error("Connector config localPiWebUrl must not include credentials.");
+  }
+
+  if (parsedUrl.pathname !== "/" || parsedUrl.search !== "" || parsedUrl.hash !== "") {
+    throw new Error("Connector config localPiWebUrl must not include a path, query, or fragment.");
+  }
+
+  if (parsedUrl.port === "") {
+    throw new Error("Connector config localPiWebUrl must include an explicit port.");
+  }
+
+  const localPort = Number.parseInt(parsedUrl.port, 10);
+  if (!Number.isInteger(localPort) || localPort < 1 || localPort > 65_535) {
+    throw new Error("Connector config localPiWebUrl port must be between 1 and 65535.");
+  }
+
+  return {
+    localIP: parsedUrl.hostname,
+    localPort,
+    url: parsedUrl.origin,
+  };
+}
+
+function replaceFrpcLocalTarget(
+  frpcConfigToml: string,
+  from: LocalPiWebTarget,
+  to: LocalPiWebTarget,
+): string {
+  return replaceTomlScalar(
+    replaceTomlScalar(
+      frpcConfigToml,
+      "localIP",
+      formatTomlString(from.localIP),
+      formatTomlString(to.localIP),
+    ),
+    "localPort",
+    from.localPort.toString(),
+    to.localPort.toString(),
+  );
+}
+
+function replaceTomlScalar(
+  toml: string,
+  key: string,
+  oldValue: string,
+  newValue: string,
+): string {
+  const pattern = new RegExp(`(^\\s*${escapeRegExp(key)}\\s*=\\s*)${escapeRegExp(oldValue)}(\\s*(?:\\r?\\n|$))`, "mu");
+  if (!pattern.test(toml)) {
+    throw new Error(`Control API tunnel-config response did not include ${key} = ${oldValue}.`);
+  }
+
+  return toml.replace(pattern, (_match, prefix: string, suffix: string) => `${prefix}${newValue}${suffix}`);
+}
+
+function formatTomlString(value: string): string {
+  return JSON.stringify(value);
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
 }
 
 function parseTunnelConfigResponse(body: unknown): MachineTunnelConfig {
