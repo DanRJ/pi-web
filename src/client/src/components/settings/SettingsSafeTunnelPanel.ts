@@ -83,9 +83,10 @@ export class SettingsSafeTunnelPanel extends LitElement {
       <div class="cards">
         <article>
           <strong>Connector</strong>
-          <span class=${status.connector.state === "available" ? "good" : "bad"}>${connectorStateLabel(status.connector.state)}</span>
+          <span class=${connectorStateClass(status.connector.state)}>${connectorStateLabel(status.connector.state)}</span>
           <small>${status.connector.command}</small>
-          ${status.connector.error === undefined ? null : html`<small class="bad">${status.connector.error}</small>`}
+          ${status.connector.install === undefined ? null : html`<small>Will install ${status.connector.install.packageSpec} on first use.</small>`}
+          ${status.connector.error === undefined ? null : html`<small class=${status.connector.state === "installable" ? "muted" : "bad"}>${status.connector.error}</small>`}
         </article>
         <article>
           <strong>Registration</strong>
@@ -372,14 +373,14 @@ export class SettingsSafeTunnelPanel extends LitElement {
 
   private loginDisabledReason(validationMessage: string | undefined): string | undefined {
     if (validationMessage !== undefined) return validationMessage;
-    if (this.status?.connector.state === "unavailable") return connectorUnavailableMessage(this.status);
+    if (this.status !== undefined && !connectorCanRun(this.status)) return connectorUnavailableMessage(this.status);
     return undefined;
   }
 
   private startDisabledReason(): string | undefined {
     const status = this.status;
     if (status === undefined) return "status has not loaded yet";
-    if (status.connector.state !== "available") return connectorUnavailableMessage(status);
+    if (!connectorCanRun(status)) return connectorUnavailableMessage(status);
     if (status.config.state !== "registered") return "register or log in first";
     if (status.runtime.state === "running") return "connector is already running";
     if (normalizedOptionalString(this.startFrpcPath) === undefined && status.config.frpcPathConfigured !== true) return "configure an frpc path";
@@ -389,7 +390,7 @@ export class SettingsSafeTunnelPanel extends LitElement {
   private stopDisabledReason(): string | undefined {
     const status = this.status;
     if (status === undefined) return "status has not loaded yet";
-    if (status.connector.state !== "available") return connectorUnavailableMessage(status);
+    if (!connectorCanRun(status)) return connectorUnavailableMessage(status);
     if (status.runtime.state !== "running") return "connector is not running";
     return undefined;
   }
@@ -504,6 +505,10 @@ function inputValue(event: Event): string {
   return "";
 }
 
+function connectorCanRun(status: SafeTunnelStatusResponse): boolean {
+  return status.connector.state === "available" || status.connector.state === "installable";
+}
+
 function connectorUnavailableMessage(status: SafeTunnelStatusResponse): string {
   return status.connector.error ?? `Connector command ${status.connector.command} is unavailable.`;
 }
@@ -532,8 +537,15 @@ function isValidMachineSlug(value: string): boolean {
   return /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/u.test(value);
 }
 
+function connectorStateClass(state: SafeTunnelStatusResponse["connector"]["state"]): string {
+  if (state === "available") return "good";
+  if (state === "installable") return "muted";
+  return "bad";
+}
+
 function connectorStateLabel(state: SafeTunnelStatusResponse["connector"]["state"]): string {
   if (state === "available") return "Available";
+  if (state === "installable") return "Installs on demand";
   return "Unavailable";
 }
 

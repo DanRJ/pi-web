@@ -73,6 +73,18 @@ describe("settings-safe-tunnel-panel operations", () => {
     expect(getPanelProperty(panel, "mutating")).toBe(false);
   });
 
+  it("treats an installable connector as usable for Safe Tunnel actions", () => {
+    const panel = new SettingsSafeTunnelPanel();
+    setPanelProperty(panel, "status", safeTunnelStatus({ connectorState: "installable", runtimeState: "stopped", frpcPathConfigured: true }));
+
+    expect(callPanelMethod(panel, "loginDisabledReason", undefined)).toBeUndefined();
+    expect(callPanelMethod(panel, "startDisabledReason")).toBeUndefined();
+
+    setPanelProperty(panel, "status", safeTunnelStatus({ connectorState: "installable", runtimeState: "running", frpcPathConfigured: true }));
+
+    expect(callPanelMethod(panel, "stopDisabledReason")).toBeUndefined();
+  });
+
   it("starts and stops the connector through the bridge", async () => {
     const stopped = safeTunnelStatus({ runtimeState: "stopped", frpcPathConfigured: true });
     const running = safeTunnelStatus({ runtimeState: "running", frpcPathConfigured: true });
@@ -111,13 +123,26 @@ describe("settings-safe-tunnel-panel operations", () => {
 
 interface SafeTunnelStatusOptions {
   activeOperation?: SafeTunnelOperationResponse;
+  connectorState?: SafeTunnelStatusResponse["connector"]["state"];
   frpcPathConfigured?: boolean;
   runtimeState?: SafeTunnelStatusResponse["runtime"]["state"];
 }
 
 function safeTunnelStatus(options: SafeTunnelStatusOptions = {}): SafeTunnelStatusResponse {
+  const connectorState = options.connectorState ?? "available";
   return {
-    connector: { command: "pi-web-tunnel", state: "available" },
+    connector: {
+      command: connectorState === "installable" ? "/home/test/.local/share/pi-web/safe-tunnel-connector/node_modules/.bin/pi-web-tunnel" : "pi-web-tunnel",
+      state: connectorState,
+      ...(connectorState === "installable" ? { install: {
+        binName: "pi-web-tunnel",
+        command: "/home/test/.local/share/pi-web/safe-tunnel-connector/node_modules/.bin/pi-web-tunnel",
+        enabled: true,
+        installDirectory: "/home/test/.local/share/pi-web/safe-tunnel-connector",
+        installerCommand: "npm",
+        packageSpec: "@jmfederico/pi-web-tunnel",
+      } } : {}),
+    },
     config: {
       path: "/home/test/.config/pi-web-tunnel/config.json",
       exists: true,

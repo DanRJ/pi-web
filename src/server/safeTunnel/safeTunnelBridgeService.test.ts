@@ -22,6 +22,7 @@ beforeEach(async () => {
   nowIndex = 0;
   service = new DefaultSafeTunnelBridgeService({
     commandRunner: runner,
+    cwd: process.cwd(),
     env: { XDG_CONFIG_HOME: tempDir, PI_WEB_SAFE_TUNNEL_CONNECTOR_COMMAND: "/usr/local/bin/pi-web-tunnel" },
     fileExists: (path) => runner.fileExists(path),
     homeDirectory: tempDir,
@@ -51,6 +52,7 @@ describe("DefaultSafeTunnelBridgeService", () => {
   it("uses the first-party source-tree connector wrapper when no command override is configured", async () => {
     const defaultedService = new DefaultSafeTunnelBridgeService({
       commandRunner: runner,
+      cwd: process.cwd(),
       env: { XDG_CONFIG_HOME: tempDir },
       fileExists: (path) => runner.fileExists(path),
       homeDirectory: tempDir,
@@ -110,7 +112,7 @@ describe("DefaultSafeTunnelBridgeService", () => {
       frpcPath: "/opt/frpc",
     });
 
-    expect(runner.runCalls[0]).toEqual({
+    expect(runner.runCalls[1]).toEqual({
       command: "/usr/local/bin/pi-web-tunnel",
       args: [
         "login",
@@ -185,7 +187,7 @@ describe("DefaultSafeTunnelBridgeService", () => {
 
     const response = await service.stop();
 
-    expect(runner.runCalls[0]).toEqual({ command: "/usr/local/bin/pi-web-tunnel", args: ["stop"] });
+    expect(runner.runCalls[1]).toEqual({ command: "/usr/local/bin/pi-web-tunnel", args: ["stop"] });
     expect(response.command).toEqual({ exitCode: 0, stdout: "No running PI WEB Safe Tunnel connector was found.\n", stderr: "" });
   });
 });

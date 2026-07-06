@@ -1,9 +1,8 @@
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join, posix, win32 } from "node:path";
+import { posix, win32 } from "node:path";
 import { randomUUID } from "node:crypto";
-import { fileURLToPath } from "node:url";
 import type {
   SafeTunnelCommandOutput,
   SafeTunnelConfigStatus,
@@ -16,14 +15,11 @@ import type {
   SafeTunnelStatusResponse,
   SafeTunnelStopResponse,
 } from "../../shared/apiTypes.js";
+import { SafeTunnelConnectorManager } from "./safeTunnelConnectorManager.js";
 
-const defaultConnectorCommand = "pi-web-tunnel";
-const localDevelopmentConnectorCommand = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "scripts", "pi-web-tunnel-dev.sh");
-const connectorCommandEnvVar = "PI_WEB_SAFE_TUNNEL_CONNECTOR_COMMAND";
 const connectorConfigDirectoryName = "pi-web-tunnel";
 const connectorConfigFileName = "config.json";
 const connectorPidFileName = "connector.pid";
-const statusCommandTimeoutMs = 5_000;
 const stopCommandTimeoutMs = 15_000;
 const loginCommandTimeoutMs = 15 * 60_000;
 const maxCapturedOutputCharacters = 24_000;
@@ -68,6 +64,7 @@ export interface SafeTunnelBridgeService {
 
 export interface SafeTunnelBridgeDependencies {
   readonly commandRunner: SafeTunnelCommandRunner;
+  readonly cwd: string;
   readonly env: Readonly<Record<string, string | undefined>>;
   readonly fileExists: (path: string) => boolean;
   readonly homeDirectory: string;
@@ -101,15 +98,25 @@ export class SafeTunnelBridgeError extends Error {
 
 export class DefaultSafeTunnelBridgeService implements SafeTunnelBridgeService {
   private activeOperation: SafeTunnelOperationState | undefined;
+  private loginStartInFlight = false;
+  private readonly connectorManager: SafeTunnelConnectorManager;
   private readonly operations = new Map<string, SafeTunnelOperationState>();
 
-  constructor(private readonly dependencies: SafeTunnelBridgeDependencies) {}
+  constructor(private readonly dependencies: SafeTunnelBridgeDependencies) {
+    this.connectorManager = new SafeTunnelConnectorManager({
+      commandRunner: dependencies.commandRunner,
+      cwd: dependencies.cwd,
+      env: dependencies.env,
+      fileExists: dependencies.fileExists,
+      homeDirectory: dependencies.homeDirectory,
+      platform: dependencies.platform,
+    });
+  }
 
   async status(): Promise<SafeTunnelStatusResponse> {
-    const command = this.connectorCommand();
     const configDirectory = discoverConnectorConfigDirectory(this.dependencies);
     const configPath = pathApiForPlatform(this.dependencies.platform).join(configDirectory, connectorConfigFileName);
-    const connector = await this.connectorStatus(command);
+    const connector = await this.connectorManager.status();
     const config = readConnectorConfigStatus(configPath, this.dependencies);
     const runtime = readConnectorRuntimeStatus(configDirectory, this.dependencies);
     const activeOperation = this.activeOperation === undefined ? undefined : snapshotOperation(this.activeOperation);
@@ -123,39 +130,45 @@ export class DefaultSafeTunnelBridgeService implements SafeTunnelBridgeService {
   }
 
   async login(request: SafeTunnelLoginRequest): Promise<SafeTunnelLoginResponse> {
-    if (this.activeOperation?.status === "running") {
+    if (this.loginStartInFlight || this.activeOperation?.status === "running") {
       throw new SafeTunnelBridgeError("A Safe Tunnel operation is already running.", 409);
     }
 
-    const operation = this.createLoginOperation();
-    const invocation: SafeTunnelCommandInvocation = {
-      command: this.connectorCommand(),
-      args: loginArgs(request),
-    };
+    this.loginStartInFlight = true;
+    try {
+      const command = await this.connectorManager.ensureCommand();
+      const operation = this.createLoginOperation();
+      const invocation: SafeTunnelCommandInvocation = {
+        command,
+        args: loginArgs(request),
+      };
 
-    const completion = this.dependencies.commandRunner.run(invocation, {
-      maxOutputCharacters: maxCapturedOutputCharacters,
-      timeoutMs: loginCommandTimeoutMs,
-      onStdout: (chunk) => {
-        appendOperationStdout(operation, chunk);
-      },
-      onStderr: (chunk) => {
-        appendOperationStderr(operation, chunk);
-      },
-    }).then(
-      (result) => {
-        this.finishOperation(operation, result);
-      },
-      (error: unknown) => {
-        this.failOperation(operation, error);
-      },
-    );
-    void completion;
+      const completion = this.dependencies.commandRunner.run(invocation, {
+        maxOutputCharacters: maxCapturedOutputCharacters,
+        timeoutMs: loginCommandTimeoutMs,
+        onStdout: (chunk) => {
+          appendOperationStdout(operation, chunk);
+        },
+        onStderr: (chunk) => {
+          appendOperationStderr(operation, chunk);
+        },
+      }).then(
+        (result) => {
+          this.finishOperation(operation, result);
+        },
+        (error: unknown) => {
+          this.failOperation(operation, error);
+        },
+      );
+      void completion;
 
-    return {
-      operation: snapshotOperation(operation),
-      status: await this.status(),
-    };
+      return {
+        operation: snapshotOperation(operation),
+        status: await this.status(),
+      };
+    } finally {
+      this.loginStartInFlight = false;
+    }
   }
 
   operation(operationId: string): SafeTunnelOperationResponse | undefined {
@@ -178,8 +191,9 @@ export class DefaultSafeTunnelBridgeService implements SafeTunnelBridgeService {
       throw new SafeTunnelBridgeError("Configure an frpc executable path before starting the connector.", 400);
     }
 
+    const command = await this.connectorManager.ensureCommand();
     const started = await this.dependencies.commandRunner.startDetached({
-      command: this.connectorCommand(),
+      command,
       args: startArgs(request),
     });
 
@@ -191,7 +205,8 @@ export class DefaultSafeTunnelBridgeService implements SafeTunnelBridgeService {
   }
 
   async stop(): Promise<SafeTunnelStopResponse> {
-    const result = await this.dependencies.commandRunner.run({ command: this.connectorCommand(), args: ["stop"] }, {
+    const command = await this.connectorManager.ensureCommand();
+    const result = await this.dependencies.commandRunner.run({ command, args: ["stop"] }, {
       maxOutputCharacters: maxCapturedOutputCharacters,
       timeoutMs: stopCommandTimeoutMs,
     });
@@ -200,37 +215,6 @@ export class DefaultSafeTunnelBridgeService implements SafeTunnelBridgeService {
       command: commandOutput(result),
       status: await this.status(),
     };
-  }
-
-  private async connectorStatus(command: string): Promise<SafeTunnelStatusResponse["connector"]> {
-    try {
-      const result = await this.dependencies.commandRunner.run({ command, args: ["status"] }, {
-        maxOutputCharacters: maxCapturedOutputCharacters,
-        timeoutMs: statusCommandTimeoutMs,
-      });
-
-      if (result.exitCode === 0) {
-        return { command, state: "available" };
-      }
-
-      return {
-        command,
-        state: "unavailable",
-        error: nonEmptyString(result.stderr) ?? nonEmptyString(result.stdout) ?? `Connector status exited with code ${formatExitCode(result.exitCode)}.`,
-      };
-    } catch (error) {
-      return {
-        command,
-        state: "unavailable",
-        error: errorMessage(error),
-      };
-    }
-  }
-
-  private connectorCommand(): string {
-    return nonEmptyString(this.dependencies.env[connectorCommandEnvVar])
-      ?? discoveredDevelopmentConnectorCommand(this.dependencies)
-      ?? defaultConnectorCommand;
   }
 
   private createLoginOperation(): SafeTunnelOperationState {
@@ -282,6 +266,7 @@ export class DefaultSafeTunnelBridgeService implements SafeTunnelBridgeService {
 export function createDefaultSafeTunnelBridgeService(): SafeTunnelBridgeService {
   return new DefaultSafeTunnelBridgeService({
     commandRunner: createNodeSafeTunnelCommandRunner(),
+    cwd: process.cwd(),
     env: process.env,
     fileExists: existsSync,
     homeDirectory: homedir(),
@@ -407,11 +392,6 @@ function startArgs(request: SafeTunnelStartRequest): string[] {
 
 function optionalFlag(flag: string, value: string | undefined): string[] {
   return value === undefined ? [] : [flag, value];
-}
-
-function discoveredDevelopmentConnectorCommand(dependencies: Pick<SafeTunnelBridgeDependencies, "fileExists" | "platform">): string | undefined {
-  if (dependencies.platform === "win32") return undefined;
-  return dependencies.fileExists(localDevelopmentConnectorCommand) ? localDevelopmentConnectorCommand : undefined;
 }
 
 function discoverConnectorConfigDirectory(dependencies: Pick<SafeTunnelBridgeDependencies, "env" | "homeDirectory" | "platform">): string {

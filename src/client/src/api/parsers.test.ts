@@ -58,6 +58,22 @@ describe("API parsers", () => {
 
     expect(parseSafeTunnelOperationResponse({ ...operation, status: "succeeded", exitCode: 0, finishedAt: "2026-07-03T00:01:00.000Z", publicUrl: "https://dev.example.test" })).toMatchObject({ status: "succeeded", exitCode: 0, publicUrl: "https://dev.example.test" });
     expect(parseSafeTunnelStatusResponse(status)).toEqual(status);
+    expect(parseSafeTunnelStatusResponse({
+      ...status,
+      connector: {
+        command: "/home/test/.local/share/pi-web/safe-tunnel-connector/node_modules/.bin/pi-web-tunnel",
+        state: "installable",
+        error: "spawn ENOENT",
+        install: {
+          binName: "pi-web-tunnel",
+          command: "/home/test/.local/share/pi-web/safe-tunnel-connector/node_modules/.bin/pi-web-tunnel",
+          enabled: true,
+          installDirectory: "/home/test/.local/share/pi-web/safe-tunnel-connector",
+          installerCommand: "npm",
+          packageSpec: "@jmfederico/pi-web-tunnel",
+        },
+      },
+    })).toMatchObject({ connector: { state: "installable", install: { packageSpec: "@jmfederico/pi-web-tunnel" } } });
     expect(parseSafeTunnelLoginResponse({ operation, status })).toEqual({ operation, status });
     expect(parseSafeTunnelStartResponse({ accepted: true, connectorProcessId: 456, status })).toEqual({ accepted: true, connectorProcessId: 456, status });
     expect(parseSafeTunnelStopResponse({ command: { exitCode: null, stdout: "", stderr: "", signal: "SIGTERM" }, status })).toEqual({ command: { exitCode: null, stdout: "", stderr: "", signal: "SIGTERM" }, status });

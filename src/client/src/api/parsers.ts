@@ -1,4 +1,4 @@
-import type { ArchiveSessionsResponse, AuthProviderOption, AuthProviderStatus, AuthProvidersResponse, AuthStatusSource, AuthType, CommandOption, CommandResult, DeleteWorkspaceFileResponse, FileContentResponse, FileSuggestion, FileTreeEntry, FileTreeResponse, GitDiffResponse, GitFileState, GitStatusFile, GitStatusResponse, Machine, MachineHealth, MachineKind, MachineRuntime, MachineStatus, MessagePage, ModelSelectionResponse, MoveWorkspaceFileResponse, OAuthFlowState, PiWebCapability, PiWebComponentStatus, PiWebConfigEnvOverrides, PiWebConfigResponse, PiWebConfigValues, PiWebInstallationInfo, PiWebPluginConfigMap, PiWebPluginInfo, PiWebPluginsResponse, PiWebPluginScope, PiWebReleaseStatus, PiWebRuntimeComponent, PiWebRuntimeResponse, PiWebServiceComponent, PiWebShortcutConfig, PiWebStatusMessage, PiWebStatusResponse, PiWebStatusSeverity, Project, QueuedSessionMessage, SafeTunnelCommandOutput, SafeTunnelConfigState, SafeTunnelConfigStatus, SafeTunnelConnectorState, SafeTunnelConnectorStatus, SafeTunnelLoginResponse, SafeTunnelOperationResponse, SafeTunnelOperationStatus, SafeTunnelRuntimeState, SafeTunnelRuntimeStatus, SafeTunnelStartResponse, SafeTunnelStatusResponse, SafeTunnelStopResponse, SavedPromptAttachment, SessionBulkArchiveResponse, SessionBulkDeleteArchivedResponse, SessionBulkFailure, SessionCleanupExecuteResponse, SessionCleanupPreviewResponse, SessionCleanupProjectSummary, SessionCleanupThresholds, SessionCleanupTotals, SessionInfo, SessionModel, SessionStatus, SlashCommand, TerminalCommandRun, TerminalCommandRunStatus, TerminalInfo, ThinkingLevelsResponse, WriteWorkspaceFileResponse, Workspace, WorkspaceActivity, WorkspaceActivityResponse } from "../../../shared/apiTypes";
+import type { ArchiveSessionsResponse, AuthProviderOption, AuthProviderStatus, AuthProvidersResponse, AuthStatusSource, AuthType, CommandOption, CommandResult, DeleteWorkspaceFileResponse, FileContentResponse, FileSuggestion, FileTreeEntry, FileTreeResponse, GitDiffResponse, GitFileState, GitStatusFile, GitStatusResponse, Machine, MachineHealth, MachineKind, MachineRuntime, MachineStatus, MessagePage, ModelSelectionResponse, MoveWorkspaceFileResponse, OAuthFlowState, PiWebCapability, PiWebComponentStatus, PiWebConfigEnvOverrides, PiWebConfigResponse, PiWebConfigValues, PiWebInstallationInfo, PiWebPluginConfigMap, PiWebPluginInfo, PiWebPluginsResponse, PiWebPluginScope, PiWebReleaseStatus, PiWebRuntimeComponent, PiWebRuntimeResponse, PiWebServiceComponent, PiWebShortcutConfig, PiWebStatusMessage, PiWebStatusResponse, PiWebStatusSeverity, Project, QueuedSessionMessage, SafeTunnelCommandOutput, SafeTunnelConfigState, SafeTunnelConfigStatus, SafeTunnelConnectorInstallStatus, SafeTunnelConnectorState, SafeTunnelConnectorStatus, SafeTunnelLoginResponse, SafeTunnelOperationResponse, SafeTunnelOperationStatus, SafeTunnelRuntimeState, SafeTunnelRuntimeStatus, SafeTunnelStartResponse, SafeTunnelStatusResponse, SafeTunnelStopResponse, SavedPromptAttachment, SessionBulkArchiveResponse, SessionBulkDeleteArchivedResponse, SessionBulkFailure, SessionCleanupExecuteResponse, SessionCleanupPreviewResponse, SessionCleanupProjectSummary, SessionCleanupThresholds, SessionCleanupTotals, SessionInfo, SessionModel, SessionStatus, SlashCommand, TerminalCommandRun, TerminalCommandRunStatus, TerminalInfo, ThinkingLevelsResponse, WriteWorkspaceFileResponse, Workspace, WorkspaceActivity, WorkspaceActivityResponse } from "../../../shared/apiTypes";
 import type { PiPackageInfo, PiPackageMutationAction, PiPackageMutationResponse, PiPackageScope, PiPackagesResponse } from "../../../shared/apiTypes";
 import { parseKnownPiWebCapabilities } from "../../../shared/capabilities";
 
@@ -178,11 +178,26 @@ export function parseSafeTunnelStopResponse(value: unknown): SafeTunnelStopRespo
 
 function parseSafeTunnelConnectorStatus(value: unknown): SafeTunnelConnectorStatus {
   const record = requireRecord(value);
+  const install = record["install"] === undefined ? undefined : parseSafeTunnelConnectorInstallStatus(record["install"]);
   const error = optionalString(record, "error");
   return {
     command: requireString(record, "command"),
     state: requireSafeTunnelConnectorState(record, "state"),
+    ...(install === undefined ? {} : { install }),
     ...(error === undefined ? {} : { error }),
+  };
+}
+
+function parseSafeTunnelConnectorInstallStatus(value: unknown): SafeTunnelConnectorInstallStatus {
+  const record = requireRecord(value);
+  if (record["enabled"] !== true) throw new Error("Expected Safe Tunnel connector install enabled field");
+  return {
+    binName: requireString(record, "binName"),
+    command: requireString(record, "command"),
+    enabled: true,
+    installDirectory: requireString(record, "installDirectory"),
+    installerCommand: requireString(record, "installerCommand"),
+    packageSpec: requireString(record, "packageSpec"),
   };
 }
 
@@ -236,7 +251,7 @@ function parseSafeTunnelCommandOutput(value: unknown): SafeTunnelCommandOutput {
 
 function requireSafeTunnelConnectorState(record: Record<string, unknown>, key: string): SafeTunnelConnectorState {
   const value = requireString(record, key);
-  if (value !== "available" && value !== "unavailable") throw new Error(`Expected Safe Tunnel connector state field: ${key}`);
+  if (value !== "available" && value !== "installable" && value !== "unavailable") throw new Error(`Expected Safe Tunnel connector state field: ${key}`);
   return value;
 }
 

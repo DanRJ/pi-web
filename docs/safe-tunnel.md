@@ -13,11 +13,15 @@ The connector stays optional. Users who never open or enable Safe Tunnel do not 
 
 ## Connector command defaults
 
-Packaged/production PI WEB looks for `pi-web-tunnel` on `PATH` by default. Override it with:
+Packaged/production PI WEB checks for `pi-web-tunnel` on `PATH` first. If it is unavailable, the Safe Tunnel bridge reports the connector as installable and waits until the user starts a Safe Tunnel operation before installing anything. Users who never open/use Safe Tunnel do not install the connector package.
+
+Override the connector executable with:
 
 ```bash
 PI_WEB_SAFE_TUNNEL_CONNECTOR_COMMAND=/absolute/path/to/pi-web-tunnel
 ```
+
+When this command override is set, PI WEB treats it as authoritative and does not auto-install a managed connector if the command is unavailable.
 
 Source-tree development uses the first-party workspace connector instead. When `PI_WEB_SAFE_TUNNEL_CONNECTOR_COMMAND` is unset and `scripts/pi-web-tunnel-dev.sh` exists, the bridge uses that script before falling back to `pi-web-tunnel`. `pi-web install --dev` also writes the same script path into the development service environment.
 
@@ -28,6 +32,28 @@ npm --prefix /srv/dev/pi-web run --silent tunnel:connector -- "$@"
 ```
 
 so bridge calls execute `/srv/dev/pi-web/packages/tunnel-connector/src/cli.ts` through the local npm workspace rather than a wrapper in `/srv/dev/pi-web-tunnels`.
+
+## Production on-demand install
+
+For packaged PI WEB installs, the bridge has a managed npm install path for `@jmfederico/pi-web-tunnel` with bin `pi-web-tunnel`. `GET /api/safe-tunnel/status` only checks and reports availability; it does not run npm. `POST /api/safe-tunnel/login`, `start`, or `stop` call the installer only when the connector command is not already available and auto-install is enabled.
+
+Default managed install locations:
+
+- Linux/macOS: `$XDG_DATA_HOME/pi-web/safe-tunnel-connector`, or `~/.local/share/pi-web/safe-tunnel-connector`.
+- Windows: `%LOCALAPPDATA%\\pi-web\\safe-tunnel-connector`, or `%USERPROFILE%\\AppData\\Local\\pi-web\\safe-tunnel-connector`.
+
+Runtime-only environment overrides:
+
+| Env var | Purpose |
+| --- | --- |
+| `PI_WEB_SAFE_TUNNEL_CONNECTOR_COMMAND` | Use this connector executable and disable managed auto-install fallback. |
+| `PI_WEB_SAFE_TUNNEL_CONNECTOR_AUTO_INSTALL=false` | Disable managed on-demand install; status remains unavailable if no connector command works. |
+| `PI_WEB_SAFE_TUNNEL_CONNECTOR_INSTALL_DIR=/path` | Install the managed connector package into a custom npm prefix. |
+| `PI_WEB_SAFE_TUNNEL_CONNECTOR_PACKAGE=@jmfederico/pi-web-tunnel@version` | Install a specific connector package spec instead of `@jmfederico/pi-web-tunnel`. |
+| `PI_WEB_SAFE_TUNNEL_CONNECTOR_BIN=pi-web-tunnel` | Resolve a different bin name from the managed install prefix. |
+| `PI_WEB_SAFE_TUNNEL_CONNECTOR_NPM_COMMAND=/path/to/npm` | Use a specific npm executable for managed install. |
+
+Connector credentials still live only in the connector's private config file; the managed install directory contains package code and npm metadata, not machine tokens.
 
 ## Useful development commands
 

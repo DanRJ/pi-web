@@ -139,15 +139,25 @@ export interface PiPackageMutationResponse extends PiPackagesResponse {
   removed?: boolean;
 }
 
-export type SafeTunnelConnectorState = "available" | "unavailable";
+export type SafeTunnelConnectorState = "available" | "installable" | "unavailable";
 export type SafeTunnelConfigState = "missing" | "unregistered" | "registered" | "invalid";
 export type SafeTunnelRuntimeState = "stopped" | "running" | "stale" | "unknown";
 export type SafeTunnelOperationKind = "login";
 export type SafeTunnelOperationStatus = "running" | "succeeded" | "failed";
 
+export interface SafeTunnelConnectorInstallStatus {
+  binName: string;
+  command: string;
+  enabled: true;
+  installDirectory: string;
+  installerCommand: string;
+  packageSpec: string;
+}
+
 export interface SafeTunnelConnectorStatus {
   command: string;
   state: SafeTunnelConnectorState;
+  install?: SafeTunnelConnectorInstallStatus;
   error?: string;
 }
 

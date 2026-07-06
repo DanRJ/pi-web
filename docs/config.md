@@ -119,6 +119,12 @@ Rows with JSON key `—` are runtime-only environment variables, not config-file
 | Pi session storage directory | — | `PI_CODING_AGENT_SESSION_DIR` | Pi/session daemon env | Not supported locally | Restart session daemon; follows Pi session priority |
 | Pi agent config directory | — | `PI_CODING_AGENT_DIR` | Pi/Web/API/session daemon env | Not supported locally | Restart services |
 | Skip update checks | — | `PI_WEB_SKIP_VERSION_CHECK`, `PI_WEB_OFFLINE`, `PI_SKIP_VERSION_CHECK`, `PI_OFFLINE` | Web/API env | Not supported locally | Restart web/API after env changes |
+| Safe Tunnel connector command | — | `PI_WEB_SAFE_TUNNEL_CONNECTOR_COMMAND` | Web/API env | Not supported locally | Restart web/API; explicit command disables managed auto-install fallback |
+| Safe Tunnel connector auto-install | — | `PI_WEB_SAFE_TUNNEL_CONNECTOR_AUTO_INSTALL` | Web/API env | Not supported locally | Restart web/API; set `false`/`0`/`no`/`off` to disable on-demand install |
+| Safe Tunnel connector install directory | — | `PI_WEB_SAFE_TUNNEL_CONNECTOR_INSTALL_DIR` | Web/API env | Not supported locally | Restart web/API; custom npm prefix for managed connector installs |
+| Safe Tunnel connector package | — | `PI_WEB_SAFE_TUNNEL_CONNECTOR_PACKAGE` | Web/API env | Not supported locally | Restart web/API; package spec for managed connector install, default `@jmfederico/pi-web-tunnel` |
+| Safe Tunnel connector bin | — | `PI_WEB_SAFE_TUNNEL_CONNECTOR_BIN` | Web/API env | Not supported locally | Restart web/API; bin name under the managed install prefix, default `pi-web-tunnel` |
+| Safe Tunnel connector npm command | — | `PI_WEB_SAFE_TUNNEL_CONNECTOR_NPM_COMMAND` | Web/API env | Not supported locally | Restart web/API; npm executable used for managed connector install |
 
 ## Key details
 
