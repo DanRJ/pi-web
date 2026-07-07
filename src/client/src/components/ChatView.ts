@@ -3,6 +3,7 @@ import { customElement, property, query, state } from "lit/decorators.js";
 import { repeat } from "lit/directives/repeat.js";
 import { ChatDisclosureController } from "../chatDisclosure";
 import { groupChatMessages, summarizeChatGroup, type ChatGroup } from "../chatGroups";
+import { writeClipboardText } from "../clipboard";
 import { capturePrependScrollAnchor, PREPEND_RESTORE_SETTLE_FRAMES, restorePrependScrollAnchor, type PrependScrollAnchor } from "../chatScrollAnchoring";
 import { shouldRequestEarlierMessages } from "../chatHistoryLoading";
 import { ChatScrollController, distanceFromScrollBottom, findFirstVisibleArticle, isNearScrollBottom, type ChatAnchorScrollPosition, type ChatScrollRestoreResult } from "../chatScrollPosition";
@@ -438,22 +439,14 @@ export class ChatView extends LitElement {
 
   private async copyMessage(message: ChatLine, key: string, event: MouseEvent): Promise<void> {
     event.stopPropagation();
-    const ok = await this.writeClipboard(this.messageCopyText(message));
-    if (!ok) return;
+    const copied = await writeClipboardText(this.messageCopyText(message));
+    if (!copied) return;
     this.copiedMessageKey = key;
     window.setTimeout(() => {
       if (this.copiedMessageKey === key) this.copiedMessageKey = undefined;
     }, 1200);
   }
 
-  private async writeClipboard(text: string): Promise<boolean> {
-    try {
-      await navigator.clipboard.writeText(text);
-      return true;
-    } catch {
-      return false;
-    }
-  }
 
   private messageMetaLabel(message: ChatLine): { short: string; full: string } {
     const cached = this.messageMetaCache.get(message);

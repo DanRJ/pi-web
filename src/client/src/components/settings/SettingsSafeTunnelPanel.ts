@@ -1,6 +1,7 @@
 import { css, html, LitElement, type TemplateResult } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import { safeTunnelApi, type SafeTunnelLoginRequest, type SafeTunnelOperationResponse, type SafeTunnelStatusResponse } from "../../api";
+import { writeClipboardText } from "../../clipboard";
 
 const operationPollIntervalMs = 2_000;
 const defaultControlApiUrl = "http://127.0.0.1:8787";
@@ -398,8 +399,8 @@ export class SettingsSafeTunnelPanel extends LitElement {
   private async copyText(value: string, label: string): Promise<void> {
     this.error = "";
     try {
-      if (typeof navigator === "undefined") throw new Error("Clipboard API is unavailable.");
-      await navigator.clipboard.writeText(value);
+      const copied = await writeClipboardText(value);
+      if (!copied) throw new Error("Clipboard write was blocked by the browser.");
       this.message = `${label} copied.`;
     } catch (error) {
       this.error = `Failed to copy ${label.toLowerCase()}: ${errorMessage(error)}`;
