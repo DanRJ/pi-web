@@ -59,7 +59,7 @@ Defaults:
 
 Updating recreates the Docker `sessiond` container. Active Pi agent runtimes in this Docker install may stop, so update while sessions are idle. Persisted PI WEB state, Pi config, and session history under the data directory are kept.
 
-Inside the Docker runtime, the Updates panel uses `pi-web-docker` for status, update, and restart commands. Update and restart commands first start a detached helper container with the same Docker/host mounts and generated Compose environment, including the project name, ports/data paths, helper image, and generated UID/GID/Docker group. The helper then runs Docker Compose, so work continues even when `web`, `sessiond`, or the PI WEB terminal that launched the command exits.
+Inside the Docker runtime, the Updates panel uses `pi-web-docker` for status, update, and restart commands. Update and restart commands first start a detached helper container with the same Docker/host mounts and generated Compose environment, including the project name, ports/data paths, helper image, and generated UID/GID/Docker group. After scheduling the helper, the command streams that helper's logs inline and prints the `docker logs -f` command needed to reconnect. The helper still runs independently, so work continues even when `web`, `sessiond`, or the PI WEB terminal that launched the command exits.
 
 ### Command matrix
 
@@ -301,7 +301,7 @@ Useful development commands:
 ./docker/pi-web-docker --dev stop
 ```
 
-Restart `sessiond` manually after changes that affect `src/server/sessiond.ts`, daemon ownership, or session-daemon-only code paths. Restarting only `web` is enough for ordinary API/client/plugin development reloads. Commands launched from the Updates panel use the same detached `pi-web-docker` helper as runtime mode, so update/restart work continues after the current PI WEB terminal or container exits. In both modes detached helpers load the generated Docker env and run as the generated `PI_WEB_UID:PI_WEB_GID` with the generated Docker group; development helpers still refuse UID 0 unless `--allow-root` is explicit.
+Restart `sessiond` manually after changes that affect `src/server/sessiond.ts`, daemon ownership, or session-daemon-only code paths. Restarting only `web` is enough for ordinary API/client/plugin development reloads. Commands launched from the Updates panel use the same detached `pi-web-docker` helper as runtime mode, stream the helper's logs inline after it starts, and keep update/restart work running after the current PI WEB terminal or container exits. In both modes detached helpers load the generated Docker env and run as the generated `PI_WEB_UID:PI_WEB_GID` with the generated Docker group; development helpers still refuse UID 0 unless `--allow-root` is explicit.
 
 The dev setup intentionally has the same Docker socket and profile-specific host mounts as the runtime setup. The same trust warnings apply. The command refuses to run development mode as UID 0, or to generate a dev env with `PI_WEB_UID=0`, unless you pass `--allow-root`; use that override only when root-owned checkout writes are intentional.
 

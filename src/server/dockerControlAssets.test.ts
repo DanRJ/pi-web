@@ -309,7 +309,9 @@ describe("Docker command assets", () => {
     const result = await runDockerCommand(["restart-sessiond"], runtimeEnv(fakeDocker, installDir));
 
     expect(result.stdout).toContain("Started detached PI WEB Docker helper");
-    expect(result.stdout).toContain("Follow progress with: docker logs -f pi-web-docker-restart-sessiond-");
+    expect(result.stdout).toContain("Streaming detached PI WEB Docker helper logs inline.");
+    expect(result.stdout).toContain("Reconnect with: docker logs -f pi-web-docker-restart-sessiond-");
+    expect(result.stdout).toContain("fake helper log");
     const log = await readFile(fakeDocker.logPath, "utf8");
     expect(log).toContain("container inspect");
     expect(log).toContain("run -d");
@@ -516,6 +518,22 @@ case "\${1:-}" in
     ;;
   run)
     printf 'fake-helper-container-id\n'
+    exit 0
+    ;;
+  logs)
+    printf 'fake helper log\n'
+    exit 0
+    ;;
+  inspect)
+    for arg in "$@"; do
+      case "$arg" in
+        *State.ExitCode*)
+          printf '0\n'
+          exit 0
+          ;;
+      esac
+    done
+    printf '{}\n'
     exit 0
     ;;
 esac
