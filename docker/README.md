@@ -55,7 +55,7 @@ Defaults:
 - install directory: `~/.local/share/pi-web-docker` (or `$XDG_DATA_HOME/pi-web-docker`);
 - persistent data: `<install-dir>/data`, mounted at `/data`;
 - browser URL: <http://127.0.0.1:8504>;
-- npm packages: latest `@jmfederico/pi-web` and latest Pi Coding Agent package unless pinned.
+- npm packages: latest `@jmfederico/pi-web`; Pi Coding Agent is resolved as PI WEB's npm peer dependency (newest compatible version) and the peer-provided `pi` binary is linked into the image.
 
 Updating recreates the Docker `sessiond` container. Active Pi agent runtimes in this Docker install may stop, so update while sessions are idle. Persisted PI WEB state, Pi config, and session history under the data directory are kept.
 
@@ -93,8 +93,7 @@ curl -fsSL https://raw.githubusercontent.com/jmfederico/pi-web/main/docker/insta
       --data-dir ~/.local/share/pi-web-docker/data \
       --bind-address 127.0.0.1 \
       --port 8504 \
-      --pi-web-version latest \
-      --pi-version latest
+      --pi-web-version latest
 ```
 
 Common environment variables written to `.env`:
@@ -109,8 +108,7 @@ Common environment variables written to `.env`:
 | `PI_WEB_DOCKER_HOST_PROFILE`, `HOSTEXEC_MODE` | detected host profile and host-command capability toggle |
 | `PI_WEB_DOCKER_EXTRA_HOST_PATHS` | optional whitespace-separated existing absolute paths to bind-mount read/write at the same path |
 | `PI_WEB_BIND_ADDR`, `PI_WEB_PORT` | host bind address and port |
-| `PI_WEB_VERSION` | npm version/range for `@jmfederico/pi-web` |
-| `PI_VERSION` | npm version/range for `@earendil-works/pi-coding-agent` |
+| `PI_WEB_VERSION` | npm version/range for `@jmfederico/pi-web`; Pi Coding Agent resolves from PI WEB's npm peer dependency |
 | `PI_WEB_OPENSUSE_IMAGE` | openSUSE base image used for the runtime build |
 | `PI_WEB_NODEJS_MAJOR` | Node.js major package to install, defaulting to `22` |
 | `PI_WEB_NODEJS_REPO` | Node.js zypper repository URL, `auto`, or `disabled` |
@@ -119,7 +117,7 @@ Common environment variables written to `.env`:
 | `COMPOSE_PROJECT_NAME` | Docker Compose project name used by the runtime and its detached update/restart helpers; defaults to `pi-web` |
 | `HOSTEXEC_IMAGE` | helper image used by `hostexec` |
 
-Host-derived IDs and the Docker host profile are refreshed on rerun unless you explicitly override the IDs. User-facing values such as data directory, bind address, port, image names, upload limit, extra host paths, base image, Node.js settings, extra packages, and version pins are preserved from an existing `.env` unless you pass a flag or environment override.
+Host-derived IDs and the Docker host profile are refreshed on rerun unless you explicitly override the IDs. User-facing values such as data directory, bind address, port, image names, upload limit, extra host paths, base image, Node.js settings, extra packages, and npm package selection are preserved from an existing `.env` unless you pass a flag or environment override.
 
 The installer also writes a generated `compose.override.yml` in the install directory. `pi-web-docker` loads the generated `.env` and Compose override explicitly for runtime commands and passes the generated `COMPOSE_PROJECT_NAME` to Docker Compose, so an unrelated ambient Compose project name cannot redirect lifecycle commands. Re-run `pi-web-docker install` or `pi-web-docker update` instead of editing generated files by hand.
 
@@ -173,21 +171,20 @@ Files in that development hook directory are ignored by Git except for the place
 
 ### Version pinning
 
-Pin npm package versions when you want repeatable rebuilds:
+Pi Coding Agent is resolved from PI WEB's npm peer dependency, and Docker links the peer-provided `pi` binary into `PATH`. Pin the PI WEB npm package when you want to stay on a specific PI WEB release:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/jmfederico/pi-web/main/docker/install.sh \
-  | sh -s -- --pi-web-version 1.202606.4 --pi-version 0.79.1
+  | sh -s -- --pi-web-version 1.202606.4
 ```
 
 You can also edit `.env` in the install directory:
 
 ```dotenv
 PI_WEB_VERSION=1.202606.4
-PI_VERSION=0.79.1
 ```
 
-Then rerun the one-liner to rebuild/recreate with those pins. Use `latest` again when you want the runtime to track the newest npm releases.
+Then rerun the one-liner to rebuild/recreate with that pin. Use `PI_WEB_VERSION=latest` when you want the runtime to track the newest PI WEB release and the newest Pi package compatible with PI WEB's peer dependency range.
 
 To pin the Docker asset templates themselves, fetch the installer from a specific Git branch, tag, or commit and pass the same ref as the asset source:
 
