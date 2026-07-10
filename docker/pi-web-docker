@@ -33,7 +33,8 @@ Commands:
   cli <pi-web args...>    Run the pi-web CLI in the web container
 
 Update and restart commands launched inside a PI WEB Docker container start an
-independent helper container first so work can continue after web/sessiond exits.
+independent helper container first, then stream the helper logs inline. The
+helper continues running if the terminal or web/sessiond exits.
 EOF
 }
 
@@ -598,6 +599,35 @@ cleanup_old_helpers() {
   done
 }
 
+stream_detached_helper_logs() {
+  helper_name=$1
+  printf '\n'
+  printf 'Streaming detached PI WEB Docker helper logs inline.\n'
+  printf 'If this terminal disconnects, the helper keeps running.\n'
+  printf 'Reconnect with: docker logs -f %s\n' "$helper_name"
+  printf '\n'
+
+  if docker logs -f "$helper_name"; then
+    logs_status=0
+  else
+    logs_status=$?
+  fi
+
+  if [ "$logs_status" -ne 0 ]; then
+    log "pi-web-docker: detached helper log streaming stopped with status $logs_status"
+    log "pi-web-docker: reconnect with: docker logs -f $helper_name"
+    return "$logs_status"
+  fi
+
+  helper_status=$(docker inspect --format '{{.State.ExitCode}}' "$helper_name" 2>/dev/null || true)
+  if is_unsigned_int "$helper_status" && [ "$helper_status" -ne 0 ]; then
+    log "pi-web-docker: detached helper exited with status $helper_status"
+    return "$helper_status"
+  fi
+
+  return 0
+}
+
 start_detached_helper() {
   action=$1
   is_truthy "${PI_WEB_DOCKER_RUNTIME:-}" || die "detached helpers are only available inside the PI WEB Docker runtime"
@@ -675,7 +705,7 @@ start_detached_helper() {
   container_id=$(docker "$@") || die "could not start detached Docker helper"
   printf 'Started detached PI WEB Docker helper: %s\n' "$helper_name"
   printf 'Container ID: %s\n' "$container_id"
-  printf 'Follow progress with: docker logs -f %s\n' "$helper_name"
+  stream_detached_helper_logs "$helper_name"
 }
 
 run_detached_action() {
