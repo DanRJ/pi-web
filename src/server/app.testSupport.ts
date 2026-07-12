@@ -98,8 +98,8 @@ export function registerAppTestHooks(): void {
       config: fakeConfigService(),
       piPackages: fakePiPackageService(),
       piWebPlugins: {
-        manifest: () => Promise.resolve({ plugins: [{ id: "fake", module: "/pi-web-plugins/fake/plugin.js?v=1", source: "test", scope: "local", machineSpecific: false }] }),
-        plugins: () => Promise.resolve({ plugins: [{ id: "fake", module: "/pi-web-plugins/fake/plugin.js?v=1", source: "test", scope: "local", machineSpecific: false, enabled: true }] }),
+        manifest: () => Promise.resolve({ plugins: [{ id: "fake", module: "./fake/plugin.js?v=1", source: "test", scope: "local", machineSpecific: false }] }),
+        plugins: () => Promise.resolve({ plugins: [{ id: "fake", module: "./fake/plugin.js?v=1", source: "test", scope: "local", machineSpecific: false, enabled: true }] }),
         readAsset: fakePiWebPluginAsset,
       },
       clientDist: false,

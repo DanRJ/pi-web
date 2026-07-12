@@ -37,7 +37,7 @@ describe("PiWebPluginService", () => {
       plugins: [expect.objectContaining({ id: "info", source: "test", scope: "local", machineSpecific: false })],
     });
     const manifest = await service.manifest();
-    expect(manifest.plugins[0]?.module).toMatch(/^\/pi-web-plugins\/info\/pi-web-plugin\.js\?v=\d+$/u);
+    expect(manifest.plugins[0]?.module).toMatch(/^\.\/info\/pi-web-plugin\.js\?v=\d+$/u);
 
     const asset = await service.readAsset("info", "pi-web-plugin.js");
     expect(asset?.contentType).toBe("application/javascript; charset=utf-8");
@@ -105,7 +105,7 @@ describe("PiWebPluginService", () => {
     const service = new PiWebPluginService({ roots: [{ path: join(tempDir, "plugins"), source: "test", scope: "local" }], packageProvider: false });
 
     const manifest = await service.manifest();
-    const moduleUrl = new URL(manifest.plugins[0]?.module ?? "", "http://pi-web.test");
+    const moduleUrl = new URL(manifest.plugins[0]?.module ?? "", "http://pi-web.test/pi-web-plugins/manifest.json");
     expect(moduleUrl.pathname).toBe("/pi-web-plugins/updates/pi-web-plugin.js");
     expect(moduleUrl.searchParams.get("v")).toMatch(/^\d+$/u);
     expect(moduleUrl.searchParams.get("piWebDockerMode")).toBe("dev");
@@ -127,7 +127,7 @@ describe("PiWebPluginService", () => {
     const manifest = await service.manifest();
     expect(manifest.plugins).toHaveLength(1);
     expect(manifest.plugins[0]).toMatchObject({ id: "review", source: "npm:@acme/review", scope: "user" });
-    expect(manifest.plugins[0]?.module).toMatch(/^\/pi-web-plugins\/review\/dist\/review\.js\?v=\d+$/u);
+    expect(manifest.plugins[0]?.module).toMatch(/^\.\/review\/dist\/review\.js\?v=\d+$/u);
   });
 
   it("refreshes Pi package plugin discovery after Pi package settings change", async () => {
@@ -236,7 +236,7 @@ describe("PiWebPluginService", () => {
     expect(manifest.plugins).toEqual([
       expect.objectContaining({ id: "duplicate", source: "first", machineSpecific: false }),
     ]);
-    expect(manifest.plugins[0]?.module).toMatch(/^\/pi-web-plugins\/duplicate\/first\.js\?v=\d+$/u);
+    expect(manifest.plugins[0]?.module).toMatch(/^\.\/duplicate\/first\.js\?v=\d+$/u);
   });
 
   it("skips legacy metadata shortcuts and unsafe module paths", async () => {

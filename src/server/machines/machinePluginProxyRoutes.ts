@@ -86,7 +86,7 @@ function rewriteRemotePluginManifest(machineId: string, manifest: RemotePluginMa
       if (modulePath === undefined) return [];
       return [{
         ...plugin,
-        module: `${piWebBasePath()}/pi-web-plugins/${encodeURIComponent(machineScopedPluginId(machineId, plugin.id))}/${modulePath.path}${modulePath.query}`,
+        module: `../../../../pi-web-plugins/${encodeURIComponent(machineScopedPluginId(machineId, plugin.id))}/${modulePath.path}${modulePath.query}`,
       }];
     }),
   };
@@ -95,10 +95,10 @@ function rewriteRemotePluginManifest(machineId: string, manifest: RemotePluginMa
 function remotePluginModulePath(pluginId: string, module: string): { path: string; query: string } | undefined {
   if (!isPiWebPluginId(pluginId)) return undefined;
   const prefix = `/pi-web-plugins/${encodeURIComponent(pluginId)}/`;
-  const base = new URL(prefix, "http://pi-web.local");
+  const manifestUrl = new URL("/pi-web-plugins/manifest.json", "http://pi-web.local");
   try {
-    const url = new URL(module, base);
-    if (url.origin !== base.origin || !url.pathname.startsWith(prefix)) return undefined;
+    const url = new URL(module, manifestUrl);
+    if (url.origin !== manifestUrl.origin || !url.pathname.startsWith(prefix)) return undefined;
     const path = safeRemotePluginAssetPath(url.pathname.slice(prefix.length));
     return path === undefined ? undefined : { path, query: url.search };
   } catch {
@@ -188,11 +188,6 @@ function sendGatewayError(reply: FastifyReply, machineId: string, error: unknown
     statusCode,
     detail: error instanceof Error ? error.message : String(error),
   });
-}
-
-function piWebBasePath(): string {
-  const basePath = process.env["PI_WEB_BASE_PATH"] ?? "";
-  return basePath.replace(/\/$/u, "");
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

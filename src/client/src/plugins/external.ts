@@ -1,5 +1,5 @@
 import { machineScopedPluginId } from "../../../shared/machinePluginIds";
-import { resolveAppUrl } from "../appUrl";
+import { resolveAppUrl, type AppUrlContext } from "../appUrl";
 import type { PiWebPlugin, PiWebPluginRegistration } from "./types";
 
 export interface PluginManifestEntry {
@@ -15,6 +15,7 @@ interface PluginManifest {
 export interface LoadExternalPluginsOptions {
   machineId?: string;
   shouldLoadPlugin?: (entry: PluginManifestEntry) => boolean;
+  moduleLoader?: (moduleUrl: string) => Promise<unknown>;
 }
 
 export async function loadExternalPlugins(manifestUrl = "pi-web-plugins/manifest.json", options: LoadExternalPluginsOptions = {}): Promise<PiWebPluginRegistration[]> {
@@ -26,8 +27,8 @@ export async function loadExternalPlugins(manifestUrl = "pi-web-plugins/manifest
   for (const entry of manifest.plugins) {
     if (options.shouldLoadPlugin?.(entry) === false) continue;
     try {
-      const moduleUrl = new URL(entry.module, resolvedManifestUrl).toString();
-      const module: unknown = await import(/* @vite-ignore */ moduleUrl);
+      const moduleUrl = resolvePluginModuleUrl(entry.module, resolvedManifestUrl);
+      const module = await (options.moduleLoader ?? importPluginModule)(moduleUrl);
       const plugin = parsePluginModule(module, moduleUrl);
       registrations.push({
         id: options.machineId === undefined ? entry.id : machineScopedPluginId(options.machineId, entry.id),
@@ -40,6 +41,15 @@ export async function loadExternalPlugins(manifestUrl = "pi-web-plugins/manifest
     }
   }
   return registrations;
+}
+
+export function resolvePluginModuleUrl(moduleReference: string, manifestUrl: string, appUrlContext?: AppUrlContext): string {
+  if (!moduleReference.startsWith("/")) return new URL(moduleReference, manifestUrl).toString();
+  return appUrlContext === undefined ? resolveAppUrl(moduleReference) : resolveAppUrl(moduleReference, appUrlContext);
+}
+
+async function importPluginModule(moduleUrl: string): Promise<unknown> {
+  return import(/* @vite-ignore */ moduleUrl);
 }
 
 async function fetchPluginManifest(manifestUrl: string): Promise<PluginManifest | undefined> {
