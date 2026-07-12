@@ -347,7 +347,15 @@ A plugin can fetch its own static assets with URLs under:
 /pi-web-plugins/<plugin-id>/<path-inside-plugin-root>
 ```
 
-PI WEB prevents asset path traversal outside the plugin root. JavaScript, JSON, CSS, and HTML get appropriate content types; other files are served as octet-stream.
+Prefer module-relative asset URLs so they also work for remote machine plugins. For example, a built plugin module can reference an SVG shipped beside it:
+
+```js
+const iconUrl = new URL("./assets/icon.svg", import.meta.url);
+```
+
+The final installed plugin package must contain `assets/icon.svg` at that path relative to the final built module. PI WEB serves files that already exist in the package; it does not copy a source `public/` directory or apply Vite-style public-directory semantics. Configure the plugin build and package contents to emit or copy the asset into its final module-relative location.
+
+PI WEB prevents asset path traversal outside the plugin root. JavaScript, JSON, CSS, HTML, and SVG files get appropriate content types; unknown file types are served as octet-stream.
 
 ## Plugin module shape
 

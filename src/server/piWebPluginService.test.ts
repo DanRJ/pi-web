@@ -44,6 +44,28 @@ describe("PiWebPluginService", () => {
     expect(asset?.content.toString("utf8")).toContain("export default");
   });
 
+  it("serves nested SVG assets with a browser-compatible content type", async () => {
+    const pluginDir = join(tempDir, "plugins", "icons");
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"></svg>';
+    await writePlugin(pluginDir, {
+      packageJson: { piWeb: { plugins: [{ id: "icons", module: "pi-web-plugin.js" }] } },
+      files: {
+        "pi-web-plugin.js": "export default {};",
+        "assets/icon.svg": svg,
+        "assets/uppercase.SVG": svg,
+        "assets/data.bin": "unknown",
+      },
+    });
+
+    const service = new PiWebPluginService({ roots: [{ path: join(tempDir, "plugins"), source: "test", scope: "local" }], packageProvider: false });
+
+    const svgAsset = await service.readAsset("icons", "assets/icon.svg");
+    expect(svgAsset?.contentType).toBe("image/svg+xml");
+    expect(svgAsset?.content.toString("utf8")).toBe(svg);
+    await expect(service.readAsset("icons", "assets/uppercase.SVG")).resolves.toMatchObject({ contentType: "image/svg+xml" });
+    await expect(service.readAsset("icons", "assets/data.bin")).resolves.toMatchObject({ contentType: "application/octet-stream" });
+  });
+
   it("includes machine-specific preferences in plugin manifests", async () => {
     await writePlugin(join(tempDir, "plugins", "updates"), {
       packageJson: { piWeb: { plugins: [{ id: "updates", module: "pi-web-plugin.js", machineSpecific: true }] } },

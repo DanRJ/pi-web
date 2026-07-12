@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { readdir, readFile, realpath, stat } from "node:fs/promises";
-import { dirname, join, relative, resolve, sep } from "node:path";
+import { dirname, extname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DefaultPackageManager, getAgentDir, SettingsManager } from "@earendil-works/pi-coding-agent";
 import { loadPiWebConfig, piWebDataDir, type PiWebConfig } from "../config.js";
@@ -335,11 +335,14 @@ function isWithin(root: string, candidate: string): boolean {
 }
 
 function contentTypeFor(path: string): string {
-  if (path.endsWith(".js")) return "application/javascript; charset=utf-8";
-  if (path.endsWith(".json")) return "application/json; charset=utf-8";
-  if (path.endsWith(".css")) return "text/css; charset=utf-8";
-  if (path.endsWith(".html")) return "text/html; charset=utf-8";
-  return "application/octet-stream";
+  switch (extname(path).toLowerCase()) {
+    case ".js": return "application/javascript; charset=utf-8";
+    case ".json": return "application/json; charset=utf-8";
+    case ".css": return "text/css; charset=utf-8";
+    case ".html": return "text/html; charset=utf-8";
+    case ".svg": return "image/svg+xml";
+    default: return "application/octet-stream";
+  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
