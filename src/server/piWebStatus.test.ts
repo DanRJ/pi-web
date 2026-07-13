@@ -90,6 +90,29 @@ describe("PI WEB status", () => {
     expect(runtime.capabilities).toEqual(expect.arrayContaining([PI_WEB_CAPABILITIES.piPackagesManage, PI_WEB_CAPABILITIES.selectedMachineSettings]));
   });
 
+  it("carries the daemon-owned active agent profile through the web runtime response", async () => {
+    const activeAgentProfile = {
+      schemaVersion: 1 as const,
+      revision: `sha256:${"a".repeat(64)}`,
+      command: "acme-agent",
+      dir: "/opt/acme-agent/state",
+      sessionDirEnvKeys: ["PI_WEB_AGENT_SESSION_DIR"],
+    };
+    const daemon = daemonWithRuntime({
+      component: "sessiond",
+      label: "Session daemon",
+      runtimeVersion: "1.202605.7",
+      available: true,
+      capabilities: [],
+      activeAgentProfile,
+    });
+
+    const runtime = await getPiWebRuntime(daemon);
+
+    expect(runtime.components.sessiond.activeAgentProfile).toEqual(activeAgentProfile);
+    expect(runtime.components.web.activeAgentProfile).toBeUndefined();
+  });
+
   it("bypasses cached npm release data for a forced check", async () => {
     Reflect.deleteProperty(process.env, "PI_WEB_SKIP_VERSION_CHECK");
     process.env["PI_WEB_DOCKER_RUNTIME"] = "1";

@@ -593,12 +593,23 @@ export interface PiWebComponentStatus {
   error?: string;
 }
 
+/** Secret-free identity of the Pi-compatible CLI/state profile fixed for one sessiond lifetime. */
+export interface ActiveAgentProfileDescriptor {
+  readonly schemaVersion: 1;
+  readonly revision: string;
+  readonly command: string;
+  readonly dir: string;
+  readonly sessionDirEnvKeys: readonly string[];
+}
+
 export interface PiWebRuntimeComponent {
   component: PiWebServiceComponent;
   label: string;
   runtimeVersion?: string;
   available: boolean;
   capabilities: PiWebCapability[];
+  /** Present only for a session daemon that supports active-profile reporting. */
+  activeAgentProfile?: ActiveAgentProfileDescriptor;
   error?: string;
 }
 

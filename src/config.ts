@@ -12,6 +12,17 @@ export interface LoadedPiWebConfig {
   config: PiWebConfig;
 }
 
+export interface EffectivePiWebConfig extends Omit<PiWebConfig, "uploads" | "spawnSessions" | "subsessions" | "agent"> {
+  uploads: NonNullable<PiWebConfig["uploads"]>;
+  spawnSessions: boolean;
+  subsessions: boolean;
+  agent: Required<NonNullable<PiWebConfig["agent"]>>;
+}
+
+export interface LoadedEffectivePiWebConfig extends Omit<LoadedPiWebConfig, "config"> {
+  config: EffectivePiWebConfig;
+}
+
 export interface LoadOptions {
   env?: NodeJS.ProcessEnv;
   cwd?: string;
@@ -110,11 +121,11 @@ export function loadPiWebConfig(options: LoadOptions = {}): LoadedPiWebConfig {
   return { path, exists: true, config: parsePiWebConfig(parsed, path) };
 }
 
-export function effectivePiWebConfig(options: LoadOptions = {}): LoadedPiWebConfig {
+export function effectivePiWebConfig(options: LoadOptions = {}): LoadedEffectivePiWebConfig {
   return resolveEffectivePiWebConfig(loadPiWebConfig(options), options);
 }
 
-export function resolveEffectivePiWebConfig(loaded: LoadedPiWebConfig, options: LoadOptions = {}): LoadedPiWebConfig {
+export function resolveEffectivePiWebConfig(loaded: LoadedPiWebConfig, options: LoadOptions = {}): LoadedEffectivePiWebConfig {
   const env = options.env ?? process.env;
   const host = env["PI_WEB_HOST"];
   const port = env["PI_WEB_PORT"] ?? env["PORT"];
