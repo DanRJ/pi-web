@@ -37,7 +37,10 @@ describe("PiWebPluginService", () => {
       plugins: [expect.objectContaining({ id: "info", source: "test", scope: "local", machineSpecific: false })],
     });
     const manifest = await service.manifest();
-    expect(manifest.plugins[0]?.module).toMatch(/^\.\/info\/pi-web-plugin\.js\?v=\d+$/u);
+    const module = manifest.plugins[0]?.module;
+    expect(module).toMatch(/^\/pi-web-plugins\/info\/pi-web-plugin\.js\?v=\d+$/u);
+    expect(new URL(module ?? "", "http://old-gateway.test/pi-web-plugins/info/").pathname).toBe("/pi-web-plugins/info/pi-web-plugin.js");
+    await expect(service.plugins()).resolves.toMatchObject({ plugins: [{ module }] });
 
     const asset = await service.readAsset("info", "pi-web-plugin.js");
     expect(asset?.contentType).toBe("application/javascript; charset=utf-8");
@@ -127,7 +130,7 @@ describe("PiWebPluginService", () => {
     const manifest = await service.manifest();
     expect(manifest.plugins).toHaveLength(1);
     expect(manifest.plugins[0]).toMatchObject({ id: "review", source: "npm:@acme/review", scope: "user" });
-    expect(manifest.plugins[0]?.module).toMatch(/^\.\/review\/dist\/review\.js\?v=\d+$/u);
+    expect(manifest.plugins[0]?.module).toMatch(/^\/pi-web-plugins\/review\/dist\/review\.js\?v=\d+$/u);
   });
 
   it("refreshes Pi package plugin discovery after Pi package settings change", async () => {
@@ -236,7 +239,7 @@ describe("PiWebPluginService", () => {
     expect(manifest.plugins).toEqual([
       expect.objectContaining({ id: "duplicate", source: "first", machineSpecific: false }),
     ]);
-    expect(manifest.plugins[0]?.module).toMatch(/^\.\/duplicate\/first\.js\?v=\d+$/u);
+    expect(manifest.plugins[0]?.module).toMatch(/^\/pi-web-plugins\/duplicate\/first\.js\?v=\d+$/u);
   });
 
   it("skips legacy metadata shortcuts and unsafe module paths", async () => {

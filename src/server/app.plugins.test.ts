@@ -6,18 +6,18 @@ import { appTestContext, fakeRemoteClient, registerAppTestHooks } from "./app.te
 registerAppTestHooks();
 
 describe("buildApp PI WEB plugin routes", () => {
-  it("serves the PI WEB plugin manifest and plugin assets", async () => {
+  it("serves application-root plugin modules through the manifest and plugin-list APIs", async () => {
     const manifestResponse = await appTestContext.app.inject({ method: "GET", url: "/pi-web-plugins/manifest.json" });
     expect(manifestResponse.statusCode).toBe(200);
-    expect(manifestResponse.json()).toEqual({ plugins: [{ id: "fake", module: "./fake/plugin.js?v=1", source: "test", scope: "local", machineSpecific: false }] });
+    expect(manifestResponse.json()).toEqual({ plugins: [{ id: "fake", module: "/pi-web-plugins/fake/plugin.js?v=1", source: "test", scope: "local", machineSpecific: false }] });
 
     const pluginsResponse = await appTestContext.app.inject({ method: "GET", url: "/api/plugins" });
     expect(pluginsResponse.statusCode).toBe(200);
-    expect(pluginsResponse.json()).toEqual({ plugins: [{ id: "fake", module: "./fake/plugin.js?v=1", source: "test", scope: "local", machineSpecific: false, enabled: true }] });
+    expect(pluginsResponse.json()).toEqual({ plugins: [{ id: "fake", module: "/pi-web-plugins/fake/plugin.js?v=1", source: "test", scope: "local", machineSpecific: false, enabled: true }] });
 
     const localMachinePluginsResponse = await appTestContext.app.inject({ method: "GET", url: "/api/machines/local/plugins" });
     expect(localMachinePluginsResponse.statusCode).toBe(200);
-    expect(localMachinePluginsResponse.json()).toEqual({ plugins: [{ id: "fake", module: "./fake/plugin.js?v=1", source: "test", scope: "local", machineSpecific: false, enabled: true }] });
+    expect(localMachinePluginsResponse.json()).toEqual({ plugins: [{ id: "fake", module: "/pi-web-plugins/fake/plugin.js?v=1", source: "test", scope: "local", machineSpecific: false, enabled: true }] });
 
     const assetResponse = await appTestContext.app.inject({ method: "GET", url: "/pi-web-plugins/fake/plugin.js?v=1" });
     expect(assetResponse.statusCode).toBe(200);
@@ -87,7 +87,7 @@ describe("buildApp PI WEB plugin routes", () => {
     expect(request).toHaveBeenCalledWith("GET", "/pi-web-plugins/remote-tools/pi-web-plugin.js?v=123");
   });
 
-  it("accepts safe manifest-relative modules and drops unsafe remote modules", async () => {
+  it("accepts manifest-relative and legacy plugin-root-relative modules while dropping unsafe remote modules", async () => {
     const addResponse = await appTestContext.app.inject({ method: "POST", url: "/api/machines", payload: { name: "Remote", baseUrl: "https://remote.example.test/" } });
     const remote = addResponse.json<{ id: string }>();
     appTestContext.remoteClient = fakeRemoteClient({
@@ -97,8 +97,11 @@ describe("buildApp PI WEB plugin routes", () => {
         body: {
           plugins: [
             { id: "safe-tools", module: "./safe-tools/nested/pi-web-plugin.js?v=1", source: "local", scope: "local" },
+            { id: "legacy-tools", module: "nested/pi-web-plugin.js?v=2", source: "local", scope: "local" },
             { id: "traversal-tools", module: "./traversal-tools/..%2F..%2Fapi%2Fconfig", source: "local", scope: "local" },
             { id: "wrong-root", module: "/pi-web-plugins/other/pi-web-plugin.js", source: "local", scope: "local" },
+            { id: "cross-origin", module: "https://plugins.example.test/pi-web-plugin.js", source: "local", scope: "local" },
+            { id: "malformed", module: "nested/%E0%A4%A.js", source: "local", scope: "local" },
           ],
         },
       })),
@@ -108,7 +111,10 @@ describe("buildApp PI WEB plugin routes", () => {
 
     expect(manifestResponse.statusCode).toBe(200);
     expect(manifestResponse.json()).toEqual({
-      plugins: [{ id: "safe-tools", module: `../../../../pi-web-plugins/${machineScopedPluginId(remote.id, "safe-tools")}/nested/pi-web-plugin.js?v=1`, source: "local", scope: "local" }],
+      plugins: [
+        { id: "safe-tools", module: `../../../../pi-web-plugins/${machineScopedPluginId(remote.id, "safe-tools")}/nested/pi-web-plugin.js?v=1`, source: "local", scope: "local" },
+        { id: "legacy-tools", module: `../../../../pi-web-plugins/${machineScopedPluginId(remote.id, "legacy-tools")}/nested/pi-web-plugin.js?v=2`, source: "local", scope: "local" },
+      ],
     });
   });
 

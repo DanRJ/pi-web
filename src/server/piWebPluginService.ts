@@ -135,7 +135,7 @@ export class PiWebPluginService {
   private pluginInfo(plugin: PluginRecord, config: PiWebConfig): PiWebPluginInfo {
     return {
       id: plugin.id,
-      module: `./${encodeURIComponent(plugin.id)}/${plugin.entryFile}?${pluginModuleQuery(plugin)}`,
+      module: `/pi-web-plugins/${encodeURIComponent(plugin.id)}/${plugin.entryFile}?${pluginModuleQuery(plugin)}`,
       source: plugin.source,
       scope: plugin.scope,
       machineSpecific: plugin.machineSpecific,
