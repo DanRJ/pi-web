@@ -1,17 +1,28 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { comparePackageVersions, getPiWebStatus, getPiWebVersionStatus, updateCommandFor } from "./piWebStatus.js";
+import { comparePackageVersions, getPiWebRuntime, getPiWebStatus, getPiWebVersionStatus, updateCommandFor } from "./piWebStatus.js";
 import { SessionDaemonClient } from "../sessiond/sessionDaemonClient.js";
 import type { PiWebComponentStatus, PiWebRuntimeComponent } from "../shared/apiTypes.js";
+import { PI_WEB_CAPABILITIES } from "../shared/capabilities.js";
 
 const originalSkipVersionCheck = process.env["PI_WEB_SKIP_VERSION_CHECK"];
 const originalHome = process.env["HOME"];
+const originalPath = process.env["PATH"];
+const originalDockerRuntime = process.env["PI_WEB_DOCKER_RUNTIME"];
+const originalDockerMode = process.env["PI_WEB_DOCKER_MODE"];
+const originalDockerInstallDir = process.env["PI_WEB_DOCKER_INSTALL_DIR"];
+const originalDockerDevRepoRoot = process.env["PI_WEB_DOCKER_DEV_REPO_ROOT"];
 
 afterEach(() => {
   restoreEnv("PI_WEB_SKIP_VERSION_CHECK", originalSkipVersionCheck);
   restoreEnv("HOME", originalHome);
+  restoreEnv("PATH", originalPath);
+  restoreEnv("PI_WEB_DOCKER_RUNTIME", originalDockerRuntime);
+  restoreEnv("PI_WEB_DOCKER_MODE", originalDockerMode);
+  restoreEnv("PI_WEB_DOCKER_INSTALL_DIR", originalDockerInstallDir);
+  restoreEnv("PI_WEB_DOCKER_DEV_REPO_ROOT", originalDockerDevRepoRoot);
   vi.restoreAllMocks();
 });
 
@@ -41,6 +52,7 @@ describe("PI WEB status", () => {
   });
 
   it("detects session daemon package installs from the configured agent dir for runtime responses", async () => {
+    disableDockerRuntimeEnv();
     const agentDir = await tempHome();
     try {
       await installConfiguredPiWebPackage(agentDir);
@@ -60,8 +72,54 @@ describe("PI WEB status", () => {
     }
   });
 
+  it("reports web-only capabilities from the web runtime", async () => {
+    const daemon = daemonWithComponent({
+      component: "sessiond",
+      label: "Session daemon",
+      runtimeVersion: "1.202605.7",
+      installedVersion: "1.202605.8",
+      stale: true,
+      available: true,
+    });
+
+    const runtime = await getPiWebRuntime(daemon);
+
+    expect(runtime.components.web.capabilities).toEqual(expect.arrayContaining([PI_WEB_CAPABILITIES.piPackagesManage, PI_WEB_CAPABILITIES.selectedMachineSettings]));
+    expect(runtime.components.sessiond.capabilities).not.toContain(PI_WEB_CAPABILITIES.piPackagesManage);
+    expect(runtime.components.sessiond.capabilities).not.toContain(PI_WEB_CAPABILITIES.selectedMachineSettings);
+    expect(runtime.capabilities).toEqual(expect.arrayContaining([PI_WEB_CAPABILITIES.piPackagesManage, PI_WEB_CAPABILITIES.selectedMachineSettings]));
+  });
+
+  it("bypasses cached npm release data for a forced check", async () => {
+    Reflect.deleteProperty(process.env, "PI_WEB_SKIP_VERSION_CHECK");
+    process.env["PI_WEB_DOCKER_RUNTIME"] = "1";
+    process.env["PI_WEB_DOCKER_MODE"] = "runtime";
+    const fetchMock = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(npmVersionResponse("1.202607.1"))
+      .mockResolvedValueOnce(npmVersionResponse("1.202607.2"));
+    const daemon = daemonWithComponent({
+      component: "sessiond",
+      label: "Session daemon",
+      runtimeVersion: "1.202607.0",
+      installedVersion: "1.202607.0",
+      stale: false,
+      available: true,
+      installation: { kind: "docker", dockerMode: "runtime" },
+    });
+
+    const first = await getPiWebStatus(daemon, { forceReleaseCheck: true });
+    const cached = await getPiWebStatus(daemon);
+    const forced = await getPiWebStatus(daemon, { forceReleaseCheck: true });
+
+    expect(first.release.latestVersion).toBe("1.202607.1");
+    expect(cached.release.latestVersion).toBe("1.202607.1");
+    expect(forced.release.latestVersion).toBe("1.202607.2");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   it("reports stale session daemon versions as messages", async () => {
     process.env["PI_WEB_SKIP_VERSION_CHECK"] = "1";
+    disableDockerRuntimeEnv();
     const daemon = daemonWithComponent({
       component: "sessiond",
       label: "Session daemon",
@@ -72,7 +130,7 @@ describe("PI WEB status", () => {
       installation: { kind: "pi-package", source: "npm:@jmfederico/pi-web", scope: "user", path: "/tmp/pi-web" },
     });
 
-    const status = await getPiWebStatus(daemon);
+    const status = await getPiWebStatus(daemon, { forceReleaseCheck: true });
 
     expect(status.release.skipped).toBe(true);
     expect(status.components.sessiond.stale).toBe(true);
@@ -93,12 +151,15 @@ describe("PI WEB status", () => {
     expect(updateCommand).toBe("'/tmp/agent'\\''s/alt-agent' update 'npm:@jmfederico/pi-web' && pi-web restart");
   });
 
-  it("suggests native systemd commands for local development services", async () => {
-    if (process.platform !== "linux") return;
+  it.skipIf(process.platform !== "linux")("suggests native systemd commands for local development services", async () => {
     process.env["PI_WEB_SKIP_VERSION_CHECK"] = "1";
+    disableDockerRuntimeEnv();
     const home = await tempHome();
+    const binDir = await tempHome();
     try {
       process.env["HOME"] = home;
+      await installExecutable(binDir, "systemctl");
+      process.env["PATH"] = `${binDir}:${process.env["PATH"] ?? ""}`;
       await installSystemdServiceFiles(home, ["pi-web-sessiond.service", "pi-web-ui-dev.service"]);
       const daemon = daemonWithComponent(staleLocalSessiond());
 
@@ -109,12 +170,72 @@ describe("PI WEB status", () => {
       expect(status.commands.restartSessiond).toBe("systemd-run --user --collect --unit=pi-web-restart-sessiond -- systemctl --user restart pi-web-sessiond.service");
       expect(status.messages.find((message) => message.id === "sessiond-stale")?.command).toBe("systemd-run --user --collect --unit=pi-web-restart-sessiond -- systemctl --user restart pi-web-sessiond.service");
     } finally {
-      await rm(home, { recursive: true, force: true });
+      await Promise.all([
+        rm(home, { recursive: true, force: true }),
+        rm(binDir, { recursive: true, force: true }),
+      ]);
     }
+  });
+
+  it("suggests Docker commands when running inside the Docker runtime", async () => {
+    process.env["PI_WEB_SKIP_VERSION_CHECK"] = "1";
+    process.env["PI_WEB_DOCKER_RUNTIME"] = "1";
+    process.env["PI_WEB_DOCKER_MODE"] = "runtime";
+    process.env["PI_WEB_DOCKER_INSTALL_DIR"] = "/srv/pi-web-docker";
+    process.env["PATH"] = "";
+    const daemon = daemonWithComponent({ ...staleLocalSessiond(), installation: { kind: "docker", path: "/srv/pi-web-docker", dockerMode: "runtime" } });
+
+    const status = await getPiWebStatus(daemon);
+
+    expect(status.components.web.installation).toEqual({ kind: "docker", path: "/srv/pi-web-docker", dockerMode: "runtime" });
+    expect(status.commands).toEqual({
+      update: "pi-web-docker update",
+      restart: "pi-web-docker restart",
+      restartWeb: "pi-web-docker restart-web",
+      restartSessiond: "pi-web-docker restart-sessiond",
+      status: "pi-web-docker status",
+    });
+    expect(JSON.stringify(status)).not.toContain("npm install -g");
+    expect(JSON.stringify(status)).not.toContain("pi-web restart");
+  });
+
+  it("suggests explicit Docker development commands when running inside the Docker dev runtime", async () => {
+    process.env["PI_WEB_SKIP_VERSION_CHECK"] = "1";
+    process.env["PI_WEB_DOCKER_RUNTIME"] = "1";
+    process.env["PI_WEB_DOCKER_MODE"] = "dev";
+    process.env["PI_WEB_DOCKER_DEV_REPO_ROOT"] = "/workspace/pi-web";
+    process.env["PATH"] = "";
+    const daemon = daemonWithComponent({ ...staleLocalSessiond(), installation: { kind: "docker", path: "/workspace/pi-web", dockerMode: "dev" } });
+
+    const status = await getPiWebStatus(daemon);
+
+    expect(status.commands).toEqual({
+      update: "pi-web-docker --dev update",
+      restart: "pi-web-docker --dev restart",
+      restartWeb: "pi-web-docker --dev restart-web",
+      restartSessiond: "pi-web-docker --dev restart-sessiond",
+      status: "pi-web-docker --dev status",
+    });
+  });
+
+  it("infers explicit Docker development commands from the generated dev root when mode is omitted", async () => {
+    process.env["PI_WEB_SKIP_VERSION_CHECK"] = "1";
+    process.env["PI_WEB_DOCKER_RUNTIME"] = "1";
+    Reflect.deleteProperty(process.env, "PI_WEB_DOCKER_MODE");
+    process.env["PI_WEB_DOCKER_DEV_REPO_ROOT"] = "/workspace/pi-web";
+    process.env["PATH"] = "";
+    const daemon = daemonWithComponent(staleLocalSessiond());
+
+    const status = await getPiWebStatus(daemon);
+
+    expect(status.components.web.installation).toEqual({ kind: "docker", path: "/workspace/pi-web", dockerMode: "dev" });
+    expect(status.commands.update).toBe("pi-web-docker --dev update");
+    expect(status.commands.status).toBe("pi-web-docker --dev status");
   });
 
   it("omits local restart commands when no native service command is known", async () => {
     process.env["PI_WEB_SKIP_VERSION_CHECK"] = "1";
+    disableDockerRuntimeEnv();
     const home = await tempHome();
     try {
       process.env["HOME"] = home;
@@ -131,6 +252,10 @@ describe("PI WEB status", () => {
     }
   });
 });
+
+function npmVersionResponse(version: string): Response {
+  return new Response(JSON.stringify({ version }), { status: 200, headers: { "content-type": "application/json" } });
+}
 
 function daemonWithComponent(component: PiWebComponentStatus): SessionDaemonClient {
   const daemon = new SessionDaemonClient();
@@ -178,6 +303,18 @@ async function installConfiguredPiWebPackage(agentDir: string): Promise<void> {
   await writeFile(join(agentDir, "settings.json"), `${JSON.stringify({ packages: [process.cwd()] }, null, 2)}\n`, "utf8");
 }
 
+async function installExecutable(dir: string, name: string): Promise<void> {
+  const path = join(dir, name);
+  await writeFile(path, "#!/usr/bin/env sh\nexit 0\n");
+  await chmod(path, 0o755);
+}
+
+function disableDockerRuntimeEnv(): void {
+  process.env["PI_WEB_DOCKER_RUNTIME"] = "0";
+  Reflect.deleteProperty(process.env, "PI_WEB_DOCKER_MODE");
+  Reflect.deleteProperty(process.env, "PI_WEB_DOCKER_INSTALL_DIR");
+  Reflect.deleteProperty(process.env, "PI_WEB_DOCKER_DEV_REPO_ROOT");
+}
 
 function restoreEnv(key: string, value: string | undefined): void {
   if (value === undefined) Reflect.deleteProperty(process.env, key);

@@ -1,6 +1,6 @@
 import type { TemplateResult } from "lit";
 import type { HtmlTemplateTag, PiWebComponentStatus, PiWebPlugin, PiWebStatusResponse, PluginRuntimeState, WorkspacePanelTerminal } from "@jmfederico/pi-web/plugin-api";
-import { additionalCommands, formatVersion, installationLabel, messageCount, recommendedCommand, shouldShowUpdatesPanel, statusFor } from "./updatesLogic.js";
+import { additionalCommands, fallbackDockerStatus, formatVersion, installationLabel, messageCount, recommendedCommand, shouldShowUpdatesPanel, statusFor, type UpdatesRuntimeHint } from "./updatesLogic.js";
 
 function runCommandInTerminal(terminal: WorkspacePanelTerminal, label: string, command: string): void {
   void terminal.runCommand({
@@ -48,6 +48,17 @@ function renderCommand(html: HtmlTemplateTag, terminal: WorkspacePanelTerminal |
   `;
 }
 
+function updatesRuntimeHintFromModuleUrl(moduleUrl: string): UpdatesRuntimeHint {
+  try {
+    const dockerMode = new URL(moduleUrl).searchParams.get("piWebDockerMode");
+    return dockerMode === "runtime" || dockerMode === "dev" ? { dockerMode } : {};
+  } catch {
+    return {};
+  }
+}
+
+const runtimeHint = updatesRuntimeHintFromModuleUrl(import.meta.url);
+
 function renderCommands(html: HtmlTemplateTag, terminal: WorkspacePanelTerminal | undefined, status: PiWebStatusResponse): TemplateResult | undefined {
   const recommended = recommendedCommand(status);
   const additional = additionalCommands(status, recommended);
@@ -71,7 +82,7 @@ function renderCommands(html: HtmlTemplateTag, terminal: WorkspacePanelTerminal 
 }
 
 function renderUpdatesPanel(html: HtmlTemplateTag, terminal: WorkspacePanelTerminal | undefined, state: PluginRuntimeState | undefined): TemplateResult {
-  const status = statusFor(state);
+  const status = statusFor(state) ?? fallbackDockerStatus(runtimeHint);
   if (status === undefined) {
     return html`
       <section class="toolbar"><strong>Updates</strong></section>
@@ -104,7 +115,7 @@ function renderUpdatesPanel(html: HtmlTemplateTag, terminal: WorkspacePanelTermi
         .updates-command > span { grid-column: 1 / -1; }
       }
     </style>
-    <section class="toolbar"><strong>Updates</strong><span class="stale">beta</span>${messages.length > 0 ? html`<span class="stale">${String(messages.length)}</span>` : null}</section>
+    <section class="toolbar"><strong>Updates</strong>${messages.length > 0 ? html`<span class="stale">${String(messages.length)}</span>` : null}</section>
     <section class="viewer updates-status">
       <section>
         ${messages.length === 0 ? html`<p class="muted">No PI WEB update or restart messages.</p>` : messages.map((message) => html`
@@ -132,6 +143,7 @@ function renderUpdatesPanel(html: HtmlTemplateTag, terminal: WorkspacePanelTermi
       <section class="updates-meta">
         <span>Generated ${status.generatedAt}</span>
         ${status.release.latestVersion === undefined ? null : html`<span>Latest npm release ${status.release.latestVersion}</span>`}
+        ${status.release.checkedAt === undefined || status.release.skipped === true ? null : html`<span>Release checked ${status.release.checkedAt}</span>`}
         ${status.release.skipped === true ? html`<span>Remote version check skipped.</span>` : null}
         ${status.release.error === undefined ? null : html`<span>Remote version check failed: ${status.release.error}</span>`}
       </section>
@@ -144,6 +156,17 @@ const plugin: PiWebPlugin = {
   name: "Updates",
   activate: ({ html, svg }) => ({
     contributions: {
+      actions: [
+        {
+          id: "check",
+          title: "Check for PI WEB Updates",
+          description: "Bypass cached release data and check the selected machine now",
+          group: "Updates",
+          enabled: (context) => context.checkForPiWebUpdates !== undefined,
+          disabledReason: () => "Update checks require a newer PI WEB gateway",
+          run: (context) => context.checkForPiWebUpdates?.(),
+        },
+      ],
       workspacePanels: [
         {
           id: "workspace.updates",
@@ -157,10 +180,10 @@ const plugin: PiWebPlugin = {
             </svg>
           `,
           order: 100,
-          visible: (context) => shouldShowUpdatesPanel(context.state),
+          visible: (context) => shouldShowUpdatesPanel(context.state, runtimeHint),
           badge: (context) => {
             const count = messageCount(context.state);
-            return html`beta${count > 0 ? html` · ${String(count)}` : null}`;
+            return count > 0 ? count : undefined;
           },
           render: (context) => renderUpdatesPanel(html, context.terminal, context.state),
         },

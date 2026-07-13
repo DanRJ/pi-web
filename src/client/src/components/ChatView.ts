@@ -3,18 +3,18 @@ import { customElement, property, query, state } from "lit/decorators.js";
 import { repeat } from "lit/directives/repeat.js";
 import { ChatDisclosureController } from "../chatDisclosure";
 import { groupChatMessages, summarizeChatGroup, type ChatGroup } from "../chatGroups";
+import { writeClipboardText } from "../clipboard";
 import { capturePrependScrollAnchor, PREPEND_RESTORE_SETTLE_FRAMES, restorePrependScrollAnchor, type PrependScrollAnchor } from "../chatScrollAnchoring";
 import { shouldRequestEarlierMessages } from "../chatHistoryLoading";
 import { ChatScrollController, distanceFromScrollBottom, findFirstVisibleArticle, isNearScrollBottom, type ChatAnchorScrollPosition, type ChatScrollRestoreResult } from "../chatScrollPosition";
-import type { SessionActivity, SessionStatus } from "../api";
+import type { QueuedSessionMessage, SessionActivity, SessionStatus } from "../api";
 import type { ChatLine, ChatPart } from "./shared";
 import { chatStyles } from "./shared";
 import "./ConversationMeter";
 import "./FormattedText";
 import "./ToolExecutionView";
 
-const shortTimestampFormatter = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
-const fullTimestampFormatter = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "medium" });
+const messageTimestampFormatter = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "medium" });
 
 const partialStreamNoticeBodies = [
   "You opened this chat while the assistant was already replying. The complete answer will appear shortly.",
@@ -38,6 +38,41 @@ function clampNumber(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
+export interface QueuedMessageSection {
+  heading: string;
+  detail: string;
+  messages: QueuedSessionMessage[];
+}
+
+export function chatQueuedMessageSections(clientQueued: QueuedSessionMessage[], serverQueued: QueuedSessionMessage[]): QueuedMessageSection[] {
+  return [
+    clientQueued.length === 0 ? undefined : { heading: "Queued until session starts", detail: "Will send once the backend session is ready", messages: clientQueued },
+    serverQueued.length === 0 ? undefined : { heading: "Queued messages", detail: `${String(serverQueued.length)} pending · Stop clears the queue`, messages: serverQueued },
+  ].filter((section): section is QueuedMessageSection => section !== undefined);
+}
+
+export function chatMessageMetadataLabel(message: ChatLine): string {
+  const timestamp = message.meta?.timestamp;
+  const time = timestamp === undefined ? undefined : formatMessageTimestamp(timestamp);
+  const model = chatMessageModelLabel(message);
+  const parts = [time, model].filter((part): part is string => part !== undefined && part !== "");
+  return parts.length === 0 ? "No Pi message metadata available" : parts.join(" · ");
+}
+
+function formatMessageTimestamp(timestamp: string): string | undefined {
+  const date = new Date(timestamp);
+  if (!Number.isFinite(date.getTime())) return undefined;
+  return messageTimestampFormatter.format(date);
+}
+
+function chatMessageModelLabel(message: ChatLine): string | undefined {
+  const model = message.meta?.model;
+  if (model === undefined) return undefined;
+  const id = model.responseId ?? model.id;
+  if (id === undefined || id === "") return model.provider;
+  return model.provider !== undefined && model.provider !== "" ? `${model.provider}/${id}` : id;
+}
+
 @customElement("chat-view")
 export class ChatView extends LitElement {
   @property({ attribute: false }) messages: ChatLine[] = [];
@@ -51,6 +86,7 @@ export class ChatView extends LitElement {
   @property({ type: Boolean }) isSendingPrompt = false;
   @property({ type: Boolean }) isCompacting = false;
   @property({ type: Number }) pendingMessageCount = 0;
+  @property({ attribute: false }) clientQueuedMessages: QueuedSessionMessage[] = [];
   @property({ attribute: false }) status?: SessionStatus;
   @property({ attribute: false }) activity?: SessionActivity;
   @property({ attribute: false }) onLoadMore?: () => void;
@@ -69,7 +105,7 @@ export class ChatView extends LitElement {
   private groupedMessagesInput?: ChatLine[];
   private groupedMessagesStart = 0;
   private groupedMessagesCache: ChatGroup[] = [];
-  private readonly messageMetaCache = new WeakMap<ChatLine, { short: string; full: string }>();
+  private readonly messageMetaCache = new WeakMap<ChatLine, string>();
   private readonly messageCopyTextCache = new WeakMap<ChatLine, string>();
   private partialStreamNoticeBody: string | undefined;
   private lastScrollTop = 0;
@@ -220,15 +256,18 @@ export class ChatView extends LitElement {
   }
 
   private renderQueuedMessages() {
-    const queued = this.status?.queuedMessages ?? [];
-    if (queued.length === 0) return null;
+    const serverQueued = this.status?.queuedMessages ?? [];
+    return html`${chatQueuedMessageSections(this.clientQueuedMessages, serverQueued).map((section) => this.renderQueuedMessageList(section))}`;
+  }
+
+  private renderQueuedMessageList(section: QueuedMessageSection) {
     return html`
       <aside class="queued-messages" aria-live="polite">
         <div class="queued-header">
-          <strong>Queued messages</strong>
-          <small>${queued.length} pending · Stop clears the queue</small>
+          <strong>${section.heading}</strong>
+          <small>${section.detail}</small>
         </div>
-        ${queued.map((message, index) => html`
+        ${section.messages.map((message, index) => html`
           <div class="queued-message">
             <span class="queued-kind">${message.kind === "steer" ? "Steer" : "Follow-up"} ${String(index + 1)}</span>
             <formatted-text .text=${message.text}></formatted-text>
@@ -352,18 +391,24 @@ export class ChatView extends LitElement {
           <b class="label">${defaultOpen ? "live events" : "events"}</b>
           <span>${summarizeChatGroup(messages)}</span>
         </summary>
-        <div class="group-body">
-          ${messages.map((message, offset) => {
-            const toolOnly = this.isToolExecutionOnlyMessage(message);
-            return html`
-              <section class=${toolOnly ? "group-msg tool-execution-shell" : `group-msg ${message.role}`} data-index=${startIndex + offset} data-scroll-anchor-id=${this.eventAnchorKey(startIndex + offset)}>
-                ${toolOnly ? null : this.renderMessageHeader(message, `${String(startIndex)}:${String(offset)}`)}
-                ${message.parts.map((part) => this.renderPart(part, message))}
-              </section>
-            `;
-          })}
-        </div>
+        ${open ? this.renderMessageGroupBody(messages, startIndex) : null}
       </details>
+    `;
+  }
+
+  private renderMessageGroupBody(messages: ChatLine[], startIndex: number) {
+    return html`
+      <div class="group-body">
+        ${messages.map((message, offset) => {
+          const toolOnly = this.isToolExecutionOnlyMessage(message);
+          return html`
+            <section class=${toolOnly ? "group-msg tool-execution-shell" : `group-msg ${message.role}`} data-index=${startIndex + offset} data-scroll-anchor-id=${this.eventAnchorKey(startIndex + offset)}>
+              ${toolOnly ? null : this.renderMessageHeader(message, `${String(startIndex)}:${String(offset)}`)}
+              ${message.parts.map((part) => this.renderPart(part, message))}
+            </section>
+          `;
+        })}
+      </div>
     `;
   }
 
@@ -379,7 +424,7 @@ export class ChatView extends LitElement {
         <b class="label">${message.role}</b>
         <div class="msg-header-trailing">
           ${this.renderMessageActions(message, key)}
-          <span class=${expanded ? "msg-meta expanded" : "msg-meta"} role="button" tabindex="0" title=${meta.full} aria-label=${meta.full} aria-expanded=${String(expanded)} @click=${() => { this.expandedMetaKey = expanded ? undefined : key; }} @keydown=${(event: KeyboardEvent) => { this.onMetaKeydown(event, key, expanded); }}>${meta.short}</span>
+          <span class=${expanded ? "msg-meta expanded" : "msg-meta"} role="button" tabindex="0" title=${meta} aria-label=${meta} aria-expanded=${String(expanded)} @click=${() => { this.expandedMetaKey = expanded ? undefined : key; }} @keydown=${(event: KeyboardEvent) => { this.onMetaKeydown(event, key, expanded); }}>${meta}</span>
         </div>
       </div>
     `;
@@ -421,53 +466,21 @@ export class ChatView extends LitElement {
 
   private async copyMessage(message: ChatLine, key: string, event: MouseEvent): Promise<void> {
     event.stopPropagation();
-    const ok = await this.writeClipboard(this.messageCopyText(message));
-    if (!ok) return;
+    const copied = await writeClipboardText(this.messageCopyText(message));
+    if (!copied) return;
     this.copiedMessageKey = key;
     window.setTimeout(() => {
       if (this.copiedMessageKey === key) this.copiedMessageKey = undefined;
     }, 1200);
   }
 
-  private async writeClipboard(text: string): Promise<boolean> {
-    try {
-      await navigator.clipboard.writeText(text);
-      return true;
-    } catch {
-      return false;
-    }
-  }
 
-  private messageMetaLabel(message: ChatLine): { short: string; full: string } {
+  private messageMetaLabel(message: ChatLine): string {
     const cached = this.messageMetaCache.get(message);
     if (cached !== undefined) return cached;
-    const timestamp = message.meta?.timestamp;
-    const model = this.modelLabel(message);
-    if (timestamp === undefined && model === undefined) {
-      const empty = { short: "no info", full: "No Pi message metadata available" };
-      this.messageMetaCache.set(message, empty);
-      return empty;
-    }
-    const time = timestamp === undefined ? undefined : this.formatTimestamp(timestamp);
-    const parts = [time?.short, model].filter((part): part is string => part !== undefined && part !== "");
-    const fullParts = [time?.full, model === undefined ? undefined : `Model: ${model}`].filter((part): part is string => part !== undefined && part !== "");
-    const label = { short: parts.join(" · "), full: fullParts.join(" · ") };
+    const label = chatMessageMetadataLabel(message);
     this.messageMetaCache.set(message, label);
     return label;
-  }
-
-  private formatTimestamp(timestamp: string): { short: string; full: string } | undefined {
-    const date = new Date(timestamp);
-    if (!Number.isFinite(date.getTime())) return undefined;
-    return { short: shortTimestampFormatter.format(date), full: fullTimestampFormatter.format(date) };
-  }
-
-  private modelLabel(message: ChatLine): string | undefined {
-    const model = message.meta?.model;
-    if (model === undefined) return undefined;
-    const id = model.responseId ?? model.id;
-    if (id === undefined || id === "") return model.provider;
-    return model.provider !== undefined && model.provider !== "" ? `${model.provider}/${id}` : id;
   }
 
   private renderPart(part: ChatPart, message?: ChatLine) {

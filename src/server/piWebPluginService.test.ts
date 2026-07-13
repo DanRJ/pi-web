@@ -6,11 +6,20 @@ import { PiWebPluginService, type PiPackageProvider } from "./piWebPluginService
 
 let tempDir: string;
 
+const originalDockerRuntime = process.env["PI_WEB_DOCKER_RUNTIME"];
+const originalDockerMode = process.env["PI_WEB_DOCKER_MODE"];
+const originalDockerDevRepoRoot = process.env["PI_WEB_DOCKER_DEV_REPO_ROOT"];
+const originalDockerInstallDir = process.env["PI_WEB_DOCKER_INSTALL_DIR"];
+
 beforeEach(async () => {
   tempDir = await mkdtemp(join(tmpdir(), "pi-web-plugin-service-test-"));
 });
 
 afterEach(async () => {
+  restoreEnv("PI_WEB_DOCKER_RUNTIME", originalDockerRuntime);
+  restoreEnv("PI_WEB_DOCKER_MODE", originalDockerMode);
+  restoreEnv("PI_WEB_DOCKER_DEV_REPO_ROOT", originalDockerDevRepoRoot);
+  restoreEnv("PI_WEB_DOCKER_INSTALL_DIR", originalDockerInstallDir);
   await rm(tempDir, { recursive: true, force: true });
 });
 
@@ -28,11 +37,52 @@ describe("PiWebPluginService", () => {
       plugins: [expect.objectContaining({ id: "info", source: "test", scope: "local", machineSpecific: false })],
     });
     const manifest = await service.manifest();
-    expect(manifest.plugins[0]?.module).toMatch(/^\/pi-web-plugins\/info\/pi-web-plugin\.js\?v=\d+$/u);
+    const module = manifest.plugins[0]?.module;
+    expect(module).toMatch(/^\/pi-web-plugins\/info\/pi-web-plugin\.js\?v=\d+$/u);
+    expect(new URL(module ?? "", "http://old-gateway.test/pi-web-plugins/info/").pathname).toBe("/pi-web-plugins/info/pi-web-plugin.js");
+    await expect(service.plugins()).resolves.toMatchObject({ plugins: [{ module }] });
 
     const asset = await service.readAsset("info", "pi-web-plugin.js");
     expect(asset?.contentType).toBe("application/javascript; charset=utf-8");
     expect(asset?.content.toString("utf8")).toContain("export default");
+  });
+
+  it("preserves content types for extension-only asset names", async () => {
+    const pluginDir = join(tempDir, "plugins", "extension-only");
+    await writePlugin(pluginDir, {
+      packageJson: { piWeb: { plugins: [{ id: "extension-only", module: ".js" }] } },
+      files: {
+        ".js": "export default {};",
+        ".svg": '<svg xmlns="http://www.w3.org/2000/svg"></svg>',
+      },
+    });
+
+    const service = new PiWebPluginService({ roots: [{ path: join(tempDir, "plugins"), source: "test", scope: "local" }], packageProvider: false });
+
+    await expect(service.readAsset("extension-only", ".js")).resolves.toMatchObject({ contentType: "application/javascript; charset=utf-8" });
+    await expect(service.readAsset("extension-only", ".svg")).resolves.toMatchObject({ contentType: "image/svg+xml" });
+  });
+
+  it("serves nested SVG assets with a browser-compatible content type", async () => {
+    const pluginDir = join(tempDir, "plugins", "icons");
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"></svg>';
+    await writePlugin(pluginDir, {
+      packageJson: { piWeb: { plugins: [{ id: "icons", module: "pi-web-plugin.js" }] } },
+      files: {
+        "pi-web-plugin.js": "export default {};",
+        "assets/icon.svg": svg,
+        "assets/uppercase.SVG": svg,
+        "assets/data.bin": "unknown",
+      },
+    });
+
+    const service = new PiWebPluginService({ roots: [{ path: join(tempDir, "plugins"), source: "test", scope: "local" }], packageProvider: false });
+
+    const svgAsset = await service.readAsset("icons", "assets/icon.svg");
+    expect(svgAsset?.contentType).toBe("image/svg+xml");
+    expect(svgAsset?.content.toString("utf8")).toBe(svg);
+    await expect(service.readAsset("icons", "assets/uppercase.SVG")).resolves.toMatchObject({ contentType: "image/svg+xml" });
+    await expect(service.readAsset("icons", "assets/data.bin")).resolves.toMatchObject({ contentType: "application/octet-stream" });
   });
 
   it("includes machine-specific preferences in plugin manifests", async () => {
@@ -45,6 +95,23 @@ describe("PiWebPluginService", () => {
 
     await expect(service.manifest()).resolves.toMatchObject({ plugins: [{ id: "updates", machineSpecific: true }] });
     await expect(service.plugins()).resolves.toMatchObject({ plugins: [{ id: "updates", machineSpecific: true, enabled: true }] });
+  });
+
+  it("adds Docker runtime hints to the Updates plugin module URL", async () => {
+    process.env["PI_WEB_DOCKER_RUNTIME"] = "1";
+    process.env["PI_WEB_DOCKER_MODE"] = "dev";
+    await writePlugin(join(tempDir, "plugins", "updates"), {
+      packageJson: { piWeb: { plugins: [{ id: "updates", module: "pi-web-plugin.js", machineSpecific: true }] } },
+      files: { "pi-web-plugin.js": "export default {};" },
+    });
+
+    const service = new PiWebPluginService({ roots: [{ path: join(tempDir, "plugins"), source: "test", scope: "local" }], packageProvider: false });
+
+    const manifest = await service.manifest();
+    const moduleUrl = new URL(manifest.plugins[0]?.module ?? "", "http://pi-web.test/pi-web-plugins/manifest.json");
+    expect(moduleUrl.pathname).toBe("/pi-web-plugins/updates/pi-web-plugin.js");
+    expect(moduleUrl.searchParams.get("v")).toMatch(/^\d+$/u);
+    expect(moduleUrl.searchParams.get("piWebDockerMode")).toBe("dev");
   });
 
   it("discovers Pi package plugins through an injected package provider", async () => {
@@ -85,6 +152,29 @@ describe("PiWebPluginService", () => {
     currentConfig = { agent: { dir: updatedAgentDir } };
 
     await expect(service.manifest()).resolves.toMatchObject({ plugins: [{ id: "agent-package", source: packageDir, scope: "user" }] });
+  });
+
+  it("refreshes Pi package plugin discovery after Pi package settings change", async () => {
+    const agentDir = join(tempDir, "agent");
+    const firstPackageDir = join(tempDir, "first-package");
+    const secondPackageDir = join(tempDir, "second-package");
+    await writePlugin(firstPackageDir, {
+      packageJson: { piWeb: { plugins: [{ id: "first", module: "pi-web-plugin.js" }] } },
+      files: { "pi-web-plugin.js": "export default {};" },
+    });
+    await writePlugin(secondPackageDir, {
+      packageJson: { piWeb: { plugins: [{ id: "second", module: "pi-web-plugin.js" }] } },
+      files: { "pi-web-plugin.js": "export default {};" },
+    });
+    await writePiPackageSettings(agentDir, [firstPackageDir]);
+    const service = new PiWebPluginService({ roots: [], cwd: tempDir, agentDir });
+
+    await expect(service.manifest()).resolves.toMatchObject({ plugins: [{ id: "first" }] });
+
+    await writePiPackageSettings(agentDir, [secondPackageDir]);
+
+    const manifest = await service.manifest();
+    expect(manifest.plugins.map((plugin) => plugin.id)).toEqual(["second"]);
   });
 
   it("discovers source checkout plugin packages without symlinks", async () => {
@@ -147,19 +237,30 @@ describe("PiWebPluginService", () => {
   });
 
   it("skips duplicate plugin ids", async () => {
-    await writePlugin(join(tempDir, "plugins", "one"), {
-      packageJson: { piWeb: { plugins: [{ id: "duplicate", module: "pi-web-plugin.js" }] } },
-      files: { "pi-web-plugin.js": "export default {};" },
+    const firstRoot = join(tempDir, "first-root");
+    const secondRoot = join(tempDir, "second-root");
+    await writePlugin(join(firstRoot, "duplicate"), {
+      packageJson: { piWeb: { plugins: [{ id: "duplicate", module: "first.js" }] } },
+      files: { "first.js": "export default {};" },
     });
-    await writePlugin(join(tempDir, "plugins", "two"), {
-      packageJson: { piWeb: { plugins: [{ id: "duplicate", module: "pi-web-plugin.js" }] } },
-      files: { "pi-web-plugin.js": "export default {};" },
+    await writePlugin(join(secondRoot, "duplicate"), {
+      packageJson: { piWeb: { plugins: [{ id: "duplicate", module: "second.js", machineSpecific: true }] } },
+      files: { "second.js": "export default {};" },
     });
 
-    const service = new PiWebPluginService({ roots: [{ path: join(tempDir, "plugins"), source: "test", scope: "local" }], packageProvider: false });
+    const service = new PiWebPluginService({
+      roots: [
+        { path: firstRoot, source: "first", scope: "local" },
+        { path: secondRoot, source: "second", scope: "local" },
+      ],
+      packageProvider: false,
+    });
 
     const manifest = await service.manifest();
-    expect(manifest.plugins.map((plugin) => plugin.id)).toEqual(["duplicate"]);
+    expect(manifest.plugins).toEqual([
+      expect.objectContaining({ id: "duplicate", source: "first", machineSpecific: false }),
+    ]);
+    expect(manifest.plugins[0]?.module).toMatch(/^\/pi-web-plugins\/duplicate\/first\.js\?v=\d+$/u);
   });
 
   it("skips legacy metadata shortcuts and unsafe module paths", async () => {
@@ -210,6 +311,11 @@ describe("PiWebPluginService", () => {
   });
 });
 
+async function writePiPackageSettings(agentDir: string, packages: string[]): Promise<void> {
+  await mkdir(agentDir, { recursive: true });
+  await writeFile(join(agentDir, "settings.json"), `${JSON.stringify({ packages }, null, 2)}\n`);
+}
+
 async function writePlugin(root: string, options: { packageJson: unknown; files: Record<string, string> }): Promise<void> {
   await mkdir(root, { recursive: true });
   await writeFile(join(root, "package.json"), `${JSON.stringify(options.packageJson, null, 2)}\n`);
@@ -218,4 +324,9 @@ async function writePlugin(root: string, options: { packageJson: unknown; files:
     await mkdir(join(filePath, ".."), { recursive: true });
     await writeFile(filePath, content);
   }
+}
+
+function restoreEnv(key: string, value: string | undefined): void {
+  if (value === undefined) Reflect.deleteProperty(process.env, key);
+  else process.env[key] = value;
 }

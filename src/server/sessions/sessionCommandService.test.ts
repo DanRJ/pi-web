@@ -66,11 +66,15 @@ describe("SessionCommandService", () => {
     await expect(service.run("s1", "/template arg")).resolves.toMatchObject({ type: "done" });
     await expect(service.run("s1", "/skill:skill-a arg")).resolves.toMatchObject({ type: "done" });
     expect(prompt).toHaveBeenCalledTimes(3);
+    expect(prompt).toHaveBeenNthCalledWith(1, "s1", "/ext arg");
+    expect(prompt).toHaveBeenNthCalledWith(2, "s1", "/template arg");
+    expect(prompt).toHaveBeenNthCalledWith(3, "s1", "/skill:skill-a arg");
   });
 
-  it("renames sessions and returns updated client session metadata", async () => {
+  it("renames sessions, publishes the name update, and returns updated client session metadata", async () => {
     const active = activeSession();
-    const service = new SessionCommandService(() => getActive(active), vi.fn(), eventPublisher());
+    const events = eventPublisher();
+    const service = new SessionCommandService(() => getActive(active), vi.fn(), events);
 
     await expect(service.run("s1", "/name Useful name")).resolves.toMatchObject({
       type: "done",
@@ -78,6 +82,7 @@ describe("SessionCommandService", () => {
       session: { id: "s1", cwd: "/work", name: "Useful name", messageCount: 2 },
     });
     expect(active.runtime.session.setSessionName).toHaveBeenCalledWith("Useful name");
+    expect(events.publish).toHaveBeenCalledWith("s1", { type: "session.name", sessionId: "s1", name: "Useful name" });
   });
 
   it("formats session stats", async () => {
@@ -90,20 +95,48 @@ describe("SessionCommandService", () => {
     });
   });
 
-  it("starts compaction and publishes completion", async () => {
+  it("starts compaction, updates lifecycle hooks, and publishes completion", async () => {
     const active = activeSession();
     const events = eventPublisher();
-    const service = new SessionCommandService(() => getActive(active), vi.fn(), events);
+    const onCompactionStart = vi.fn();
+    const onCompactionEnd = vi.fn();
+    const service = new SessionCommandService(() => getActive(active), vi.fn(), events, { onCompactionStart, onCompactionEnd });
 
     await expect(service.run("s1", "/compact focus on tests")).resolves.toEqual({ type: "done", message: "Compaction started…" });
+    expect(onCompactionStart).toHaveBeenCalledWith(active.runtime.session);
     await vi.waitFor(() => {
       expect(events.publish).toHaveBeenCalledWith("s1", {
         type: "command.output",
         level: "success",
         message: "Compaction complete.\nTokens before: 123\n\nshort summary",
       });
+      expect(onCompactionEnd).toHaveBeenCalledWith(active.runtime.session, "success");
     });
     expect(active.runtime.session.compact).toHaveBeenCalledWith("focus on tests");
+  });
+
+  it("reloads runtime resources through the injected lifecycle callback", async () => {
+    const active = activeSession();
+    const reloadSession = vi.fn(async () => { await Promise.resolve(); });
+    const service = new SessionCommandService(() => getActive(active), vi.fn(), eventPublisher(), { reloadSession });
+
+    await expect(service.run("s1", "/reload")).resolves.toEqual({
+      type: "done",
+      message: "Session runtime resources reloaded. Extensions, skills, prompt templates, themes, and context/system prompt files are refreshed for this session. Reload the browser page separately for PI WEB browser plugin changes.",
+    });
+    expect(reloadSession).toHaveBeenCalledWith(active.runtime.session);
+  });
+
+  it("rejects runtime reload while the session has active work", async () => {
+    const active = activeSession({ isBashRunning: true });
+    const reloadSession = vi.fn(async () => { await Promise.resolve(); });
+    const service = new SessionCommandService(() => getActive(active), vi.fn(), eventPublisher(), { reloadSession });
+
+    await expect(service.run("s1", "/reload")).resolves.toEqual({
+      type: "unsupported",
+      message: "Cannot reload while the session is active. Stop current activity before reloading.",
+    });
+    expect(reloadSession).not.toHaveBeenCalled();
   });
 
   it("creates fork selection requests from newest message to oldest and responds with selected entry", async () => {

@@ -13,6 +13,18 @@ Plugins can currently:
 
 They do **not** run in the session daemon, do not get a server-side hook API, and are not sandboxed.
 
+## Pi packages vs PI WEB plugins
+
+**Pi packages** are packages managed by Pi (`pi install`, `pi remove`, `pi update`). A Pi package can provide extensions, skills, prompt templates, themes, context/system prompt files, and/or PI WEB browser plugins. Many Pi packages do not include a PI WEB plugin.
+
+**PI WEB plugins** are browser-side PI WEB UI modules discovered from bundled, local, dev, and installed Pi-package sources. Enabling or disabling a PI WEB plugin is a PI WEB config task; installing, removing, or updating a Pi package is a Pi package-manager task.
+
+Use **Settings → Pi packages** to view configured Pi packages or install/remove/update a package. Enter only the package source, such as `npm:@scope/package`, a git/URL source, or a local path. PI WEB uses Pi's default package location, equivalent to `pi install <source>`, and does not ask for an install location.
+
+When machine federation is enabled, **Settings → Pi packages** targets the currently selected machine. The panel labels whether changes will run on the local/gateway machine or on a selected remote PI WEB machine. If an older or unavailable remote PI WEB server does not expose package-management routes, PI WEB reports the package management operation as unsupported or unavailable instead of silently falling back to the gateway.
+
+Use **Settings → PI WEB plugins** to enable or disable discovered PI WEB browser plugins before the browser imports them. In a federated setup, this plugin enablement surface targets the currently selected machine and labels where changes are saved. If an older or unavailable remote PI WEB server does not advertise selected-machine settings support, PI WEB reports the plugin settings as unsupported or unavailable instead of silently falling back to the gateway. After installing, removing, or updating a Pi package, type `/reload` in each idle PI WEB session on the target machine to refresh Pi runtime resources such as extensions, skills, prompt templates, themes, and context/system prompt files as supported by Pi. Reload the browser page separately for newly discovered or changed PI WEB browser plugins. A routine session daemon restart is not required.
+
 ## Trust model
 
 Plugins run as JavaScript in the browser app. Treat them as trusted code:
@@ -140,7 +152,7 @@ When [machine federation](https://pi-web.dev/machines) is enabled, PI WEB also l
 - remote theme contributions are ignored for now because themes are app-wide;
 - mixed PI WEB versions across federated machines are best-effort and not guaranteed compatible.
 
-Remote plugin enablement is controlled by the remote machine's PI WEB plugin config. To edit or disable a remote machine plugin, open that machine directly or update its config file.
+Remote plugin enablement is controlled by the remote machine's PI WEB plugin config. To edit or disable a remote machine plugin, select that machine and use **Settings → PI WEB plugins** when the remote server exposes selected-machine settings, or open that machine directly/update its config file.
 
 Plugin package metadata may set `machineSpecific: true` when the plugin's meaning is tied to the selected PI WEB machine:
 
@@ -155,9 +167,11 @@ const url = new URL("./asset.json", import.meta.url);
 
 If a remote plugin constructs absolute asset URLs, it should use the `pluginId` from `activate()` because PI WEB gives remote plugins a gateway-scoped runtime id. Hard-coded `/pi-web-plugins/<original-id>/...` URLs may point at the gateway instead of the remote machine.
 
-## Manage plugins
+## Manage PI WEB plugins
 
-Open **Settings → Plugins** to review discovered bundled, local, dev, and Pi package plugins for the PI WEB gateway you opened. PI WEB can disable any discovered gateway plugin before the browser imports it. Core app contributions such as the built-in command palette, base workspace tools, and themes are not managed through this plugin list.
+Open **Settings → PI WEB plugins** to review discovered bundled, local, dev, and Pi package plugins for the selected PI WEB machine. When the local machine is selected, this is the gateway plugin list; when a remote machine is selected, the list comes from that remote PI WEB server and includes disabled discovered plugins it exposes. PI WEB can disable any discovered selected-machine plugin before the browser imports it. Core app contributions such as the built-in command palette, base workspace tools, and themes are not managed through this plugin list.
+
+This surface is only for PI WEB plugin enablement. To install, remove, or update Pi packages that may provide plugins or other Pi resources, use **Settings → Pi packages**. In a federated setup, both the Pi packages panel and the PI WEB plugins panel target the selected machine; plugin enablement still writes the PI WEB `plugins` config key rather than changing Pi package-manager settings.
 
 Plugin preferences are stored under the top-level `plugins` config key in the PI WEB config file:
 
@@ -183,14 +197,16 @@ After changing plugin enablement, reload the PI WEB browser tab. Already-loaded 
 
 PI WEB ships core, discoverable plugins in the main `@jmfederico/pi-web` npm package. No separate `pi install` step is required: update PI WEB, reload the browser tab, and the bundled plugins appear in `/pi-web-plugins/manifest.json`.
 
-Built-in plugins can be managed from **Settings → Plugins** or with the top-level `plugins` config key.
+Built-in plugins can be managed from **Settings → PI WEB plugins** or with the top-level `plugins` config key.
 
 ### Updates
 
 **Plugin id:** `updates`
-**What it does:** adds a conditional **Updates** workspace tab with PI WEB update, restart, and installed-service guidance.
+**What it does:** adds a conditional **Updates** workspace tab with PI WEB update, restart, and installed-service guidance, plus a **Check for PI WEB Updates** action for the selected machine.
 
-Updates is enabled by default. It declares `machineSpecific: true` so the gateway Updates tab only appears for the local machine; while a remote machine is selected, that remote machine's Updates plugin is used if available. To hide it, disable `updates` in **Settings → Plugins** or set:
+While a browser tab is connected, PI WEB refreshes the selected machine's status every 15 minutes. npm release lookups are cached on that machine for six hours, so the automatic refresh normally contacts npm at most once in that window. Run **Check for PI WEB Updates** from the action palette to bypass both caches and check immediately. Operator settings that skip remote version checks, such as `PI_WEB_OFFLINE`, are still respected.
+
+Updates is enabled by default. It declares `machineSpecific: true` so the gateway Updates tab and action only appear for the local machine; while a remote machine is selected, that remote machine's Updates plugin is used if available. To hide it, disable `updates` in **Settings → PI WEB plugins** or set:
 
 ```json
 {
@@ -206,7 +222,7 @@ Updates is enabled by default. It declares `machineSpecific: true` so the gatewa
 **Config file:** `.pi-web/tasks.json`
 **What it does:** adds a **Tasks** workspace tab for running configured shell commands in dedicated PI WEB terminals.
 
-Workspace Tasks is enabled by default. To hide it, disable `workspace-tasks` in **Settings → Plugins** or set:
+Workspace Tasks is enabled by default. To hide it, disable `workspace-tasks` in **Settings → PI WEB plugins** or set:
 
 ```json
 {
@@ -223,11 +239,11 @@ Configure workspace tasks in `.pi-web/tasks.json`:
   "version": 1,
   "tasks": [
     {
-      "id": "docker.start",
-      "title": "Start Docker",
-      "group": "Docker",
-      "description": "Start the local Docker Compose environment.",
-      "command": "./docker/scripts/docker-compose-dev up -d"
+      "id": "app.start",
+      "title": "Start app",
+      "group": "Development",
+      "description": "Start the local development server.",
+      "command": "npm run dev"
     },
     {
       "id": "db.reset",
@@ -273,7 +289,7 @@ PI WEB builds the gateway `/pi-web-plugins/manifest.json` from these sources:
 
    Entries may be real directories or symlinks. This is the recommended development workflow.
 
-3. Installed Pi packages that expose PI WEB plugin metadata. Pi packages may be user or project scoped.
+3. Installed Pi packages that expose PI WEB plugin metadata. Pi packages may be user or project scoped. Installing/removing/updating Pi packages is done from **Settings → Pi packages** (or Pi's package manager), not from the PI WEB plugin enable/disable list.
 
 Remote machines expose their own manifests through the gateway at `/api/machines/<machine-id>/pi-web-plugins/manifest.json`. Those plugin modules are rewritten to gateway-scoped asset URLs and registered under machine-scoped runtime ids so duplicate plugin ids on different machines do not collide.
 
@@ -309,7 +325,7 @@ Rules:
 
 ### Manifest and assets
 
-The manifest contains each discovered plugin module:
+The manifest contains each discovered plugin module. Current PI WEB releases emit `module` as a leading application-root reference:
 
 ```json
 {
@@ -325,15 +341,25 @@ The manifest contains each discovered plugin module:
 }
 ```
 
+The browser maps leading application-root references into the current application base, so the same manifest works at the origin root or under a reverse-proxy path prefix. Keeping this output format also lets gateways from existing PI WEB releases consume plugins from an upgraded remote machine. For compatibility, federated gateways additionally accept explicit manifest-relative references such as `./my-plugin/pi-web-plugin.js` and legacy plugin-root-relative references such as `nested/pi-web-plugin.js`; all accepted forms are rewritten to deployment-portable, gateway-relative references.
+
 `source` describes where the plugin came from (`bundled`, `local`, or the Pi package source). `scope` is `bundled`, `local`, `user`, or `project`. `machineSpecific` controls whether the gateway copy is valid for remote machines or only each selected machine's own copy can appear.
 
-A plugin can fetch its own static assets with URLs under:
+At an origin-root deployment, a plugin's static assets are available under:
 
 ```text
 /pi-web-plugins/<plugin-id>/<path-inside-plugin-root>
 ```
 
-PI WEB prevents asset path traversal outside the plugin root. JavaScript, JSON, CSS, and HTML get appropriate content types; other files are served as octet-stream.
+Prefer module-relative asset URLs so they also work for remote machine plugins. For example, a built plugin module can reference an SVG shipped beside it:
+
+```js
+const iconUrl = new URL("./assets/icon.svg", import.meta.url);
+```
+
+The final installed plugin package must contain `assets/icon.svg` at that path relative to the final built module. PI WEB serves files that already exist in the package; it does not copy a source `public/` directory or apply Vite-style public-directory semantics. Configure the plugin build and package contents to emit or copy the asset into its final module-relative location.
+
+PI WEB prevents asset path traversal outside the plugin root. JavaScript, JSON, CSS, HTML, and SVG files get appropriate content types; unknown file types are served as octet-stream.
 
 ## Plugin module shape
 
@@ -452,6 +478,7 @@ interface PluginRuntimeContext {
   openTerminal: (options?: { terminalId?: string }) => void;
   refreshFiles: () => void | Promise<void>;
   refreshGit: () => void | Promise<void>;
+  checkForPiWebUpdates?: () => void | Promise<void>;
   startSession: () => void | Promise<void>;
   archiveSession: () => void | Promise<void>;
   stopActiveWork: () => void | Promise<void>;
@@ -466,6 +493,7 @@ Notes:
 - `enabled` is evaluated when the action palette asks for actions.
 - `selectWorkspaceTool()` expects a qualified panel id such as `my-plugin:workspace.info`.
 - `openTerminal()` switches to the built-in terminal panel. Pass `{ terminalId }` to deep-link to a specific terminal.
+- `checkForPiWebUpdates()` forces a fresh update check on the selected machine and refreshes `state.piWebStatus`. It is optional so plugins remain compatible with older PI WEB hosts.
 - Only fields documented here and declared in `plugin-api.d.ts` are stable public plugin API. Anything else is experimental: it may become public API later, change shape, or disappear.
 
 ### Prompt editor API
@@ -746,7 +774,7 @@ Labels should use the same helper through a plugin-owned cache because `items()`
 const envCache = new Map();
 
 function envKey(machine, workspace) {
-  return `${machine.id}:${workspace.id}:docker/development.be-go.local.env`;
+  return `${machine.id}:${workspace.id}:.env.local`;
 }
 
 function loadEnvLabel(context) {
@@ -756,7 +784,7 @@ function loadEnvLabel(context) {
 
   const pending = { status: "loading", label: undefined };
   envCache.set(key, pending);
-  context.files.readFile("docker/development.be-go.local.env")
+  context.files.readFile(".env.local")
     .then((file) => {
       pending.status = "ready";
       pending.label = file.content.match(/^DEV_URL=(.+)$/m)?.[1];

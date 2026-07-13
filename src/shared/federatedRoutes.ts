@@ -1,12 +1,22 @@
 export type FederatedHttpMethod = "GET" | "POST" | "PUT" | "DELETE";
 
+export const PI_PACKAGE_MUTATION_PROXY_TIMEOUT_MS = 5 * 60_000;
+
 export interface FederatedHttpRouteSpec {
   method: FederatedHttpMethod;
   path: string;
+  timeoutMs?: number;
 }
 
 export const FEDERATED_HTTP_ROUTES = [
   { method: "GET", path: "/pi-web/status" },
+  { method: "GET", path: "/config" },
+  { method: "PUT", path: "/config" },
+  { method: "GET", path: "/plugins" },
+  { method: "GET", path: "/pi-packages" },
+  { method: "POST", path: "/pi-packages/install", timeoutMs: PI_PACKAGE_MUTATION_PROXY_TIMEOUT_MS },
+  { method: "POST", path: "/pi-packages/remove", timeoutMs: PI_PACKAGE_MUTATION_PROXY_TIMEOUT_MS },
+  { method: "POST", path: "/pi-packages/update", timeoutMs: PI_PACKAGE_MUTATION_PROXY_TIMEOUT_MS },
   { method: "GET", path: "/projects" },
   { method: "POST", path: "/projects" },
   { method: "DELETE", path: "/projects/:projectId" },
@@ -37,6 +47,8 @@ export const FEDERATED_HTTP_ROUTES = [
   { method: "POST", path: "/sessions" },
   { method: "POST", path: "/sessions/cleanup/preview" },
   { method: "POST", path: "/sessions/cleanup" },
+  { method: "POST", path: "/sessions/bulk/archive" },
+  { method: "POST", path: "/sessions/bulk/delete-archived" },
   { method: "GET", path: "/sessions/:sessionId/messages" },
   { method: "GET", path: "/sessions/:sessionId/status" },
   { method: "GET", path: "/sessions/:sessionId/models" },

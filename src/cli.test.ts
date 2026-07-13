@@ -2,7 +2,15 @@ import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { agentCommandForChecks, commandWithVersionCheck, isCliEntrypoint } from "./cli.js";
+import {
+  agentCommandForChecks,
+  commandWithVersionCheck,
+  doctorExitCode,
+  isCliEntrypoint,
+  launchdRuntimeDetails,
+  regularFileExists,
+  serviceBackendForPlatform,
+} from "./cli.js";
 
 const originalShell = process.env["SHELL"];
 const originalPiWebConfig = process.env["PI_WEB_CONFIG"];
@@ -63,6 +71,42 @@ describe("agentCommandForChecks", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe("native-service doctor CLI contracts", () => {
+  it("uses native services only on supported platforms", () => {
+    expect(serviceBackendForPlatform("linux")).toEqual({ kind: "systemd", label: "systemd user services" });
+    expect(serviceBackendForPlatform("darwin")).toEqual({ kind: "launchd", label: "LaunchAgents" });
+    expect(serviceBackendForPlatform("win32")).toBeUndefined();
+  });
+
+  it("fails doctor for general, native-plan, or node-pty failures", () => {
+    expect(doctorExitCode(true, true, true)).toBe(0);
+    expect(doctorExitCode(false, true, true)).toBe(1);
+    expect(doctorExitCode(true, false, true)).toBe(1);
+    expect(doctorExitCode(true, true, false)).toBe(1);
+  });
+
+  it("accepts only regular files as bundled entrypoints", () => {
+    const dir = mkdtempSync(join(tmpdir(), "pi-web-entrypoint-test-"));
+    try {
+      const file = join(dir, "entrypoint.js");
+      writeFileSync(file, "export {};\n");
+      expect(regularFileExists(file)).toBe(true);
+      expect(regularFileExists(dir)).toBe(false);
+      expect(regularFileExists(join(dir, "missing.js"))).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("surfaces launchd last exit code 127 in service status", () => {
+    expect(launchdRuntimeDetails("state = exited\nlast exit code = 127\n")).toEqual({
+      state: "exited",
+      detail: "exited (last exit code 127)",
+      pid: undefined,
+    });
   });
 });
 

@@ -8,14 +8,15 @@ import { fileURLToPath } from "node:url";
 import { DefaultPackageManager, SettingsManager } from "@earendil-works/pi-coding-agent";
 import type { PiWebCapability, PiWebComponentStatus, PiWebInstallationInfo, PiWebReleaseStatus, PiWebRuntimeComponent, PiWebRuntimeResponse, PiWebServiceComponent, PiWebStatusMessage, PiWebStatusResponse, PiWebVersionResponse } from "../shared/apiTypes.js";
 import { effectivePiWebCapabilities, WEB_RUNTIME_CAPABILITIES } from "../shared/capabilities.js";
+import { piWebDockerCommand } from "../docker/piWebDockerCommandPlan.js";
 import { parsePiWebComponentStatus, parsePiWebRuntimeComponent } from "../shared/piWebStatusParsing.js";
 import { SessionDaemonClient } from "../sessiond/sessionDaemonClient.js";
 import { effectiveAgentConfig } from "../config.js";
+import { createPiWebReleaseLookupCache, type PiWebReleaseLookup } from "./piWebReleaseLookupCache.js";
 
 const PI_WEB_PACKAGE_NAME = "@jmfederico/pi-web";
 const PI_WEB_NPM_SOURCE = `npm:${PI_WEB_PACKAGE_NAME}`;
 const DEFAULT_VERSION = "0.0.0-dev";
-const LATEST_RELEASE_CACHE_MS = 6 * 60 * 60 * 1000;
 const VERSION_CHECK_TIMEOUT_MS = 5000;
 
 type ServiceId = "sessiond" | "web" | "uiDev";
@@ -74,7 +75,8 @@ interface PiWebStatusDaemon {
   request(method: string, path: string, body?: unknown): Promise<{ statusCode: number; headers: Record<string, string>; body: string }>;
 }
 
-interface PiWebStatusOptions {
+export interface PiWebStatusOptions {
+  forceReleaseCheck?: boolean;
   agentCommand?: string;
   agentDir?: string;
   hasCommand?: (command: string) => Promise<boolean>;
@@ -90,8 +92,7 @@ function effectiveStatusAgentConfig(options: PiWebStatusOptions): { command: str
   return { command: agent.command, dir: agent.dir };
 }
 
-let latestReleaseCache: { checkedAtMs: number; latestVersion?: string; error?: string } | undefined;
-
+const latestReleaseLookupCache = createPiWebReleaseLookupCache(fetchLatestNpmVersion);
 const runtimePackageInfo = readPackageInfoSync();
 
 export function getPiWebRuntimeComponent(component: PiWebServiceComponent, capabilities: readonly PiWebCapability[] = []): PiWebRuntimeComponent {
@@ -149,7 +150,7 @@ export async function getPiWebStatus(daemon: PiWebStatusDaemon = new SessionDaem
   const agent = effectiveStatusAgentConfig(options);
   const versionStatus = await getPiWebVersionStatus(daemon, { ...options, agentDir: agent.dir });
   const { web, sessiond } = versionStatus.components;
-  const release = await getLatestReleaseStatus(web.installedVersion ?? web.runtimeVersion ?? DEFAULT_VERSION);
+  const release = await getLatestReleaseStatus(web.installedVersion ?? web.runtimeVersion ?? DEFAULT_VERSION, options.forceReleaseCheck === true);
   const components = { web, sessiond };
   const commands = await commandsFor(components, { agentCommand: agent.command, hasCommand: options.hasCommand ?? hasCommand });
   const messages = buildMessages(components, release, commands);
@@ -205,14 +206,57 @@ function parsePackageInfo(value: unknown, path: string): PackageInfo | undefined
   return { name, version, path };
 }
 
-async function detectPiWebInstallation(agentDir = effectiveAgentConfig().dir): Promise<PiWebInstallationInfo> {
+async function detectPiWebInstallation(agentDir?: string): Promise<PiWebInstallationInfo> {
+  const docker = detectDockerInstallation();
+  if (docker !== undefined) return docker;
+  const resolvedAgentDir = agentDir ?? effectiveAgentConfig().dir;
   const root = packageRootPath();
   const realRoot = await realPathOrSelf(root);
-  const piPackage = await detectPiPackageInstallation(realRoot, root, agentDir);
+  const piPackage = await detectPiPackageInstallation(realRoot, root, resolvedAgentDir);
   if (piPackage !== undefined) return piPackage;
   const npmGlobal = await detectNpmGlobalInstallation(realRoot, root);
   if (npmGlobal !== undefined) return npmGlobal;
   return { kind: "local", path: root };
+}
+
+function detectDockerInstallation(): PiWebInstallationInfo | undefined {
+  if (!isTruthyEnv("PI_WEB_DOCKER_RUNTIME")) return undefined;
+  const dockerMode = dockerModeFromEnv(process.env["PI_WEB_DOCKER_MODE"]) ?? inferredDockerModeFromRoots();
+  const path = dockerRootPathFromEnv(dockerMode);
+  return {
+    kind: "docker",
+    ...(path === undefined ? {} : { path }),
+    ...(dockerMode === undefined ? {} : { dockerMode }),
+  };
+}
+
+function dockerModeFromEnv(value: string | undefined): PiWebInstallationInfo["dockerMode"] | undefined {
+  return value === "runtime" || value === "dev" ? value : undefined;
+}
+
+function inferredDockerModeFromRoots(): PiWebInstallationInfo["dockerMode"] | undefined {
+  if (firstNonEmptyEnv("PI_WEB_DOCKER_DEV_REPO_ROOT") !== undefined) return "dev";
+  if (firstNonEmptyEnv("PI_WEB_DOCKER_INSTALL_DIR") !== undefined) return "runtime";
+  return undefined;
+}
+
+function dockerRootPathFromEnv(mode: PiWebInstallationInfo["dockerMode"] | undefined): string | undefined {
+  if (mode === "dev") return firstNonEmptyEnv("PI_WEB_DOCKER_DEV_REPO_ROOT", "PI_WEB_DOCKER_INSTALL_DIR");
+  if (mode === "runtime") return firstNonEmptyEnv("PI_WEB_DOCKER_INSTALL_DIR", "PI_WEB_DOCKER_DEV_REPO_ROOT");
+  return firstNonEmptyEnv("PI_WEB_DOCKER_INSTALL_DIR", "PI_WEB_DOCKER_DEV_REPO_ROOT");
+}
+
+function firstNonEmptyEnv(...keys: string[]): string | undefined {
+  for (const key of keys) {
+    const value = process.env[key];
+    if (value !== undefined && value !== "") return value;
+  }
+  return undefined;
+}
+
+function isTruthyEnv(key: string): boolean {
+  const value = process.env[key];
+  return value !== undefined && value !== "" && value !== "0" && value.toLowerCase() !== "false";
 }
 
 async function detectPiPackageInstallation(realRoot: string, displayPath: string, agentDir: string): Promise<PiWebInstallationInfo | undefined> {
@@ -349,25 +393,16 @@ function unavailableSessiond(error: string): PiWebComponentStatus {
   };
 }
 
-async function getLatestReleaseStatus(currentVersion: string): Promise<PiWebReleaseStatus> {
+async function getLatestReleaseStatus(currentVersion: string, force: boolean): Promise<PiWebReleaseStatus> {
   const checkedAtMs = Date.now();
   if (skipVersionCheck()) {
     return { packageName: PI_WEB_PACKAGE_NAME, updateAvailable: false, checkedAt: new Date(checkedAtMs).toISOString(), skipped: true };
   }
 
-  if (latestReleaseCache !== undefined && checkedAtMs - latestReleaseCache.checkedAtMs < LATEST_RELEASE_CACHE_MS) {
-    return releaseStatusFromCache(latestReleaseCache, currentVersion);
-  }
-
-  try {
-    latestReleaseCache = { checkedAtMs, latestVersion: await fetchLatestNpmVersion(currentVersion) };
-  } catch (error) {
-    latestReleaseCache = { checkedAtMs, error: error instanceof Error ? error.message : String(error) };
-  }
-  return releaseStatusFromCache(latestReleaseCache, currentVersion);
+  return releaseStatusFromCache(await latestReleaseLookupCache.get(currentVersion, { force }), currentVersion);
 }
 
-function releaseStatusFromCache(cache: { checkedAtMs: number; latestVersion?: string; error?: string }, currentVersion: string): PiWebReleaseStatus {
+function releaseStatusFromCache(cache: PiWebReleaseLookup, currentVersion: string): PiWebReleaseStatus {
   return {
     packageName: PI_WEB_PACKAGE_NAME,
     ...(cache.latestVersion === undefined ? {} : { latestVersion: cache.latestVersion }),
@@ -394,6 +429,8 @@ async function fetchLatestNpmVersion(currentVersion: string): Promise<string> {
 
 async function commandsFor(components: PiWebStatusResponse["components"], options: { agentCommand: string; hasCommand: (command: string) => Promise<boolean> }): Promise<PiWebStatusResponse["commands"]> {
   const installation = preferredInstallation(components);
+  if (installation?.kind === "docker") return dockerCommands(installation);
+
   const [serviceCommands, cliCommands] = await Promise.all([
     nativeServiceCommands(),
     piWebCliCommands(installation),
@@ -416,8 +453,19 @@ async function commandsFor(components: PiWebStatusResponse["components"], option
 function preferredInstallation(components: PiWebStatusResponse["components"]): PiWebInstallationInfo | undefined {
   const web = components.web.installation;
   const sessiond = components.sessiond.installation;
+  if (web?.kind === "docker" || sessiond?.kind === "docker") return web?.kind === "docker" ? web : sessiond;
   if (web?.kind === "local" || sessiond?.kind === "local") return web?.kind === "local" ? web : sessiond;
   return web ?? sessiond;
+}
+
+function dockerCommands(installation: PiWebInstallationInfo): PiWebStatusResponse["commands"] {
+  return {
+    update: piWebDockerCommand(installation.dockerMode, "update"),
+    restart: piWebDockerCommand(installation.dockerMode, "restart"),
+    restartWeb: piWebDockerCommand(installation.dockerMode, "restart-web"),
+    restartSessiond: piWebDockerCommand(installation.dockerMode, "restart-sessiond"),
+    status: piWebDockerCommand(installation.dockerMode, "status"),
+  };
 }
 
 async function piWebCliCommands(installation: PiWebInstallationInfo | undefined): Promise<NativeServiceCommands> {

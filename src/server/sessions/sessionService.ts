@@ -1,4 +1,9 @@
-import type { SavedPromptAttachment } from "../../shared/apiTypes.js";
+import type {
+  SavedPromptAttachment,
+  SessionBulkArchiveResponse,
+  SessionBulkDeleteArchivedResponse,
+  SessionBulkMutationRef,
+} from "../../shared/apiTypes.js";
 import type {
   ClientArchiveSessionsResponse,
   ClientCommand,
@@ -40,6 +45,8 @@ export interface SessionRouteService {
   saveAttachments(ref: SessionRouteLookup, attachments: unknown, folder?: string): Promise<SavedPromptAttachment[]>;
   cleanupPreview(request: NormalizedSessionCleanupRequest): Promise<ClientSessionCleanupPreviewResponse>;
   cleanup(request: NormalizedSessionCleanupRequest): Promise<ClientSessionCleanupExecuteResponse>;
+  archiveMany(refs: readonly SessionBulkMutationRef[]): Promise<SessionBulkArchiveResponse>;
+  deleteArchivedMany(refs: readonly SessionBulkMutationRef[]): Promise<SessionBulkDeleteArchivedResponse>;
   shell(ref: SessionRouteLookup, text: string): Promise<void>;
   runCommand(ref: SessionRouteLookup, text: string): Promise<ClientCommandResult>;
   respondToCommand(ref: SessionRouteLookup, requestId: string, value: string): Promise<ClientCommandResult>;

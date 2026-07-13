@@ -4,6 +4,8 @@ import type { AppAction } from "../../actions";
 import type { PiWebConfigResponse, PiWebConfigValues, PiWebShortcutConfig } from "../../api";
 import { formatShortcut, isShortcutSequenceStarter, parseShortcutInput, resolveShortcutBindings, shortcutSequenceTimeoutMs, shortcutTokenFromEvent, type ShortcutBindingResolution } from "../../keyboardShortcuts";
 import { readPromptEnterPreference, writePromptEnterPreference, type PromptEnterPreference } from "../../promptEnterBehavior";
+import "./SettingsPanelFrame";
+import type { SettingsNotice } from "./SettingsPanelFrame";
 
 const RECORD_SHORTCUT_LISTENER_OPTIONS = { capture: true } as const;
 
@@ -24,6 +26,10 @@ const PROMPT_ENTER_OPTIONS: readonly { value: PromptEnterPreference; label: stri
     description: "Enter adds a line break; Shift+Enter sends the chat message when supported.",
   },
 ];
+
+function renderShortcutsDescription(): TemplateResult {
+  return html`Edit app shortcuts by action. Type a shortcut such as <code>mod+k</code> or <code>mod+g p</code>, record one from the keyboard, disable it with None, or reset it to the default. When shortcuts conflict, custom shortcuts win before defaults; ties are resolved by action id, and shorter shortcuts shadow longer sequences with the same prefix.`;
+}
 
 @customElement("settings-shortcuts-panel")
 export class SettingsShortcutsPanel extends LitElement {
@@ -87,38 +93,40 @@ export class SettingsShortcutsPanel extends LitElement {
     const groups = shortcutGroups(this.actions);
     const shortcutResolutions = this.shortcutResolutions();
     return html`
-      <div class="section-heading">
-        <div>
-          <h2>Keyboard shortcuts</h2>
-          <p>Edit app shortcuts by action. Type a shortcut such as <code>mod+k</code> or <code>mod+g p</code>, record one from the keyboard, disable it with None, or reset it to the default. When shortcuts conflict, custom shortcuts win before defaults; ties are resolved by action id, and shorter shortcuts shadow longer sequences with the same prefix.</p>
-        </div>
-        <button class="secondary" ?disabled=${this.loading} @click=${() => { void this.onReload?.(); }}>Reload</button>
-      </div>
-      ${this.renderMessages()}
-      ${this.renderPromptEnterPreferenceCard()}
-      ${this.configResponse === undefined && this.loading ? html`<div class="loading-card">Loading shortcuts…</div>` : html`
-        <div class="config-path-card">
-          <span>Config file</span>
-          <code>${this.configResponse?.path ?? "Unknown"}</code>
-          <small>Shortcut overrides are saved under <code>shortcuts</code>. A value of <code>null</code> disables the action shortcut.</small>
-        </div>
-        ${groups.length === 0 ? html`<div class="loading-card">No actions registered.</div>` : groups.map((group) => html`
-          <section class="shortcut-group">
-            <h3>${group.name}</h3>
-            <div class="shortcut-list">
-              ${group.actions.map((action) => this.renderShortcutRow(action, shortcutResolutions.get(action.id)))}
-            </div>
-          </section>
-        `)}
-      `}
+      <settings-panel-frame
+        heading="Keyboard shortcuts"
+        .description=${renderShortcutsDescription()}
+        actionLabel="Reload"
+        .actionDisabled=${this.loading}
+        .notices=${this.panelNotices()}
+        .onAction=${this.onReload}
+      >
+        ${this.renderPromptEnterPreferenceCard()}
+        ${this.configResponse === undefined && this.loading ? html`<div class="loading-card">Loading shortcuts…</div>` : html`
+          <div class="config-path-card">
+            <span>Config file</span>
+            <code>${this.configResponse?.path ?? "Unknown"}</code>
+            <small>Shortcut overrides are saved under <code>shortcuts</code>. A value of <code>null</code> disables the action shortcut.</small>
+          </div>
+          ${groups.length === 0 ? html`<div class="loading-card">No actions registered.</div>` : groups.map((group) => html`
+            <section class="shortcut-group">
+              <h3>${group.name}</h3>
+              <div class="shortcut-list">
+                ${group.actions.map((action) => this.renderShortcutRow(action, shortcutResolutions.get(action.id)))}
+              </div>
+            </section>
+          `)}
+        `}
+      </settings-panel-frame>
     `;
   }
 
-  private renderMessages(): TemplateResult | null {
+  private panelNotices(): readonly SettingsNotice[] {
+    const notices: SettingsNotice[] = [];
     const error = this.localError || this.error;
-    if (error !== "") return html`<div class="message error-message">${error}</div>`;
-    if (this.savedMessage !== "") return html`<div class="message success-message">${this.savedMessage}</div>`;
-    return null;
+    if (error !== "") notices.push({ type: "error", content: error });
+    if (this.savedMessage !== "") notices.push({ type: "success", content: this.savedMessage });
+    return notices;
   }
 
   private renderPromptEnterPreferenceCard(): TemplateResult {
@@ -335,25 +343,18 @@ export class SettingsShortcutsPanel extends LitElement {
 
   static override styles = css`
     :host { display: block; }
-    .section-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 14px; }
-    .section-heading > div { display: grid; gap: 6px; min-width: 0; }
-    h2, h3, p { margin: 0; }
-    h2 { font-size: 17px; line-height: 1.25; }
+    h3, p { margin: 0; }
     h3 { font-size: 13px; line-height: 1.3; }
     p { color: var(--pi-muted); line-height: 1.45; }
     button, input { font: inherit; }
     button { border: 1px solid var(--pi-border); border-radius: 8px; background: var(--pi-surface); color: var(--pi-text); padding: 7px 9px; cursor: pointer; }
     button:disabled, input:disabled { opacity: .55; cursor: not-allowed; }
     .primary { border-color: var(--pi-accent); background: var(--pi-selection-bg); color: var(--pi-text-bright); }
-    .secondary { flex: 0 0 auto; }
-    .message, .loading-card, .config-path-card, .prompt-enter-card { border: 1px solid var(--pi-border); border-radius: 10px; background: var(--pi-surface); padding: 12px; }
-    .message { margin-bottom: 12px; }
-    .error-message { border-color: var(--pi-danger); color: var(--pi-danger); background: color-mix(in srgb, var(--pi-danger) 10%, var(--pi-surface)); }
-    .success-message { border-color: var(--pi-success-border); color: var(--pi-success); background: var(--pi-success-surface); }
+    .loading-card, .config-path-card, .prompt-enter-card { border: 1px solid var(--pi-border); border-radius: 10px; background: var(--pi-surface); padding: 12px; }
     .loading-card, .config-path-card { color: var(--pi-muted); }
-    .config-path-card { display: grid; gap: 5px; margin-bottom: 14px; }
+    .config-path-card { display: grid; gap: 5px; }
     .config-path-card span, .card-eyebrow { color: var(--pi-muted); font-size: 12px; font-weight: 700; text-transform: uppercase; }
-    .prompt-enter-card { display: grid; grid-template-columns: minmax(0, .85fr) minmax(260px, 1fr); gap: 12px; align-items: start; margin-bottom: 14px; }
+    .prompt-enter-card { display: grid; grid-template-columns: minmax(0, .85fr) minmax(260px, 1fr); gap: 12px; align-items: start; }
     .prompt-enter-copy { display: grid; gap: 5px; min-width: 0; }
     .prompt-enter-copy p, .prompt-enter-option small { font-size: 12px; }
     .prompt-enter-options { display: grid; gap: 7px; }
@@ -363,7 +364,7 @@ export class SettingsShortcutsPanel extends LitElement {
     .prompt-enter-option span { display: grid; gap: 2px; }
     .prompt-enter-option small { color: var(--pi-muted); line-height: 1.35; }
     code { border: 1px solid var(--pi-border-muted); border-radius: 5px; background: var(--pi-bg); padding: 1px 4px; color: var(--pi-text); font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; overflow-wrap: anywhere; }
-    .shortcut-group { margin: 0 0 16px; }
+    .shortcut-group { margin: 0; }
     .shortcut-group h3 { margin: 0 0 8px; color: var(--pi-muted); font-size: 12px; text-transform: uppercase; }
     .shortcut-list { border: 1px solid var(--pi-border); border-radius: 10px; overflow: hidden; }
     .shortcut-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(360px, 48%); gap: 14px; align-items: start; padding: 12px; border-bottom: 1px solid var(--pi-border-muted); background: var(--pi-surface); }
@@ -384,7 +385,7 @@ export class SettingsShortcutsPanel extends LitElement {
     .shortcut-status small.conflict.shadowed { color: var(--pi-warning); }
     .shortcut-input-label { min-width: 0; display: grid; gap: 5px; }
     .shortcut-input-label span { color: var(--pi-muted); font-size: 11px; font-weight: 700; text-transform: uppercase; }
-    input { box-sizing: border-box; width: 100%; min-width: 0; border: 1px solid var(--pi-border); border-radius: 8px; background: var(--pi-bg); color: var(--pi-text); padding: 8px 9px; outline: none; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    input { box-sizing: border-box; width: 100%; min-width: 0; border: 1px solid var(--pi-border); border-radius: 8px; background: var(--pi-bg); color: var(--pi-text); padding: 8px 9px; outline: none; font: var(--pi-control-font-size, 16px) var(--pi-control-monospace-font-family, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace); }
     input:focus { border-color: var(--pi-accent); box-shadow: 0 0 0 1px var(--pi-accent-border); }
     .shortcut-actions { display: flex; justify-content: flex-end; gap: 7px; flex-wrap: wrap; }
     kbd { border: 1px solid var(--pi-border); border-radius: 6px; background: var(--pi-bg); color: var(--pi-text-secondary); padding: 3px 7px; font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: nowrap; }
@@ -392,8 +393,6 @@ export class SettingsShortcutsPanel extends LitElement {
     .recording-hint { color: var(--pi-accent); font-size: 12px; }
 
     @media (max-width: 760px) {
-      .section-heading { display: grid; gap: 12px; }
-      .section-heading .secondary { justify-self: start; }
       .prompt-enter-card { grid-template-columns: minmax(0, 1fr); }
       .shortcut-row { grid-template-columns: minmax(0, 1fr); align-items: start; }
       .shortcut-status, .shortcut-actions { justify-content: flex-start; }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { PI_WEB_CAPABILITIES } from "../../../shared/capabilities";
-import { parseCommandResult, parseFileContentResponse, parseFileSuggestion, parseGitStatusResponse, parseMessagePage, parsePiWebConfigResponse, parsePiWebPluginsResponse, parsePiWebRuntimeResponse, parseSessionCleanupExecuteResponse, parseSessionCleanupPreviewResponse, parseSessionStatus, parseSlashCommand, parseTerminalCommandRun, parseTerminalInfo, parseWorkspace, parseWorkspaceActivityResponse } from "./parsers";
+import { parseCommandResult, parseFileContentResponse, parseFileSuggestion, parseGitStatusResponse, parseMessagePage, parsePiPackageMutationResponse, parsePiPackagesResponse, parsePiWebConfigResponse, parsePiWebPluginsResponse, parsePiWebRuntimeResponse, parsePiWebStatusResponse, parseSessionBulkArchiveResponse, parseSessionBulkDeleteArchivedResponse, parseSessionCleanupExecuteResponse, parseSessionCleanupPreviewResponse, parseSessionInfo, parseSessionStatus, parseSlashCommand, parseTerminalCommandRun, parseTerminalInfo, parseWorkspace, parseWorkspaceActivityResponse } from "./parsers";
 
 describe("API parsers", () => {
   it("parses PI WEB config responses", () => {
@@ -24,11 +24,60 @@ describe("API parsers", () => {
       packageName: "@jmfederico/pi-web",
       generatedAt: "now",
       components: {
-        web: { component: "web", label: "Web/UI", runtimeVersion: "1.0.0", available: true, capabilities: [PI_WEB_CAPABILITIES.sessionsDeleteArchived] },
+        web: { component: "web", label: "Web/UI", runtimeVersion: "1.0.0", available: true, capabilities: [PI_WEB_CAPABILITIES.sessionsDeleteArchived, PI_WEB_CAPABILITIES.piPackagesManage, "future.capability"] },
         sessiond: { component: "sessiond", label: "Session daemon", runtimeVersion: "1.0.0", available: true, capabilities: [PI_WEB_CAPABILITIES.sessionsDeleteArchived] },
       },
-      capabilities: [PI_WEB_CAPABILITIES.sessionsDeleteArchived],
-    })).toMatchObject({ capabilities: [PI_WEB_CAPABILITIES.sessionsDeleteArchived] });
+      capabilities: [PI_WEB_CAPABILITIES.sessionsDeleteArchived, PI_WEB_CAPABILITIES.piPackagesManage, "future.capability"],
+    })).toMatchObject({ capabilities: [PI_WEB_CAPABILITIES.sessionsDeleteArchived, PI_WEB_CAPABILITIES.piPackagesManage] });
+  });
+
+  it("parses Pi package list and mutation responses", () => {
+    const packages = [
+      { source: "npm:@acme/tools", scope: "user", filtered: false, installedPath: "/home/test/.pi/packages/tools" },
+      { source: "../project-tools", scope: "project", filtered: true },
+    ];
+
+    expect(parsePiPackagesResponse({ packages })).toEqual({ packages });
+    expect(parsePiPackageMutationResponse({ action: "remove", source: "../project-tools", scope: "project", removed: true, packages })).toEqual({
+      action: "remove",
+      source: "../project-tools",
+      scope: "project",
+      removed: true,
+      packages,
+    });
+  });
+
+  it("rejects malformed Pi package responses", () => {
+    expect(() => parsePiPackagesResponse({ packages: [{ source: "npm:@acme/tools", scope: "global", filtered: false }] })).toThrow("Invalid Pi package scope");
+    expect(() => parsePiPackageMutationResponse({ action: "sync", packages: [] })).toThrow("Invalid Pi package mutation action");
+    expect(() => parsePiPackagesResponse({ packages: [{ source: "npm:@acme/tools", scope: "user", filtered: "no" }] })).toThrow("Expected boolean field: filtered");
+  });
+
+  it("parses Docker PI WEB installation metadata", () => {
+    const response = {
+      packageName: "@jmfederico/pi-web",
+      generatedAt: "now",
+      components: {
+        web: { component: "web", label: "Web/UI", runtimeVersion: "1.0.0", available: true, stale: false, installation: { kind: "docker", path: "/srv/pi-web-docker", dockerMode: "runtime" } },
+        sessiond: { component: "sessiond", label: "Session daemon", runtimeVersion: "1.0.0", available: true, stale: false, installation: { kind: "docker", dockerMode: "dev" } },
+      },
+      release: { packageName: "@jmfederico/pi-web", updateAvailable: false },
+      commands: { restart: "pi-web-docker restart", status: "pi-web-docker status" },
+      messages: [],
+    };
+
+    const parsed = parsePiWebStatusResponse(response);
+
+    expect(parsed.components.web.installation).toEqual({ kind: "docker", path: "/srv/pi-web-docker", dockerMode: "runtime" });
+    expect(parsed.components.sessiond.installation).toEqual({ kind: "docker", dockerMode: "dev" });
+    expect(parsed.commands).toEqual({ restart: "pi-web-docker restart", status: "pi-web-docker status" });
+    expect(() => parsePiWebStatusResponse({
+      ...response,
+      components: {
+        ...response.components,
+        web: { ...response.components.web, installation: { kind: "docker", dockerMode: "hidden" } },
+      },
+    })).toThrow("Invalid PI WEB Docker mode");
   });
 
   it("parses PI WEB plugin status responses", () => {
@@ -69,9 +118,56 @@ describe("API parsers", () => {
     expect(() => parseSessionCleanupExecuteResponse({ generatedAt: "now", thresholds: {}, projects: [], totals: { archiveCount: 0, deleteCount: 0 }, archivedSessionIds: ["s1"], deletedSessionIds: [1] })).toThrow("Expected string array field: deletedSessionIds");
   });
 
+  it("parses bulk session mutation responses", () => {
+    const failure = { sessionId: "busy", error: "Session is busy" };
+    expect(parseSessionBulkArchiveResponse({ archived: true, archivedSessionIds: ["s1"], failures: [failure], generatedAt: "now" })).toEqual({
+      archived: true,
+      archivedSessionIds: ["s1"],
+      failures: [failure],
+      generatedAt: "now",
+    });
+    expect(parseSessionBulkDeleteArchivedResponse({ deleted: true, deletedSessionIds: ["s2"], failures: [], generatedAt: "later" })).toEqual({
+      deleted: true,
+      deletedSessionIds: ["s2"],
+      failures: [],
+      generatedAt: "later",
+    });
+  });
+
+  it("rejects malformed bulk session mutation responses", () => {
+    expect(() => parseSessionBulkArchiveResponse({ archived: true, archivedSessionIds: ["s1"], failures: [{ sessionId: "s2" }], generatedAt: "now" })).toThrow("Expected string field: error");
+    expect(() => parseSessionBulkDeleteArchivedResponse({ deleted: true, deletedSessionIds: [1], failures: [], generatedAt: "now" })).toThrow("Expected string array field: deletedSessionIds");
+  });
+
+  it("parses session info including optional persistence signals", () => {
+    expect(parseSessionInfo({
+      id: "s1",
+      path: "/sessions/s1.jsonl",
+      cwd: "/repo",
+      persisted: false,
+      name: "Draft session",
+      created: "2026-01-01T00:00:00.000Z",
+      modified: "2026-01-01T00:01:00.000Z",
+      messageCount: 0,
+      firstMessage: "",
+    })).toEqual({
+      id: "s1",
+      path: "/sessions/s1.jsonl",
+      cwd: "/repo",
+      persisted: false,
+      name: "Draft session",
+      created: "2026-01-01T00:00:00.000Z",
+      modified: "2026-01-01T00:01:00.000Z",
+      messageCount: 0,
+      firstMessage: "",
+    });
+    expect(() => parseSessionInfo({ id: "s1", path: "", cwd: "/repo", persisted: "yes", created: "now", modified: "now", messageCount: 0, firstMessage: "" })).toThrow("Expected optional boolean field: persisted");
+  });
+
   it("validates session status including optional model and nullable context usage", () => {
     expect(parseSessionStatus({
       sessionId: "s1",
+      persisted: true,
       isStreaming: false,
       isCompacting: true,
       isBashRunning: false,
@@ -85,6 +181,7 @@ describe("API parsers", () => {
       thinkingLevel: "medium",
     })).toEqual({
       sessionId: "s1",
+      persisted: true,
       isStreaming: false,
       isCompacting: true,
       isBashRunning: false,

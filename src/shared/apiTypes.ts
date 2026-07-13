@@ -3,10 +3,14 @@ export type MachineStatus = "unknown" | "online" | "offline" | "error";
 
 export const PI_WEB_CAPABILITIES = {
   sessionsDeleteArchived: "sessions.deleteArchived",
+  sessionsBulkMutations: "sessions.bulkMutations",
   sessionsCleanup: "sessions.cleanup",
   sessionsReload: "sessions.reload",
+  sessionsPersistedState: "sessions.persistedState",
   promptAttachments: "prompt.attachments",
   workspaceFileSuggestions: "workspace.fileSuggestions",
+  piPackagesManage: "piPackages.manage",
+  selectedMachineSettings: "settings.selectedMachine",
 } as const;
 
 export type PiWebCapability = typeof PI_WEB_CAPABILITIES[keyof typeof PI_WEB_CAPABILITIES];
@@ -108,6 +112,43 @@ export interface PiWebPluginsResponse {
   plugins: PiWebPluginInfo[];
 }
 
+export type PiPackageScope = "user" | "project";
+
+export interface PiPackageInfo {
+  source: string;
+  scope: PiPackageScope;
+  filtered: boolean;
+  installedPath?: string;
+}
+
+export interface PiPackagesResponse {
+  packages: PiPackageInfo[];
+}
+
+export interface PiPackageInstallRequest {
+  source: string;
+}
+
+export interface PiPackageRemoveRequest {
+  source: string;
+  /** Optional known scope from a listed package; not an install-location picker. */
+  scope?: PiPackageScope;
+}
+
+export interface PiPackageUpdateRequest {
+  /** Omit to update all configured Pi packages. */
+  source?: string;
+}
+
+export type PiPackageMutationAction = "install" | "remove" | "update";
+
+export interface PiPackageMutationResponse extends PiPackagesResponse {
+  action: PiPackageMutationAction;
+  source?: string;
+  scope?: PiPackageScope;
+  removed?: boolean;
+}
+
 export interface PiWebConfigEnvOverrides {
   host: boolean;
   port: boolean;
@@ -158,6 +199,8 @@ export interface SessionRef {
 
 export interface SessionInfo extends SessionRef {
   path: string;
+  /** True when the server has verified a backing session file exists; false when known transient. */
+  persisted?: boolean;
   name?: string;
   created: string;
   modified: string;
@@ -173,6 +216,34 @@ export interface ArchiveSessionsResponse {
   sessionIds?: string[];
   archivedCount?: number;
   skippedAlreadyArchivedCount?: number;
+}
+
+export interface SessionBulkMutationRef {
+  id: string;
+  cwd?: string;
+}
+
+export interface SessionBulkMutationRequest {
+  sessions: SessionBulkMutationRef[];
+}
+
+export interface SessionBulkFailure {
+  sessionId: string;
+  error: string;
+}
+
+export interface SessionBulkArchiveResponse {
+  archived: true;
+  archivedSessionIds: string[];
+  failures: SessionBulkFailure[];
+  generatedAt: string;
+}
+
+export interface SessionBulkDeleteArchivedResponse {
+  deleted: true;
+  deletedSessionIds: string[];
+  failures: SessionBulkFailure[];
+  generatedAt: string;
 }
 
 export interface SessionCleanupRequest {
@@ -324,6 +395,8 @@ export interface ThinkingLevelsResponse {
 
 export interface SessionStatus {
   sessionId: string;
+  /** True when the server has verified a backing session file exists; false when known transient. */
+  persisted?: boolean;
   model?: SessionModel;
   thinkingLevel?: string;
   isStreaming: boolean;
@@ -497,7 +570,8 @@ export interface TerminalCommandRunFilter {
 
 export type PiWebServiceComponent = "web" | "sessiond";
 export type PiWebStatusSeverity = "info" | "warning" | "error";
-export type PiWebInstallationKind = "pi-package" | "npm-global" | "local" | "unknown";
+export type PiWebInstallationKind = "pi-package" | "npm-global" | "local" | "docker" | "unknown";
+export type PiWebDockerMode = "runtime" | "dev";
 
 export interface PiWebInstallationInfo {
   kind: PiWebInstallationKind;
@@ -505,6 +579,7 @@ export interface PiWebInstallationInfo {
   source?: string;
   scope?: "user" | "project";
   npmRoot?: string;
+  dockerMode?: PiWebDockerMode;
 }
 
 export interface PiWebComponentStatus {

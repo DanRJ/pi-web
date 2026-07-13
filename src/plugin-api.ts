@@ -8,6 +8,7 @@ export type {
   FileTreeResponse,
   MachineKind,
   PiWebComponentStatus,
+  PiWebDockerMode,
   PiWebInstallationInfo,
   PiWebInstallationKind,
   PiWebReleaseStatus,
@@ -98,6 +99,8 @@ export interface PluginRuntimeContext {
   refreshFiles: () => void | Promise<void>;
   refreshGit: () => void | Promise<void>;
   refreshAppData: () => void | Promise<void>;
+  /** Force a fresh PI WEB release check on the selected machine. Optional for compatibility with older hosts. */
+  checkForPiWebUpdates?: () => void | Promise<void>;
   reloadPage: () => void;
   startSession: () => void | Promise<void>;
   archiveSession: () => void | Promise<void>;

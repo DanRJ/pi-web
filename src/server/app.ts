@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import Fastify, { type FastifyInstance, type FastifyServerOptions } from "fastify";
+import fastifyCompress from "@fastify/compress";
 import fastifyStatic from "@fastify/static";
 import fastifyWebsocket from "@fastify/websocket";
 import { ProjectStore } from "./storage/projectStore.js";
@@ -18,8 +19,10 @@ import { registerWorkspaceExplorerRoutes } from "./workspaceExplorerRoutes.js";
 import { registerGitRoutes } from "./gitRoutes.js";
 import { registerTerminalProxyRoutes } from "./terminalProxyRoutes.js";
 import { registerWorkspaceDeletionRoutes } from "./workspaces/workspaceDeletionRoutes.js";
-import { createFilePiWebConfigService, registerConfigRoutes, type PiWebConfigService } from "./configRoutes.js";
+import { createFilePiWebConfigService, registerConfigRoutes, registerLocalMachineConfigRoutes, type PiWebConfigService } from "./configRoutes.js";
 import { PiWebPluginService } from "./piWebPluginService.js";
+import { createDefaultPiPackageService, type PiPackageService } from "./piPackageService.js";
+import { registerPiPackageRoutes } from "./piPackageRoutes.js";
 import { createPiWebStatusCache, type PiWebStatusCache } from "./piWebStatusCache.js";
 import { getPiWebRuntime, getPiWebStatus, getPiWebVersionStatus } from "./piWebStatus.js";
 import { effectiveAgentConfig, type EffectivePiWebAgentConfig } from "../config.js";
@@ -35,6 +38,8 @@ export interface AppDependencies {
   machines?: MachineService;
   sessionDaemon?: SessionProxyDaemon;
   piWebPlugins?: Pick<PiWebPluginService, "manifest" | "plugins" | "readAsset">;
+  piPackages?: PiPackageService;
+  piWebStatusCache?: PiWebStatusCache;
   config?: PiWebConfigService;
   clientDist?: string | false;
   logger?: FastifyServerOptions["logger"];
@@ -137,6 +142,13 @@ function invalidatePiWebStatusOnWrite(config: PiWebConfigService, statusCache: P
 
 export async function buildApp(deps: AppDependencies = {}): Promise<FastifyInstance> {
   const app = Fastify({ logger: deps.logger ?? true, ...(deps.bodyLimit === undefined ? {} : { bodyLimit: deps.bodyLimit }) });
+  // Vite proxies development API requests here, while production and machine-scoped
+  // API requests already terminate here, so this is the shared browser HTTP edge.
+  await app.register(fastifyCompress, {
+    globalCompression: true,
+    globalDecompression: false,
+    threshold: 1024,
+  });
   await app.register(fastifyWebsocket);
 
   const projects = deps.projects ?? new ProjectService(new ProjectStore());
@@ -147,13 +159,19 @@ export async function buildApp(deps: AppDependencies = {}): Promise<FastifyInsta
   const piWebPlugins = deps.piWebPlugins ?? new PiWebPluginService({
     configProvider: readConfig,
   });
+  const piPackages = deps.piPackages ?? createDefaultPiPackageService(process.cwd(), (await readAgentConfig()).dir);
   const sessionDaemon = deps.sessionDaemon ?? new SessionDaemonClient();
-  const piWebStatusCache = createPiWebStatusCache(async () => {
-    const agent = await readAgentConfig();
-    return getPiWebStatus(sessionDaemon, { agentCommand: agent.command, agentDir: agent.dir });
-  }, {
-    onError: (error) => { app.log.warn({ err: error }, "failed to refresh PI WEB status cache"); },
-  });
+  const piWebStatusCache = deps.piWebStatusCache ?? createPiWebStatusCache(
+    async ({ force }) => {
+      const agent = await readAgentConfig();
+      return getPiWebStatus(sessionDaemon, {
+        forceReleaseCheck: force,
+        agentCommand: agent.command,
+        agentDir: agent.dir,
+      });
+    },
+    { onError: (error) => { app.log.warn({ err: error }, "failed to refresh PI WEB status cache"); } },
+  );
   const machines = deps.machines ?? new MachineService(undefined, {
     localRuntime: () => getPiWebRuntime(sessionDaemon),
   });
@@ -168,14 +186,21 @@ export async function buildApp(deps: AppDependencies = {}): Promise<FastifyInsta
     return reply.type(asset.contentType).send(asset.content);
   });
 
-  app.get("/api/pi-web/status", async () => piWebStatusCache.get());
+  app.get<{ Querystring: { refresh?: string } }>("/api/pi-web/status", async (request) => request.query.refresh === "1"
+    ? piWebStatusCache.refresh({ force: true })
+    : piWebStatusCache.get());
   app.get("/api/pi-web/version", async () => {
     const agent = await readAgentConfig();
     return getPiWebVersionStatus(sessionDaemon, { agentCommand: agent.command, agentDir: agent.dir });
   });
   app.get("/api/pi-web/runtime", async () => getPiWebRuntime(sessionDaemon));
   app.get("/api/plugins", async () => piWebPlugins.plugins());
-  registerConfigRoutes(app, invalidatePiWebStatusOnWrite(configService, piWebStatusCache));
+  app.get("/api/machines/local/plugins", async () => piWebPlugins.plugins());
+  registerPiPackageRoutes(app, piPackages);
+  registerPiPackageRoutes(app, piPackages, "/api/machines/local");
+  const invalidatingConfigService = invalidatePiWebStatusOnWrite(configService, piWebStatusCache);
+  registerConfigRoutes(app, invalidatingConfigService);
+  registerLocalMachineConfigRoutes(app, invalidatingConfigService);
 
   registerMachineRoutes(app, machines);
   registerMachinePluginProxyRoutes(app, machines);

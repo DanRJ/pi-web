@@ -1,5 +1,52 @@
 # @jmfederico/pi-web
 
+## 1.202607.0
+
+### Patch Changes
+
+- d165d69: Make archive and delete actions reliable for large multi-session selections.
+- d6cfffd: Allow chat copy buttons to work from HTTP private-network addresses by falling back when the browser Clipboard API is unavailable.
+- a660ba8: Keep delegation tools available in human-created and independently spawned sessions, remove them from tracked child sessions, and guide parents to wait for required children at join points without polling.
+- 256db33: Keep npm release builds working across platforms and exclude internal test-support modules from published packages.
+- 338faf4: Speed up chat loading, session resume, and long-conversation rendering while reducing browser response sizes.
+- ad62853: Show complete file paths and commands in tool headers and expanded details, with horizontal scrolling for long tool targets and results.
+- a874798: Make spawned and tracked subsessions inherit the dispatching session's current model instead of falling back to the last globally selected model.
+- eb17276: Preserve archive and archived-session delete actions for older federated PI WEB machines that do not yet advertise session persistence or delete capabilities.
+- 8ade238: Manage Pi packages from Settings on the selected local or federated PI WEB machine, with install, update, and removal flows that respect each machine's advertised capabilities.
+- 2009e6a: Keep the chat prompt stable during streaming so mobile touch gestures, including iOS paste and edit callouts, are not interrupted.
+- 7063c2c: Prevent iOS Safari from zooming into small text inputs across the web UI.
+- 386c67e: Require Pi 0.80 or newer and use its stable streaming API for session-name generation.
+- 32907bb: Support Pi's `max` thinking level and refresh shipped runtime dependencies.
+- 10efb7f: Name Relay handoff sessions consistently from their relay name and leg number.
+- 256db33: Improve file suggestions by waiting for all Git probes before deciding whether to scan the wider workspace.
+- 0b17b9d: Promote the Updates tab to stable by removing its beta label while keeping update message counts visible.
+- 64b2b32: Edit machine-scoped PI WEB settings on the selected machine—including session daemon tools, plugin enablement, path access, and upload defaults—while keeping gateway/browser-only settings local and disabling unsupported remote forms.
+- d2e10cd: Show generated suffixes for unnamed sessions so multiple new empty chats are easier to distinguish.
+- 889672f: Add `/reload` for PI WEB sessions so newly installed Pi package resources can be loaded without restarting the session daemon, with separate guidance for browser plugin reloads.
+- 2665d1e: Open new chats immediately—including on mobile—queue sends until their backend sessions are ready, and keep concurrent starts and archive/delete/reload actions aligned with server persistence.
+- b61a9c0: Standardize Settings panels so descriptions, notices, and controls render in a consistent order.
+- abcf44b: Show complete message dates and model identifiers in a consistent label, wrapping expanded metadata without changing message-header height.
+- 02f34c4: Add a terminal copy mode with a touch-selectable, color-preserving output snapshot and a Copy all action for mobile browsers.
+
+## 1.202606.7
+
+### Patch Changes
+
+- b17faeb: Improve chat, prompt, and session text rendering for RTL and mixed-direction content.
+- 7e812aa: Allow chat composer attachments to save and mention general files while preserving native inline image delivery for supported image-only batches.
+- 47c9b66: Fix `pi-web doctor` "can find npm/pi" checks on fish. The `--version` check
+  wrapped the version command in a POSIX subshell `(cmd --version 2>&1 || true)`,
+  which fish parses as a command substitution in command position and rejects
+  (`command substitutions not allowed in command position`), producing a false
+  negative. Emit fish's `begin; ...; end` grouping when the service shell is fish.
+- b14205e: Highlight within-line changes in the Git diff viewer.
+- cb13af4: Add a manual sessions cleanup flow that previews and confirms archiving idle sessions and deleting old archived sessions, with per-project selection and capability guidance for unsupported machines. Actions can now expose disabled reasons so unavailable remote-machine actions stay visible with an explanation.
+- e46d9ec: Add manual Files panel uploads with direct drag/drop, an options flow from the Upload button, safe non-overwrite defaults, visible per-file progress/error reporting with clear failed/cancelled terminal states, and project-local default destinations.
+- 32ea809: Add a Keyboard shortcuts setting for choosing whether Enter sends chat messages or inserts new lines in this browser, with Shift+Enter performing the opposite action when supported, while preserving the desktop-vs-mobile default (desktop Enter sends; mobile/coarse/narrow Enter inserts a new line).
+- a99696b: Persist tracked subsession links in session history so parents can list, check, and read child sessions after the session daemon restarts, and reopened children can resume parent notifications.
+- 27a3b2b: Add workspace file mutation (`files.writeFile`, `files.deleteFile`, `files.moveFile`) and prompt editor (`prompt.insertText`, `prompt.getText`, `prompt.getSelection`) APIs to the plugin system. File mutations work for local and federated machines, enforce workspace path safety, and auto-refresh the File Explorer.
+- 9980027: Expose the plugin prompt editor helper in workspace panel contexts so panel interactions can insert text into the current prompt.
+
 ## 1.202606.6
 
 ### Patch Changes

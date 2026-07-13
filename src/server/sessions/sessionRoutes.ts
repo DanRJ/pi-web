@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
-import type { SessionCleanupRequest } from "../../shared/apiTypes.js";
+import type { SessionBulkMutationRequest, SessionBulkMutationRef, SessionCleanupRequest } from "../../shared/apiTypes.js";
+import { projectBrowserMessageResponse } from "../browserMessageProjection.js";
 import { normalizeRequestCwd } from "../workingDirectory.js";
 import type { SessionEventHub } from "../realtime/sessionEventHub.js";
 import type { SessionRouteLookup, SessionRouteService } from "./sessionService.js";
@@ -64,10 +65,27 @@ export function registerSessionRoutes(app: FastifyInstance, sessions: SessionRou
     }
   });
 
+  app.post<{ Body: SessionBulkMutationRequest | undefined }>(`${prefix}/sessions/bulk/archive`, async (request, reply) => {
+    try {
+      return await sessions.archiveMany(bulkMutationRefsFromBody(request.body));
+    } catch (error) {
+      return reply.code(mutationErrorStatus(error)).send({ error: errorMessage(error) });
+    }
+  });
+
+  app.post<{ Body: SessionBulkMutationRequest | undefined }>(`${prefix}/sessions/bulk/delete-archived`, async (request, reply) => {
+    try {
+      return await sessions.deleteArchivedMany(bulkMutationRefsFromBody(request.body));
+    } catch (error) {
+      return reply.code(mutationErrorStatus(error)).send({ error: errorMessage(error) });
+    }
+  });
+
   app.get<{ Params: { sessionId: string }; Querystring: MessageQuery }>(`${prefix}/sessions/:sessionId/messages`, async (request, reply) => {
     try {
       const page = { ...optionalField("before", optionalNumber(request.query.before)), ...optionalField("limit", optionalNumber(request.query.limit)) };
-      return await sessions.messages(sessionLookupFromQuery(request.params.sessionId, request.query), page);
+      const messages = await sessions.messages(sessionLookupFromQuery(request.params.sessionId, request.query), page);
+      return projectBrowserMessageResponse(messages);
     } catch (error) {
       return reply.code(404).send({ error: errorMessage(error) });
     }
@@ -279,6 +297,23 @@ export function registerSessionRoutes(app: FastifyInstance, sessions: SessionRou
   app.get(`${prefix}/events`, { websocket: true }, (socket) => {
     eventHub.addGlobal(socket);
   });
+}
+
+function bulkMutationRefsFromBody(body: SessionBulkMutationRequest | undefined): SessionBulkMutationRef[] {
+  const record = requireRecord(body);
+  const sessions = record["sessions"];
+  if (!Array.isArray(sessions)) throw new Error("sessions field must be an array");
+  return sessions.map(parseBulkMutationRef);
+}
+
+function parseBulkMutationRef(value: unknown): SessionBulkMutationRef {
+  const record = requireRecord(value);
+  const id = requireString(record, "id").trim();
+  if (id === "") throw new Error("id field must not be empty");
+  const cwd = record["cwd"];
+  if (cwd === undefined || cwd === "") return { id };
+  if (typeof cwd !== "string") throw new Error("cwd field must be a string");
+  return { id, cwd: normalizeRequestCwd(cwd) };
 }
 
 function sessionLookupFromQuery(id: string, query: SessionQuery): SessionLookup {

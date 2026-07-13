@@ -1,6 +1,8 @@
 import { css, html, LitElement, type TemplateResult } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import type { PiWebConfigResponse, PiWebPluginInfo, PiWebPluginsResponse } from "../../api";
+import "./SettingsPanelFrame";
+import type { SettingsNotice } from "./SettingsPanelFrame";
 
 @customElement("settings-plugins-panel")
 export class SettingsPluginsPanel extends LitElement {
@@ -10,33 +12,61 @@ export class SettingsPluginsPanel extends LitElement {
   @property({ type: Boolean }) saving = false;
   @property() error = "";
   @property() savedMessage = "";
+  @property() targetLabel = "local (local gateway)";
   @property({ attribute: false }) onReload?: () => void | Promise<void>;
   @property({ attribute: false }) onTogglePlugin?: (pluginId: string, enabled: boolean) => void | Promise<void>;
 
   override render(): TemplateResult {
     const plugins = this.pluginsResponse?.plugins ?? [];
+    const hasPluginResponse = this.pluginsResponse !== undefined;
     return html`
-      <div class="section-heading">
-        <div>
-          <h2>Plugins</h2>
-          <p>Enable or disable discovered PI WEB plugins. Changes apply after reloading the browser tab; already-loaded plugin code is not unloaded from the current page.</p>
-        </div>
-        <button class="secondary" ?disabled=${this.loading} @click=${() => { void this.onReload?.(); }}>Reload</button>
-      </div>
-      ${this.renderMessages()}
-      <div class="plugin-note">Config key: <code>plugins</code>. Plugins are enabled unless their entry sets <code>enabled</code> to <code>false</code>.</div>
-      ${this.loading && plugins.length === 0 ? html`<div class="loading-card">Loading plugins…</div>` : plugins.length === 0 ? html`<div class="loading-card">No external or bundled plugins discovered.</div>` : html`
-        <div class="plugin-list">
-          ${plugins.map((plugin) => this.renderPlugin(plugin))}
-        </div>
-      `}
+      <settings-panel-frame
+        heading="PI WEB plugins"
+        .description=${pluginsDescription(this.targetLabel)}
+        actionLabel="Reload"
+        actionTitle=${`Reload PI WEB plugins from ${this.targetLabel}`}
+        .actionDisabled=${this.loading}
+        .notices=${this.panelNotices(plugins.length > 0)}
+        .onAction=${this.onReload}
+      >
+        ${this.renderPanelContent(plugins, hasPluginResponse)}
+      </settings-panel-frame>
     `;
   }
 
-  private renderMessages(): TemplateResult | null {
-    if (this.error !== "") return html`<div class="message error-message">${this.error}</div>`;
-    if (this.savedMessage !== "") return html`<div class="message success-message">${this.savedMessage} Reload the browser tab to apply plugin changes.</div>`;
-    return null;
+  private panelNotices(showTrustedCodeWarning: boolean): readonly SettingsNotice[] {
+    const notices: SettingsNotice[] = [];
+    if (this.error !== "") notices.push({ type: "error", content: this.error });
+    if (this.shouldShowConfigUnavailableNotice(showTrustedCodeWarning)) {
+      notices.push({ type: "availability", content: "Configuration is unavailable. Reload to try again before changing plugin enablement." });
+    }
+    if (this.savedMessage !== "") notices.push({ type: "success", content: `${this.savedMessage} Reload the browser tab to apply plugin changes.` });
+    if (showTrustedCodeWarning) {
+      notices.push({
+        type: "security",
+        content: html`<strong>Trusted code warning:</strong> PI WEB plugins and Pi packages can run with your user permissions. Enable plugins only from sources you trust.`,
+      });
+    }
+    return notices;
+  }
+
+  private shouldShowConfigUnavailableNotice(hasLoadedPlugins: boolean): boolean {
+    return hasLoadedPlugins && this.configResponse === undefined && !this.loading && this.error === "";
+  }
+
+  private renderPanelContent(plugins: PiWebPluginInfo[], hasPluginResponse: boolean): TemplateResult {
+    if (!hasPluginResponse) {
+      return html`<div class="loading-card">${this.loading ? "Loading PI WEB plugins…" : `PI WEB plugin list unavailable for ${this.targetLabel}. Use Reload to try again.`}</div>`;
+    }
+    if (plugins.length === 0) {
+      return html`<div class="loading-card">No PI WEB browser plugins discovered on ${this.targetLabel}.</div>`;
+    }
+    return html`
+      <div class="plugin-note">Config key on ${this.targetLabel}: <code>plugins</code>. Plugins are enabled unless their entry sets <code>enabled</code> to <code>false</code>.</div>
+      <div class="plugin-list">
+        ${plugins.map((plugin) => this.renderPlugin(plugin))}
+      </div>
+    `;
   }
 
   private renderPlugin(plugin: PiWebPluginInfo): TemplateResult {
@@ -50,7 +80,7 @@ export class SettingsPluginsPanel extends LitElement {
           <small>${configuredState}</small>
         </div>
         <label class="toggle">
-          <input type="checkbox" .checked=${plugin.enabled} ?disabled=${this.saving} @change=${(event: Event) => { void this.togglePlugin(plugin, event); }}>
+          <input type="checkbox" .checked=${plugin.enabled} ?disabled=${this.saving || this.configResponse === undefined} @change=${(event: Event) => { void this.togglePlugin(plugin, event); }}>
           <span>${plugin.enabled ? "Enabled" : "Disabled"}</span>
         </label>
       </article>
@@ -64,21 +94,10 @@ export class SettingsPluginsPanel extends LitElement {
 
   static override styles = css`
     :host { display: block; }
-    .section-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 14px; }
-    .section-heading > div { display: grid; gap: 6px; min-width: 0; }
-    h2, p { margin: 0; }
-    h2 { font-size: 17px; line-height: 1.25; }
-    p { color: var(--pi-muted); line-height: 1.45; }
-    button, input { font: inherit; }
-    button { border: 1px solid var(--pi-border); border-radius: 8px; background: var(--pi-surface); color: var(--pi-text); padding: 7px 9px; cursor: pointer; }
-    button:disabled, input:disabled { opacity: .55; cursor: not-allowed; }
-    .secondary { flex: 0 0 auto; }
-    .message, .loading-card, .plugin-note, .plugin-card { border: 1px solid var(--pi-border); border-radius: 10px; background: var(--pi-surface); padding: 12px; }
-    .message { margin-bottom: 12px; }
-    .error-message { border-color: var(--pi-danger); color: var(--pi-danger); background: color-mix(in srgb, var(--pi-danger) 10%, var(--pi-surface)); }
-    .success-message { border-color: var(--pi-success-border); color: var(--pi-success); background: var(--pi-success-surface); }
+    input { font: inherit; }
+    input:disabled { opacity: .55; cursor: not-allowed; }
+    .loading-card, .plugin-note, .plugin-card { border: 1px solid var(--pi-border); border-radius: 10px; background: var(--pi-surface); padding: 12px; }
     .loading-card, .plugin-note { color: var(--pi-muted); }
-    .plugin-note { margin-bottom: 14px; }
     code { border: 1px solid var(--pi-border-muted); border-radius: 5px; background: var(--pi-bg); padding: 1px 4px; color: var(--pi-text); font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; overflow-wrap: anywhere; }
     .plugin-list { display: grid; gap: 10px; }
     .plugin-card { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: center; }
@@ -90,10 +109,12 @@ export class SettingsPluginsPanel extends LitElement {
     .toggle input { width: 18px; height: 18px; accent-color: var(--pi-accent); }
 
     @media (max-width: 760px) {
-      .section-heading { display: grid; gap: 12px; }
-      .section-heading .secondary { justify-self: start; }
       .plugin-card { grid-template-columns: minmax(0, 1fr); align-items: start; }
       .toggle { justify-self: start; }
     }
   `;
+}
+
+function pluginsDescription(targetLabel: string): TemplateResult {
+  return html`Enable or disable discovered PI WEB browser plugins on <strong>${targetLabel}</strong>. This is separate from installing Pi packages. Reload the browser tab to apply plugin runtime changes.`;
 }
