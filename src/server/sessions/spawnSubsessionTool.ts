@@ -158,7 +158,7 @@ function renderTranscript(result: SubsessionReadResult): string {
       ? "no messages matched your filters"
       : `no messages in this window (${String(result.matched)} matched outside it)`)
     : `messages ${String(result.start)}–${String(last.index)} of ${String(result.total)} (${String(result.matched)} matched)`;
-  const more = result.hasMore ? `\n\nEarlier matching messages exist before index ${String(result.start)}.` : "";
+  const more = result.hasMore ? ` Earlier matching messages exist before index ${String(result.start)}.` : "";
   // Empty entries with matches means the `before` cursor excluded every match
   // (they all sit at index >= before): the agent paged too far back and should
   // raise `before` or omit it, not page back further.
@@ -167,7 +167,7 @@ function renderTranscript(result: SubsessionReadResult): string {
     : (result.matched === 0
       ? "(no messages matched the filters)"
       : `(no messages before index ${String(result.start)}; all ${String(result.matched)} matches have later indexes)`);
-  return `Subsession ${result.sessionId} [${result.status}] — ${range}:\n\n${body}${more}`;
+  return `Subsession ${result.sessionId} [${result.status}] — ${range}.${more}\n\n--- SUBSESSION TRANSCRIPT: ${result.sessionId} ---\n${body}`;
 }
 
 /**
@@ -235,7 +235,7 @@ export function createSubsessionToolDefinitions(spawningCwd: string, deps: Subse
       const body = result.finalText === "" ? "(no output yet)" : result.finalText;
       const text = result.status === "working"
         ? workingInspectionGuidance(result.sessionId)
-        : `Subsession ${result.sessionId} [${result.status}]:\n\n${body}`;
+        : `Subsession ${result.sessionId} [${result.status}].\n\n--- SUBSESSION OUTPUT: ${result.sessionId} ---\n${body}`;
       return {
         content: [{ type: "text", text }],
         details: result,

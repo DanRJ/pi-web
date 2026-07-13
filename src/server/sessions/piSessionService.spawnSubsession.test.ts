@@ -804,7 +804,7 @@ describe("PiSessionService", () => {
       await new Promise((resolve) => setTimeout(resolve, 20));
 
       expect(parent.calls.sendCustomMessage[0]?.message.content).toBe(
-        "Subsession child-1 stopped working (idle). Latest output:\n\n(no output)\n\nStill working: child-2. Continue working, or call yield_to_subsessions alone and last at the next join point. Further completion notices arrive automatically; do not poll.",
+        "Subsession child-1 stopped working (idle).\nStill working: child-2. Continue working, or call yield_to_subsessions alone and last at the next join point. Further completion notices arrive automatically; do not poll.\n\n--- SUBSESSION OUTPUT: child-1 ---\n(no output)",
       );
 
       second.session.isStreaming = false;
@@ -812,7 +812,7 @@ describe("PiSessionService", () => {
       await new Promise((resolve) => setTimeout(resolve, 20));
 
       expect(parent.calls.sendCustomMessage[1]?.message.content).toBe(
-        "Subsession child-2 stopped working (idle). Latest output:\n\n(no output)\n\nNo other tracked subsessions are working.",
+        "Subsession child-2 stopped working (idle).\nNo other tracked subsessions are working.\n\n--- SUBSESSION OUTPUT: child-2 ---\n(no output)",
       );
       await service.dispose();
     });

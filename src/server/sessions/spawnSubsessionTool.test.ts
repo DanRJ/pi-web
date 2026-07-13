@@ -183,7 +183,7 @@ describe("createSubsessionToolDefinitions", () => {
 
     expect(check).toHaveBeenCalledWith("parent-1", "child-1", "/sessions/parent-1.jsonl");
     expect(result.details).toMatchObject({ sessionId: "child-1", status: "idle", finalText: "all done" });
-    expect(firstText(result.content)).toContain("all done");
+    expect(firstText(result.content)).toBe("Subsession child-1 [idle].\n\n--- SUBSESSION OUTPUT: child-1 ---\nall done");
     expect(result.terminate).toBeUndefined();
   });
 
@@ -208,7 +208,7 @@ describe("createSubsessionToolDefinitions", () => {
 
     const result = await checkTool.execute("call-error-check", { sessionId: "child-1" }, undefined, undefined, ctxFor("parent-1", undefined));
 
-    expect(firstText(result.content)).toBe("Subsession child-1 [error]:\n\nchild failed");
+    expect(firstText(result.content)).toBe("Subsession child-1 [error].\n\n--- SUBSESSION OUTPUT: child-1 ---\nchild failed");
     expect(result.terminate).toBeUndefined();
   });
 
@@ -224,15 +224,15 @@ describe("createSubsessionToolDefinitions", () => {
     const read = vi.fn(() => Promise.resolve({
       sessionId: "child-1", cwd: "/repos/a", status: "idle" as const,
       entries: [{ index: 2, role: "assistant" as const, parts: [{ kind: "text" as const, text: "the answer" }] }],
-      total: 5, matched: 1, start: 2, hasMore: false,
+      total: 5, matched: 2, start: 2, hasMore: true,
     }));
     const { read: readTool } = tools({ read });
 
-    const result = await readTool.execute("call-6", { sessionId: "child-1", roles: ["assistant"], maxChars: 200 }, undefined, undefined, ctxFor("parent-1", "/sessions/parent-1.jsonl"));
+    const result = await readTool.execute("call-6", { sessionId: "child-1", roles: ["assistant"], maxChars: 200, limit: 1 }, undefined, undefined, ctxFor("parent-1", "/sessions/parent-1.jsonl"));
 
-    expect(read).toHaveBeenCalledWith("parent-1", "child-1", { roles: ["assistant"], maxChars: 200 }, "/sessions/parent-1.jsonl");
-    expect(result.details).toMatchObject({ sessionId: "child-1", matched: 1 });
-    expect(firstText(result.content)).toContain("the answer");
+    expect(read).toHaveBeenCalledWith("parent-1", "child-1", { roles: ["assistant"], maxChars: 200, limit: 1 }, "/sessions/parent-1.jsonl");
+    expect(result.details).toMatchObject({ sessionId: "child-1", matched: 2 });
+    expect(firstText(result.content)).toBe("Subsession child-1 [idle] — messages 2–2 of 5 (2 matched). Earlier matching messages exist before index 2.\n\n--- SUBSESSION TRANSCRIPT: child-1 ---\n#2 assistant\nthe answer");
     expect(result.terminate).toBeUndefined();
   });
 

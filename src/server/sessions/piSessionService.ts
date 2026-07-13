@@ -931,7 +931,7 @@ export class PiSessionService {
     const next = workingIds.length === 0
       ? "No other tracked subsessions are working."
       : `Still working: ${workingIds.join(", ")}. Continue working, or call yield_to_subsessions alone and last at the next join point. Further completion notices arrive automatically; do not poll.`;
-    const text = `Subsession ${childId} stopped working (${status}). Latest output:\n\n${preview}\n\n${next}`;
+    const text = `Subsession ${childId} stopped working (${status}).\n${next}\n\n--- SUBSESSION OUTPUT: ${childId} ---\n${preview}`;
     void this.notifyParentOfSubsession(link.parentSessionId, childId, text);
   }
 
