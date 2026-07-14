@@ -205,10 +205,12 @@ export class ChatView extends LitElement {
           ${this.renderHistoryBoundary()}
           ${repeat(
             groups,
-            (group) => group.kind === "message" ? this.messageAnchorKey(group.index) : this.groupRenderKey(group.startIndex),
-            (group, index) => group.kind === "message"
-              ? this.renderMessage(group.message, group.index)
-              : this.renderMessageGroup(group.messages, group.startIndex, group.endIndex, this.isLiveTailGroup(groups, index)),
+            (group) => group.kind === "group" ? this.groupRenderKey(group.startIndex) : this.messageAnchorKey(group.index),
+            (group, index) => {
+              if (group.kind === "group") return this.renderMessageGroup(group.messages, group.startIndex, group.endIndex, this.isLiveTailGroup(groups, index));
+              if (group.kind === "tool-image") return this.renderToolImageOutput(group.message, group.index, group.toolName);
+              return this.renderMessage(group.message, group.index);
+            },
           )}
           ${this.renderQueuedMessages()}
           ${this.renderSessionActivity()}
@@ -380,6 +382,17 @@ export class ChatView extends LitElement {
     `;
   }
 
+  private renderToolImageOutput(message: ChatLine, index: number, toolName?: string) {
+    const label = toolName === undefined || toolName === "" ? "tool output" : `${toolName} output`;
+    return html`
+      ${this.renderScrollMarker(this.messageScrollMarkerId(index))}
+      <article class="msg tool-image-output" data-index=${index} data-scroll-anchor-id=${this.messageAnchorKey(index)}>
+        ${this.renderMessageHeader(message, String(index), label)}
+        ${message.parts.map((part) => this.renderPart(part, message))}
+      </article>
+    `;
+  }
+
   private isToolExecutionOnlyMessage(message: ChatLine): boolean {
     return message.role === "tool" && message.parts.length > 0 && message.parts.every((part) => part.type === "toolExecution");
   }
@@ -419,12 +432,12 @@ export class ChatView extends LitElement {
     return html`<span class="scroll-marker" data-marker-id=${markerId} aria-hidden="true"></span>`;
   }
 
-  private renderMessageHeader(message: ChatLine, key: string) {
+  private renderMessageHeader(message: ChatLine, key: string, label: string = message.role) {
     const meta = this.messageMetaLabel(message);
     const expanded = this.expandedMetaKey === key;
     return html`
       <div class="msg-header">
-        <b class="label">${message.role}</b>
+        <b class="label">${label}</b>
         <div class="msg-header-trailing">
           ${this.renderMessageActions(message, key)}
           <span class=${expanded ? "msg-meta expanded" : "msg-meta"} role="button" tabindex="0" title=${meta} aria-label=${meta} aria-expanded=${String(expanded)} @click=${() => { this.expandedMetaKey = expanded ? undefined : key; }} @keydown=${(event: KeyboardEvent) => { this.onMetaKeydown(event, key, expanded); }}>${meta}</span>

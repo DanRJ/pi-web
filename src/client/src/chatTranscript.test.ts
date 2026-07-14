@@ -222,7 +222,7 @@ describe("applyTranscriptEvent", () => {
     expect(messages).toEqual([finalizedToolLine, textMessage("assistant", "done")]);
     expect(groupChatMessages(messages)).toEqual([
       { kind: "group", startIndex: 0, endIndex: 0, messages: [{ ...finalizedToolLine, parts: [finalizedToolLine.parts[0]] }] },
-      { kind: "message", index: 0, message: { ...finalizedToolLine, parts: [finalImage] } },
+      { kind: "tool-image", index: 0, message: { ...finalizedToolLine, parts: [finalImage] }, toolName: "read" },
       { kind: "message", index: 1, message: textMessage("assistant", "done") },
     ]);
   });
@@ -250,7 +250,7 @@ describe("applyTranscriptEvent", () => {
         content: [image],
       }, image],
     }]);
-    expect(groupChatMessages(messages).map((group) => group.kind)).toEqual(["group", "message"]);
+    expect(groupChatMessages(messages).map((group) => group.kind)).toEqual(["group", "tool-image"]);
   });
 
   it("keeps repeated final tool-result events idempotent", () => {
@@ -329,18 +329,18 @@ describe("applyTranscriptEvent", () => {
     const technicalParts = (groups: ReturnType<typeof groupChatMessages>) => groups.flatMap((group) => group.kind === "group"
       ? group.messages.flatMap((message) => message.parts.filter((part) => part.type === "toolExecution"))
       : []);
-    const visibleImages = (groups: ReturnType<typeof groupChatMessages>) => groups.flatMap((group) => group.kind === "message"
+    const visibleImages = (groups: ReturnType<typeof groupChatMessages>) => groups.flatMap((group) => group.kind !== "group"
       ? group.message.parts.filter((part) => part.type === "image")
       : []);
     const visibleImageMeta = (groups: ReturnType<typeof groupChatMessages>) => {
       for (const group of groups) {
-        if (group.kind === "message" && group.message.parts.some((part) => part.type === "image")) return group.message.meta;
+        if (group.kind !== "group" && group.message.parts.some((part) => part.type === "image")) return group.message.meta;
       }
       return undefined;
     };
 
-    expect(historyGroups.map((group) => group.kind)).toEqual(["group", "message"]);
-    expect(liveGroups.map((group) => group.kind)).toEqual(["group", "message"]);
+    expect(historyGroups.map((group) => group.kind)).toEqual(["group", "tool-image"]);
+    expect(liveGroups.map((group) => group.kind)).toEqual(["group", "tool-image"]);
     expect(technicalParts(liveGroups)).toEqual(technicalParts(historyGroups));
     expect(visibleImages(liveGroups)).toEqual(visibleImages(historyGroups));
     expect(visibleImageMeta(historyGroups)).toEqual({ timestamp });

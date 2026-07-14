@@ -2,4 +2,4 @@
 "@jmfederico/pi-web": patch
 ---
 
-Keep image content from tool results visible outside collapsed event groups while retaining technical tool metadata inside the group.
+Keep tool-result images visible as compact, clearly labeled output outside collapsed event groups while retaining technical execution details and final message metadata.

@@ -54,7 +54,7 @@ describe("groupChatMessages", () => {
         endIndex: 0,
         messages: [{ role: "tool", parts: [{ type: "toolResult", toolName: "read", text: "Read image file [image/png]", isError: false }] }],
       },
-      { kind: "message", index: 0, message: { role: "tool", parts: [image] } },
+      { kind: "tool-image", index: 0, message: { role: "tool", parts: [image] }, toolName: "read" },
     ]);
   });
 
@@ -65,7 +65,16 @@ describe("groupChatMessages", () => {
 
     expect(groupChatMessages([message])).toEqual([
       { kind: "group", startIndex: 0, endIndex: 0, messages: [{ role: "tool", parts: [message.parts[0]], meta }] },
-      { kind: "message", index: 0, message: { role: "tool", parts: [image], meta } },
+      { kind: "tool-image", index: 0, message: { role: "tool", parts: [image], meta }, toolName: "read" },
+    ]);
+  });
+
+  it("keeps user images as ordinary messages", () => {
+    const image = { type: "image" as const, mimeType: "image/png", data: "QUJD" };
+    const message: ChatLine = { role: "user", parts: [image] };
+
+    expect(groupChatMessages([message])).toEqual([
+      { kind: "message", index: 0, message },
     ]);
   });
 
