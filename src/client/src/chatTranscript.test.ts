@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { groupChatMessages } from "./chatGroups";
 import { textMessage } from "./chatMessages";
 import { applyTranscriptEvent } from "./chatTranscript";
 import type { ChatLine } from "./components/shared";
@@ -167,6 +168,89 @@ describe("applyTranscriptEvent", () => {
         }],
       },
     ]);
+  });
+
+  it("projects live tool-result images and reconciles final content and metadata", () => {
+    const provisionalImage = { type: "image" as const, mimeType: "image/png", data: "UFJFVklFVw==" };
+    const finalImage = { type: "image" as const, mimeType: "image/png", data: "RklOQUw=" };
+    const finalContent = [{ type: "text", text: "Read image file [image/png]" }, finalImage];
+    const timestamp = "2026-07-13T22:00:00.000Z";
+    let messages: ChatLine[] = [];
+
+    messages = applyTranscriptEvent(messages, { type: "tool.start", toolName: "read", toolCallId: "read-image-1", summary: "image.png", args: { path: "image.png" } }) ?? messages;
+    messages = applyTranscriptEvent(messages, {
+      type: "tool.end",
+      toolName: "read",
+      toolCallId: "read-image-1",
+      text: "Read image file [image/png]",
+      isError: false,
+      content: [{ type: "text", text: "Read image file [image/png]" }, provisionalImage],
+      details: { source: "tool.end" },
+    }) ?? messages;
+
+    expect(messages[0]?.parts.filter((part) => part.type === "image")).toEqual([provisionalImage]);
+
+    messages = applyTranscriptEvent(messages, {
+      type: "message.end",
+      message: {
+        role: "toolResult",
+        toolCallId: "read-image-1",
+        toolName: "read",
+        content: finalContent,
+        details: { source: "message.end" },
+        isError: false,
+        timestamp,
+      },
+    }) ?? messages;
+    messages = applyTranscriptEvent(messages, { type: "assistant.delta", text: "done" }) ?? messages;
+
+    const finalizedToolLine: ChatLine = {
+      role: "tool",
+      parts: [{
+        type: "toolExecution",
+        toolCallId: "read-image-1",
+        toolName: "read",
+        summary: "image.png",
+        args: { path: "image.png" },
+        status: "success",
+        resultText: "Read image file [image/png]",
+        content: finalContent,
+        details: { source: "message.end" },
+      }, finalImage],
+      meta: { timestamp },
+    };
+    expect(messages).toEqual([finalizedToolLine, textMessage("assistant", "done")]);
+    expect(groupChatMessages(messages)).toEqual([
+      { kind: "group", startIndex: 0, endIndex: 0, messages: [{ ...finalizedToolLine, parts: [finalizedToolLine.parts[0]] }] },
+      { kind: "message", index: 0, message: { ...finalizedToolLine, parts: [finalImage] } },
+      { kind: "message", index: 1, message: textMessage("assistant", "done") },
+    ]);
+  });
+
+  it("keeps image-only live tool results visible without inventing text", () => {
+    const image = { type: "image" as const, mimeType: "image/webp", data: "QUJD" };
+    let messages: ChatLine[] = [];
+
+    messages = applyTranscriptEvent(messages, { type: "tool.start", toolName: "capture", toolCallId: "capture-1", summary: "screenshot" }) ?? messages;
+    messages = applyTranscriptEvent(messages, { type: "tool.end", toolName: "capture", toolCallId: "capture-1", text: "", isError: false, content: [image] }) ?? messages;
+    messages = applyTranscriptEvent(messages, {
+      type: "message.end",
+      message: { role: "toolResult", toolCallId: "capture-1", toolName: "capture", content: [image], isError: false },
+    }) ?? messages;
+
+    expect(messages).toEqual([{
+      role: "tool",
+      parts: [{
+        type: "toolExecution",
+        toolCallId: "capture-1",
+        toolName: "capture",
+        summary: "screenshot",
+        status: "success",
+        resultText: "",
+        content: [image],
+      }, image],
+    }]);
+    expect(groupChatMessages(messages).map((group) => group.kind)).toEqual(["group", "message"]);
   });
 
   it("does not merge consecutive streamed skill reads", () => {
