@@ -22,23 +22,23 @@ describe.skipIf(process.platform === "win32")("TerminalService command runs", ()
     }
   });
 
-  describe("IS_PIWEB propagation", () => {
-    let originalIsPiWeb: string | undefined;
+  describe("PI_WEB_TERMINAL propagation", () => {
+    let originalPiWebTerminal: string | undefined;
 
     beforeEach(() => {
-      originalIsPiWeb = process.env["IS_PIWEB"];
-      process.env["IS_PIWEB"] = "conflicting-parent-value";
+      originalPiWebTerminal = process.env["PI_WEB_TERMINAL"];
+      process.env["PI_WEB_TERMINAL"] = "conflicting-parent-value";
     });
 
     afterEach(() => {
-      if (originalIsPiWeb === undefined) {
-        delete process.env["IS_PIWEB"];
+      if (originalPiWebTerminal === undefined) {
+        delete process.env["PI_WEB_TERMINAL"];
       } else {
-        process.env["IS_PIWEB"] = originalIsPiWeb;
+        process.env["PI_WEB_TERMINAL"] = originalPiWebTerminal;
       }
     });
 
-    it("sets IS_PIWEB for terminal commands", async () => {
+    it("sets PI_WEB_TERMINAL for terminal commands", async () => {
       const service = new TerminalService();
       try {
         const frame = "__PI_WEB_RUN_ENV_7F3A9C__";
@@ -48,7 +48,7 @@ describe.skipIf(process.platform === "win32")("TerminalService command runs", ()
           workspaceId: "w1",
           cwd: process.cwd(),
           title: "Environment check",
-          command: `printf '${frame}%s${frame}\\n' "$IS_PIWEB"`,
+          command: `printf '${frame}%s${frame}\\n' "$PI_WEB_TERMINAL"`,
         });
 
         expect(await terminalExit(service, run.terminalId)).toContain(`${frame}1${frame}`);
@@ -57,7 +57,7 @@ describe.skipIf(process.platform === "win32")("TerminalService command runs", ()
       }
     });
 
-    it("sets IS_PIWEB in a continued interactive shell", async () => {
+    it("sets PI_WEB_TERMINAL in a continued interactive shell", async () => {
       const service = new TerminalService();
       try {
         const run = service.runCommand({
@@ -78,7 +78,7 @@ describe.skipIf(process.platform === "win32")("TerminalService command runs", ()
 
         const frame = "__PI_WEB_CONTINUE_ENV_42D8B1__";
         const exit = terminalExit(service, run.terminalId);
-        service.write(run.terminalId, `printf '${frame}%s${frame}\\n' "$IS_PIWEB"\nexit\n`);
+        service.write(run.terminalId, `printf '${frame}%s${frame}\\n' "$PI_WEB_TERMINAL"\nexit\n`);
 
         const output = await exit;
         expect(output).toContain("[continued in interactive shell]");
