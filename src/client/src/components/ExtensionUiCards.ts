@@ -34,14 +34,12 @@ export class ExtensionUiCards extends LitElement {
     if (request.method === "select") return html`
       <aside class="extension-card" aria-label=${request.title}>
         <strong>${request.title}</strong>
-        <div class="choices">${request.options.map((option) => html`<button type="button" ?disabled=${submitted} @click=${() => { void this.respond({ id: request.id, value: option }); }}>${option}</button>`)}</div>
-        ${this.cancelButton(request, submitted)}
+        <div class="choices">${request.options.map((option) => html`<button type="button" ?disabled=${submitted} @click=${() => { void this.respond({ id: request.id, value: option }); }}>${option}</button>`)}${this.cancelButton(request, submitted)}</div>
       </aside>`;
     if (request.method === "confirm") return html`
       <aside class="extension-card" aria-label=${request.title}>
         <strong>${request.title}</strong><span>${request.message}</span>
-        <div class="choices"><button type="button" ?disabled=${submitted} @click=${() => { void this.respond({ id: request.id, confirmed: true }); }}>Confirm</button><button type="button" ?disabled=${submitted} @click=${() => { void this.respond({ id: request.id, confirmed: false }); }}>Decline</button></div>
-        ${this.cancelButton(request, submitted)}
+        <div class="choices"><button type="button" ?disabled=${submitted} @click=${() => { void this.respond({ id: request.id, confirmed: true }); }}>Confirm</button><button type="button" ?disabled=${submitted} @click=${() => { void this.respond({ id: request.id, confirmed: false }); }}>Decline</button>${this.cancelButton(request, submitted)}</div>
       </aside>`;
     const value = request.method === "editor" ? request.prefill ?? "" : "";
     return html`
