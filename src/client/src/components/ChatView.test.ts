@@ -81,6 +81,19 @@ describe("chatMessageMetadataLabel", () => {
   });
 });
 
+describe("ChatView message structure", () => {
+  it("keeps role classes on the user and assistant message articles", () => {
+    const view = new ChatView();
+    const user = renderMessage(view, { role: "user", parts: [{ type: "text", text: "Please inspect this." }] }, 0);
+    const assistant = renderMessage(view, { role: "assistant", parts: [{ type: "text", text: "I will inspect it." }] }, 1);
+
+    expect(templateValues(user)).toContain("msg user");
+    expect(templateValues(assistant)).toContain("msg assistant");
+    expect(templateStaticMarkup(user)).toContain("msg-header");
+    expect(templateStaticMarkup(assistant)).toContain("msg-header");
+  });
+});
+
 describe("ChatView technical-event groups", () => {
   const messages: ChatLine[] = [
     { role: "assistant", parts: [{ type: "toolCall", toolName: "read", summary: "inspect a file" }] },
@@ -147,6 +160,7 @@ interface GroupBodyRenderCall {
 }
 
 type RenderQueuedMessages = (this: ChatView) => TemplateResult;
+type RenderMessage = (this: ChatView, message: ChatLine, index: number) => TemplateResult;
 type RenderMessageGroup = (this: ChatView, messages: ChatLine[], startIndex: number, endIndex: number, defaultOpen: boolean) => TemplateResult;
 type RenderMessageGroupBody = (this: ChatView, messages: ChatLine[], startIndex: number) => TemplateResult;
 type TemplateEventHandler = (event: Event) => void;
@@ -155,6 +169,12 @@ function renderQueuedMessages(view: ChatView): TemplateResult {
   const method: unknown = Reflect.get(view, "renderQueuedMessages");
   if (!isRenderQueuedMessages(method)) throw new Error("ChatView.renderQueuedMessages is not callable");
   return method.call(view);
+}
+
+function renderMessage(view: ChatView, message: ChatLine, index: number): TemplateResult {
+  const method: unknown = Reflect.get(view, "renderMessage");
+  if (!isRenderMessage(method)) throw new Error("ChatView.renderMessage is not callable");
+  return method.call(view, message, index);
 }
 
 function renderMessageGroup(view: ChatView, messages: ChatLine[], startIndex: number, endIndex: number, defaultOpen: boolean): TemplateResult {
@@ -176,6 +196,10 @@ function observeGroupBodyRenders(view: ChatView): GroupBodyRenderCall[] {
 }
 
 function isRenderQueuedMessages(value: unknown): value is RenderQueuedMessages {
+  return typeof value === "function";
+}
+
+function isRenderMessage(value: unknown): value is RenderMessage {
   return typeof value === "function";
 }
 

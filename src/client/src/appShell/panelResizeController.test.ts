@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   clampPanelWidth,
+  MODERNIST_NAVIGATION_PANEL_DEFAULT_WIDTH,
   PANEL_SIZE_STORAGE_KEY,
+  PanelResizeController,
   panelResizeDelta,
   panelWidthFromDrag,
   panelWidthFromKeyboard,
@@ -16,6 +18,14 @@ describe("panel resize behavior", () => {
 
     expect(panelResizeDelta("workspace", 100, 140)).toBe(-40);
     expect(panelWidthFromDrag("workspace", 500, 100, 140)).toBe(460);
+  });
+
+  it("uses the effective theme default when no navigation size is saved", () => {
+    const controller = new PanelResizeController(new FakeHost(), { storage: new FakeStorage() });
+    const modernistConstraints = controller.constraints("navigation", { defaultWidth: MODERNIST_NAVIGATION_PANEL_DEFAULT_WIDTH });
+
+    expect(controller.panelWidth("navigation", undefined, modernistConstraints)).toBe(264);
+    expect(controller.panelWidth("navigation")).toBe(340);
   });
 
   it("clamps panel widths to broad fallback bounds", () => {
@@ -75,6 +85,22 @@ describe("panel resize behavior", () => {
     expect(() => { writeStoredPanelSizes({ navigationPanelWidth: 260 }, storage); }).not.toThrow();
   });
 });
+
+class FakeHost {
+  readonly updateComplete = Promise.resolve(true);
+
+  addController(): void {
+    return;
+  }
+
+  removeController(): void {
+    return;
+  }
+
+  requestUpdate(): void {
+    return;
+  }
+}
 
 class FakeStorage {
   private readonly values = new Map<string, string>();

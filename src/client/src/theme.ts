@@ -21,7 +21,10 @@ export interface ThemePreferenceResolution {
 }
 
 export const CLASSIC_THEME_ID: QualifiedContributionId = "themes:classic";
-export const DEFAULT_THEME_ID: QualifiedContributionId = "themes:pi-web-dark";
+export const MODERNIST_LIGHT_THEME_ID: QualifiedContributionId = "themes:modernist-light";
+export const MODERNIST_DARK_THEME_ID: QualifiedContributionId = "themes:modernist-dark";
+/** Applied only when no saved preference exists; stored choices remain authoritative. */
+export const DEFAULT_THEME_ID: QualifiedContributionId = "themes:modernist-light";
 export const DEFAULT_THEME_PREFERENCE: ThemePreference = { themeId: DEFAULT_THEME_ID, auto: true };
 export const THEME_STORAGE_KEY = "pi-web-app-theme";
 
@@ -114,6 +117,19 @@ export function findFallbackTheme(themes: readonly QualifiedThemeContribution[],
 
 export function findThemePairForTheme(themePairs: readonly QualifiedThemePairContribution[], themeId: QualifiedContributionId): QualifiedThemePairContribution | undefined {
   return themePairs.find((pair) => pair.light === themeId || pair.dark === themeId);
+}
+
+/**
+ * Produce an explicit opposite appearance for the selected theme pair. Auto
+ * preferences are resolved against the current system appearance first, so the
+ * toggle always changes what is visible rather than fighting the system.
+ */
+export function toggleThemePreference(options: ResolveThemePreferenceOptions): ThemePreference | undefined {
+  const resolution = resolveThemePreference(options);
+  const pair = resolution.selectedThemePair;
+  const activeTheme = resolution.activeTheme;
+  if (pair === undefined || activeTheme === undefined) return undefined;
+  return { themeId: activeTheme.id === pair.dark ? pair.light : pair.dark, auto: false };
 }
 
 function parseThemePreference(value: string): ThemePreference | undefined {

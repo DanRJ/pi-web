@@ -30,12 +30,13 @@ export class ConversationMeter extends LitElement {
   }
 
   static override styles = css`
-    :host { position: absolute; top: -4px; left: 16px; right: 16px; z-index: 6; display: block; height: 12px; opacity: .58; transition: opacity .15s ease; }
+    :host { position: absolute; top: -0.25rem; left: 1rem; right: 1rem; z-index: 6; display: block; height: 0.75rem; opacity: .58; transition: opacity .15s ease; }
     :host(:hover), :host(:focus-within) { opacity: .92; }
     .meter { height: 100%; }
-    .track { position: relative; height: 4px; margin-top: 4px; border-radius: 999px; background: color-mix(in srgb, var(--pi-border-muted) 34%, transparent); box-shadow: 0 0 0 1px color-mix(in srgb, var(--pi-bg) 55%, transparent); }
-    .progress { position: absolute; left: 0; width: var(--position); top: 0; bottom: 0; border-radius: 999px; background: color-mix(in srgb, var(--pi-accent) 42%, var(--pi-border-muted)); }
-    .marker { position: absolute; left: var(--position); top: 50%; width: 10px; height: 10px; border: 2px solid var(--pi-bg); border-radius: 50%; background: var(--pi-accent); box-shadow: 0 2px 8px var(--pi-shadow); transform: translate(-50%, -50%); }
+    .track { position: relative; height: 0.25rem; margin-top: 0.25rem; border-radius: var(--pi-pill-radius, 999px); background: color-mix(in srgb, var(--pi-border-muted) 34%, transparent); box-shadow: 0 0 0 1px color-mix(in srgb, var(--pi-bg) 55%, transparent); }
+    .progress { position: absolute; left: 0; width: var(--position); top: 0; bottom: 0; border-radius: var(--pi-pill-radius, 999px); background: color-mix(in srgb, var(--pi-accent) 42%, var(--pi-border-muted)); }
+    .marker { position: absolute; left: var(--position); top: 50%; width: 0.625rem; height: 0.625rem; border: var(--pi-meter-marker-border-width, 2px) solid var(--pi-bg); border-radius: var(--pi-meter-marker-radius, 50%); background: var(--pi-accent); box-shadow: 0 2px 8px var(--pi-shadow); transform: translate(-50%, -50%); }
+    @media (prefers-reduced-motion: reduce) { :host { transition: none; } }
   `;
 }
 

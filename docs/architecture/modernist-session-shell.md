@@ -1,0 +1,26 @@
+# Modernist session shell
+
+Modernist is the built-in PI WEB visual direction for the application shell. It has light and dark themes plus an auto pair, registered through the same theme contribution registry and stored preference used by every other theme.
+
+## Theme behavior
+
+- A fresh browser with no saved theme preference starts with the Modernist auto pair. Existing `pi-web-app-theme` values are never migrated or overwritten.
+- The pair follows `prefers-color-scheme` while Auto is enabled. The session-header toggle resolves the currently visible pair member, switches to its opposite, and records that explicit choice. This makes a click visibly change the interface even when the system preference is Auto.
+- The handoff's base red, `#ec3013`, remains the design reference rather than an exact small-text token. Modernist Light semantic accent and success text use the contrast-safe `#d1270d` ramp value (4.69:1 against the `#f3f2f2` paper ground); Modernist Dark uses `#ff6a4a` where small text needs AA contrast.
+- Only Archivo Latin 400, 600, and 800 WOFF2 faces are bundled from `@fontsource/archivo`; no network font request is made.
+
+## Structural tokens
+
+Theme colors continue to use the public 35-token theme API. The shell also consumes inherited structural hooks with stock fallbacks: body, heading and control fonts; heading weight; control radius; divider width; spacing; focus ring; and navigation width. Third-party themes do not need to define any of them.
+
+Modernist supplies zero-radius controls, two-pixel dividers, Archivo, and a `16.5rem` navigation target through those hooks. Component-specific semantic hooks preserve legacy details that should not follow a global divider change: the conversation-meter marker keeps its `2px` border, and a running tool keeps the visible `●` glyph unless a theme opts into the Modernist spinner. The shell continues to own its grid tracks, breakpoints, panel resizing, and collapsed states; only its existing navigation-size variable is fed a different default.
+
+## Component boundaries
+
+`app-session-header` is a presentational Lit component. `PiWebApp` retains controller ownership and passes current session, workspace, model, activity/status, and callbacks for stop and theme selection. Navigation, Actions, and settings remain in their canonical navigation/context layouts; the header deliberately does not duplicate them or invent pause, elapsed-time, notifications, account controls, or composer modes.
+
+Phase A covers shell chrome: the session header, context bar, mobile main tabs, panel edge controls, navigation and shared list styles, plus common machine/project/settings dialog shells.
+
+Phase B extends the same structural hooks to the session surface. Chat uses readable transcript sizing, right-aligned user blocks, visually lighter assistant prose, a retained conversation meter/activity dock, and the existing history and reconnect behavior. Tool and extension interactions use flat bordered cards with state semantics; code and diff surfaces use flat dividers and tokenized addition/removal treatments. The composer and status bar remain the real controls owned by the existing controllers, including attachments, queue/steer/stop, drafts, and CodeMirror behavior.
+
+Mobile navigation remains structurally unchanged in this slice: the existing narrow-viewport navigation view, main tabs, chat, and composer layout are preserved. The proposed four-tab bottom shell that relocates Chat, Sessions, Tools, and Settings is explicitly deferred to the next slice. Phase B deliberately does not relocate navigation or create unsupported composer modes; it keeps the chat and composer usable within the existing narrow-viewport and safe-area layout.

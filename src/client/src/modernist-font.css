@@ -1,0 +1,24 @@
+/* Phase-A Modernist shell uses only these self-hosted Latin WOFF2 faces. */
+@font-face {
+  font-family: "Archivo";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url("@fontsource/archivo/files/archivo-latin-400-normal.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Archivo";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 600;
+  src: url("@fontsource/archivo/files/archivo-latin-600-normal.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Archivo";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 800;
+  src: url("@fontsource/archivo/files/archivo-latin-800-normal.woff2") format("woff2");
+}

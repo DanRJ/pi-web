@@ -14,6 +14,7 @@ describe("ExtensionUiCards", () => {
     expect(templateMarkup(rendered)).toContain("aria-label=");
     expect(templateValuesDeep(rendered)).toContain("Delete session");
     expect(templateMarkup(rendered)).toContain(">Confirm</button>");
+    expect(templateMarkup(rendered)).toContain('class="choices extension-actions primary-actions"');
     expect(templateMarkup(rendered)).toContain(">Cancel</button>");
 
     // This node-environment test targets stable button wiring; a DOM harness

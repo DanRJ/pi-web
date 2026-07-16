@@ -148,14 +148,14 @@ export class AppMobileMainTabs extends LitElement {
   };
 
   static override styles = css`
-    :host { flex: 0 0 auto; min-width: 0; }
-    .mobile-tabs-frame { position: relative; display: flex; flex: 0 0 auto; min-width: 0; border-bottom: 1px solid var(--pi-border); background: var(--pi-bg); }
+    :host { flex: 0 0 auto; min-width: 0; font-family: var(--pi-body-font-family, system-ui, sans-serif); }
+    .mobile-tabs-frame { position: relative; display: flex; flex: 0 0 auto; min-width: 0; border-bottom: var(--pi-divider-width, 1px) solid var(--pi-border); background: var(--pi-bg); }
     .mobile-tabs-frame::before, .mobile-tabs-frame::after { content: ""; position: absolute; top: 0; bottom: 0; z-index: 2; width: 20px; opacity: 0; pointer-events: none; transition: opacity .15s ease; }
     .mobile-tabs-frame::before { left: 0; background: linear-gradient(90deg, color-mix(in srgb, var(--pi-shadow-strong) 55%, transparent) 0%, transparent 100%); }
     .mobile-tabs-frame::after { right: 0; background: linear-gradient(270deg, color-mix(in srgb, var(--pi-shadow-strong) 55%, transparent) 0%, transparent 100%); }
     .mobile-tabs-frame.can-scroll-left::before, .mobile-tabs-frame.can-scroll-right::after { opacity: 1; }
     .mobile-tabs { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 6px; padding: 8px; overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; scrollbar-width: thin; }
-    .mobile-tabs button { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+    .mobile-tabs button { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; font-family: var(--pi-control-font-family, system-ui, sans-serif); }
     .mobile-tabs .navigation-tab { display: none; }
     .mobile-tabs button.selected { border-color: var(--pi-accent); background: var(--pi-selection-bg); }
     .tab-icon { flex: 0 0 auto; width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
@@ -163,8 +163,9 @@ export class AppMobileMainTabs extends LitElement {
     .tab-custom-icon svg { width: 18px; height: 18px; pointer-events: none; }
     .tab-fallback { display: none; font-weight: 650; letter-spacing: .01em; pointer-events: none; }
     .tab-label { min-width: 0; }
-    .tab-badge { flex: 0 0 auto; display: inline-block; min-width: 14px; margin-left: 0; border: 1px solid var(--pi-success-border); border-radius: 999px; background: var(--pi-success-surface); color: var(--pi-success); padding: 0 5px; font-size: 11px; line-height: 16px; text-align: center; }
-    button { border: 1px solid var(--pi-border); border-radius: 8px; background: var(--pi-surface); color: var(--pi-text); padding: 7px 9px; cursor: pointer; }
+    .tab-badge { flex: 0 0 auto; display: inline-block; min-width: 14px; margin-left: 0; border: 1px solid var(--pi-success-border); border-radius: var(--pi-pill-radius, 999px); background: var(--pi-success-surface); color: var(--pi-success); padding: 0 5px; font-size: 11px; line-height: 16px; text-align: center; }
+    button { border: 1px solid var(--pi-border); border-radius: var(--pi-radius-control, 8px); background: var(--pi-surface); color: var(--pi-text); padding: 7px 9px; cursor: pointer; }
+    button:focus-visible { outline: var(--pi-focus-ring-width, 2px) solid var(--pi-accent); outline-offset: var(--pi-focus-ring-offset, 2px); }
     @media (max-width: 760px) {
       .mobile-tabs { gap: 4px; padding: 6px 8px; }
       .mobile-tabs button { min-width: 40px; height: 36px; justify-content: center; gap: 4px; padding: 0 8px; }
@@ -173,5 +174,6 @@ export class AppMobileMainTabs extends LitElement {
       .tab-label { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; border: 0; }
       .tab-badge { min-width: 13px; padding: 0 4px; font-size: 10px; line-height: 13px; }
     }
+    @media (prefers-reduced-motion: reduce) { .mobile-tabs-frame::before, .mobile-tabs-frame::after { transition: none; } }
   `;
 }

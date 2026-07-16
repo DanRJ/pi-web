@@ -32,7 +32,7 @@ export class ToolExecutionView extends LitElement {
     const target = toolTarget(execution, path);
 
     return html`
-      <section class=${`tool-card ${execution.status}`}>
+      <section class=${`tool-card tool-card-${execution.status} ${execution.status}`}>
         <div class="tool-header">
           <div class="tool-title">
             <span class="status-icon" aria-hidden="true">${statusIcon(execution.status)}</span>
@@ -126,14 +126,22 @@ export class ToolExecutionView extends LitElement {
   }
 
   static override styles = css`
-    :host { display: block; width: 100%; max-width: 100%; min-width: 0; color: var(--pi-text); }
-    .tool-card { display: grid; gap: 8px; width: 100%; max-width: 100%; min-width: 0; box-sizing: border-box; overflow: hidden; border: 1px solid var(--pi-border); border-radius: 8px; background: var(--pi-bg); padding: 9px; color: var(--pi-text); }
-    .tool-card.running, .tool-card.pending { border-color: var(--pi-warning-border); background: var(--pi-warning-surface); }
-    .tool-card.success { border-color: var(--pi-success-border); background: var(--pi-success-bg); }
-    .tool-card.error { border-color: var(--pi-danger); background: color-mix(in srgb, var(--pi-danger) 10%, var(--pi-bg)); }
+    :host { display: block; width: 100%; max-width: 100%; min-width: 0; color: var(--pi-text); font-family: var(--pi-body-font-family, system-ui, sans-serif); }
+    .tool-card { display: grid; gap: 0.5rem; width: 100%; max-width: 100%; min-width: 0; box-sizing: border-box; overflow: hidden; border: var(--pi-divider-width, 1px) solid var(--pi-border); border-radius: var(--pi-radius-control, 0.5rem); background: var(--pi-bg); padding: 0.5625rem; color: var(--pi-text); }
+    .tool-card.running, .tool-card.pending { border-color: var(--pi-warning-border); border-style: var(--pi-tool-pending-border-style, solid); background: var(--pi-warning-surface); }
+    .tool-card.success { border-color: var(--pi-success-border); background: var(--pi-tool-success-background, var(--pi-success-bg)); }
+    .tool-card.success strong { font-family: var(--pi-heading-font-family, inherit); font-weight: var(--pi-heading-font-weight, 700); }
+    .tool-card.error { border-color: var(--pi-tool-error-card-border, var(--pi-danger)); border-width: var(--pi-tool-error-card-border-width, 1px); background: var(--pi-tool-error-card-background, color-mix(in srgb, var(--pi-danger) 10%, var(--pi-bg)); }
+    .tool-card.error .tool-header { border-bottom: var(--pi-tool-error-header-rule-width, 0px) solid var(--pi-tool-error-header-rule-color, var(--pi-danger)); padding-bottom: var(--pi-tool-error-header-padding-bottom, 0px); }
     .tool-header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; min-width: 0; }
     .tool-title { flex: 1 1 auto; display: inline-flex; align-items: baseline; gap: 7px; min-width: 0; }
     .status-icon { flex: 0 0 auto; color: var(--pi-muted); }
+    .tool-card.running .status-icon { display: var(--pi-tool-running-indicator-display, inline); width: var(--pi-tool-running-indicator-spinner-size, auto); height: var(--pi-tool-running-indicator-spinner-size, auto); box-sizing: border-box; border: var(--pi-tool-running-indicator-spinner-border-width, 0px) solid currentColor; border-right-color: var(--pi-tool-running-indicator-spinner-border-right-color, currentColor); border-radius: 50%; font-size: var(--pi-tool-running-indicator-glyph-font-size, inherit); animation: var(--pi-tool-running-indicator-animation, none); }
+    .tool-card.pending .status-icon { color: var(--pi-warning); }
+    .tool-card.success .status-icon { color: var(--pi-success); font-weight: 800; }
+    .tool-card.error .status-icon { position: relative; width: var(--pi-tool-error-icon-size, auto); height: var(--pi-tool-error-icon-size, auto); color: var(--pi-tool-error-icon-color, var(--pi-muted)); font-size: var(--pi-tool-error-icon-font-size, inherit); font-weight: var(--pi-tool-error-icon-weight, 400); }
+    .tool-card.error .status-icon::before, .tool-card.error .status-icon::after { content: ""; position: absolute; left: 50%; top: 50%; width: 0.75rem; height: var(--pi-tool-error-icon-stroke-width, 0px); background: currentColor; transform: translate(-50%, -50%) rotate(45deg); }
+    .tool-card.error .status-icon::after { transform: translate(-50%, -50%) rotate(-45deg); }
     strong { flex: 0 0 auto; color: var(--pi-text); }
     .path, .summary { display: block; flex: 1 1 auto; min-width: 0; max-width: 100%; overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; scrollbar-width: thin; white-space: pre; color: var(--pi-accent); font: 13px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; direction: ltr; text-align: left; unicode-bidi: isolate; }
     .summary { color: var(--pi-muted); font-family: inherit; }
@@ -144,12 +152,12 @@ export class ToolExecutionView extends LitElement {
     .status-label { text-transform: uppercase; letter-spacing: .04em; color: var(--pi-muted); }
     .notice { margin: 0; color: var(--pi-warning); }
     .muted { margin: 0; color: var(--pi-muted); }
-    .error-text { margin: 0; border: 1px solid var(--pi-danger); border-radius: 7px; background: color-mix(in srgb, var(--pi-danger) 10%, var(--pi-bg)); color: var(--pi-danger); padding: 8px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .error-text { margin: 0; border: var(--pi-tool-error-text-border-width, 1px) solid var(--pi-danger); border-radius: var(--pi-tool-error-text-border-radius, 7px); background: var(--pi-tool-error-text-background, color-mix(in srgb, var(--pi-danger) 10%, var(--pi-bg)); color: var(--pi-tool-error-text-color, var(--pi-danger)); padding: 0.5rem; white-space: pre-wrap; overflow-wrap: anywhere; font: 0.75rem ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
     .text-body { border-top: 1px solid var(--pi-border-muted); padding-top: 6px; }
     .detail-target, .detail-result { display: grid; gap: 4px; margin-top: 8px; min-width: 0; }
     .detail-label { color: var(--pi-muted); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
     .text-body pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: var(--pi-text); }
-    .detail-result pre { box-sizing: border-box; max-width: 100%; overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; scrollbar-width: thin; border: 1px solid var(--pi-border-muted); border-radius: 7px; background: var(--pi-bg); padding: 8px; white-space: pre; overflow-wrap: normal; direction: ltr; text-align: left; unicode-bidi: isolate; }
+    .detail-result pre { box-sizing: border-box; max-width: 100%; overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; scrollbar-width: thin; border: var(--pi-divider-width, 1px) solid var(--pi-border-muted); border-radius: var(--pi-diff-panel-radius, 7px); background: var(--pi-code-background, var(--pi-bg)); padding: 0.5rem; white-space: pre; overflow-wrap: normal; direction: ltr; text-align: left; unicode-bidi: isolate; }
     .detail-target-value { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--pi-accent); font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; direction: ltr; text-align: left; unicode-bidi: isolate; }
     .diff-details { min-width: 0; max-width: 100%; border-top: 1px solid var(--pi-border-muted); padding-top: 6px; }
     .diff-details > summary { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; min-width: 0; color: var(--pi-muted); cursor: pointer; }
@@ -159,16 +167,18 @@ export class ToolExecutionView extends LitElement {
     .diff-toolbar span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     button { border: 1px solid var(--pi-border); border-radius: 6px; background: var(--pi-surface); color: var(--pi-text); padding: 3px 7px; font: 12px system-ui, sans-serif; cursor: pointer; }
     button:hover, button:focus { border-color: var(--pi-accent); }
-    .diff { box-sizing: border-box; width: 100%; max-width: 100%; min-width: 0; margin: 0; overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; border: 1px solid var(--pi-border-muted); border-radius: 7px; background: var(--pi-bg); padding: 8px 0; color: var(--pi-muted); font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; line-height: 1.45; }
+    .diff { box-sizing: border-box; width: 100%; max-width: 100%; min-width: 0; margin: 0; overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; border: var(--pi-divider-width, 1px) solid var(--pi-border-muted); border-radius: var(--pi-diff-panel-radius, 7px); background: var(--pi-code-background, var(--pi-bg)); padding: 0.5rem 0; color: var(--pi-muted); font: 0.75rem ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; line-height: 1.45; }
     .diff-content { display: block; width: max-content; min-width: 100%; }
     .diff span { display: block; min-height: 1.45em; padding: 0 8px; white-space: pre; }
     .diff .context { color: var(--pi-muted); }
     .diff .hunk { color: var(--pi-accent); }
     .diff .file { color: var(--pi-dim); }
     .diff .meta { color: var(--pi-dim); }
-    .diff .added { background: color-mix(in srgb, var(--pi-success) 12%, transparent); }
-    .diff .removed { background: color-mix(in srgb, var(--pi-danger) 12%, transparent); }
+    .diff .added { border-left: var(--pi-diff-add-rule, 0px solid transparent); background: color-mix(in srgb, var(--pi-success) 12%, transparent); }
+    .diff .removed { border-left: var(--pi-diff-remove-rule, 0px solid transparent); background: color-mix(in srgb, var(--pi-danger) 12%, transparent); color: var(--pi-diff-remove-color, var(--pi-danger)); text-decoration: var(--pi-diff-remove-decoration, none); }
     .show-more { justify-self: start; }
+    @keyframes tool-spin { to { transform: rotate(360deg); } }
+    @media (prefers-reduced-motion: reduce) { .tool-card.running .status-icon { animation: none; } }
   `;
 }
 
