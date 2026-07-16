@@ -87,7 +87,7 @@ export class ExtensionUiCards extends LitElement {
     .choices { display: flex; flex-wrap: wrap; gap: .5rem; }
     button { border: 1px solid var(--pi-border); border-radius: .375rem; background: var(--pi-bg); color: var(--pi-text); padding: .35rem .6rem; cursor: pointer; }
     button:focus-visible, textarea:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: 2px; }
-    button.quiet { color: var(--pi-muted); }
+    button.quiet { margin-left: auto; color: var(--pi-muted); }
     textarea { box-sizing: border-box; width: 100%; margin-top: .5rem; border: 1px solid var(--pi-border); border-radius: .375rem; background: var(--pi-bg); color: var(--pi-text); font: inherit; padding: .5rem; resize: vertical; }
     .settled { border-left-color: var(--pi-muted); color: var(--pi-muted); }
     .notification.warning { border-left-color: var(--pi-warning, #b7791f); }
