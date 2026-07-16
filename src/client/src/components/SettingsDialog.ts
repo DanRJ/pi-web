@@ -645,17 +645,18 @@ export class SettingsDialog extends LitElement {
   }
 
   static override styles = css`
-    :host { position: fixed; inset: 0; z-index: 30; color: var(--pi-text); font: 14px system-ui, sans-serif; }
+    :host { position: fixed; inset: 0; z-index: 30; color: var(--pi-text); font: 14px var(--pi-body-font-family, system-ui, sans-serif); }
     .backdrop { box-sizing: border-box; width: 100%; height: 100dvh; display: grid; place-items: center; padding: max(20px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right)) max(20px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left)); background: var(--pi-overlay); overflow: hidden; }
-    .settings-shell { width: min(980px, 100%); max-height: min(760px, 100%); min-height: min(620px, 100%); display: grid; grid-template-rows: auto minmax(0, 1fr); border: 1px solid var(--pi-border); border-radius: 14px; background: var(--pi-bg); box-shadow: 0 20px 60px var(--pi-shadow-strong); overflow: hidden; }
-    .settings-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px; border-bottom: 1px solid var(--pi-border); }
-    .eyebrow { display: block; color: var(--pi-muted); font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
-    h1 { margin: 0; font-size: 20px; line-height: 1.2; }
-    button { border: 1px solid var(--pi-border); border-radius: 8px; background: var(--pi-surface); color: var(--pi-text); padding: 7px 9px; font: inherit; cursor: pointer; }
+    .settings-shell { width: min(980px, 100%); max-height: min(760px, 100%); min-height: min(620px, 100%); display: grid; grid-template-rows: auto minmax(0, 1fr); border: var(--pi-divider-width, 1px) solid var(--pi-border); border-radius: var(--pi-radius-control, 14px); background: var(--pi-bg); box-shadow: 0 20px 60px var(--pi-shadow-strong); overflow: hidden; }
+    .settings-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px; border-bottom: var(--pi-divider-width, 1px) solid var(--pi-border); }
+    .eyebrow { display: block; color: var(--pi-muted); font-family: var(--pi-heading-font-family, inherit); font-size: 11px; font-weight: var(--pi-heading-font-weight, 700); letter-spacing: .08em; text-transform: uppercase; }
+    h1 { margin: 0; font-family: var(--pi-heading-font-family, inherit); font-size: 20px; font-weight: var(--pi-heading-font-weight, 700); line-height: 1.2; }
+    button { border: 1px solid var(--pi-border); border-radius: var(--pi-radius-control, 8px); background: var(--pi-surface); color: var(--pi-text); padding: 7px 9px; font-family: var(--pi-control-font-family, system-ui, sans-serif); cursor: pointer; }
+    button:focus-visible { outline: var(--pi-focus-ring-width, 2px) solid var(--pi-accent); outline-offset: var(--pi-focus-ring-offset, 2px); }
     .close-button { width: 34px; height: 34px; display: grid; place-items: center; border: 0; background: transparent; color: var(--pi-muted); padding: 0; font-size: 24px; }
     .close-button:hover, .close-button:focus { color: var(--pi-text); background: var(--pi-surface-hover); }
     .settings-body { min-height: 0; display: grid; grid-template-columns: 220px minmax(0, 1fr); }
-    .settings-nav { min-height: 0; padding: 10px; border-right: 1px solid var(--pi-border); background: var(--pi-surface); overflow: auto; }
+    .settings-nav { min-height: 0; padding: 10px; border-right: var(--pi-divider-width, 1px) solid var(--pi-border); background: var(--pi-surface); overflow: auto; }
     .settings-nav button { display: grid; gap: 2px; width: 100%; margin: 0 0 6px; text-align: left; border-color: transparent; background: transparent; }
     .settings-nav button:hover, .settings-nav button:focus { background: var(--pi-surface-hover); }
     .settings-nav button.selected { border-color: var(--pi-accent); background: var(--pi-selection-bg); }
@@ -667,7 +668,7 @@ export class SettingsDialog extends LitElement {
       .settings-shell { width: 100%; height: 100dvh; max-height: none; min-height: 0; border: 0; border-radius: 0; }
       .settings-header { padding: max(12px, env(safe-area-inset-top)) 12px 12px; }
       .settings-body { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
-      .settings-nav { display: flex; gap: 8px; padding: 8px; border-right: 0; border-bottom: 1px solid var(--pi-border); overflow-x: auto; overflow-y: hidden; }
+      .settings-nav { display: flex; gap: 8px; padding: 8px; border-right: 0; border-bottom: var(--pi-divider-width, 1px) solid var(--pi-border); overflow-x: auto; overflow-y: hidden; }
       .settings-nav button { flex: 0 0 auto; width: auto; min-width: 128px; margin: 0; }
       .settings-content { padding: 14px 12px calc(18px + env(safe-area-inset-bottom)); }
     }

@@ -63,7 +63,7 @@ export class CodeViewer extends LitElement {
   }
 
   static override styles = css`
-    :host { display: block; min-height: 0; height: 100%; }
+    :host { display: block; min-height: 0; height: 100%; border-top: var(--pi-code-surface-rule-width, 0px) solid var(--pi-border-muted); background: var(--pi-code-background, var(--pi-bg)); }
     .host { height: 100%; min-height: 0; overflow: auto; }
   `;
 }
@@ -72,17 +72,17 @@ const viewerTheme = EditorView.theme({
   "&": {
     height: "100%",
     color: "var(--pi-text)",
-    backgroundColor: "var(--pi-bg)",
-    fontSize: "12px",
+    backgroundColor: "var(--pi-code-background, var(--pi-bg))",
+    fontSize: "0.75rem",
   },
   ".cm-scroller": {
     fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
     lineHeight: "1.45",
   },
   ".cm-gutters": {
-    backgroundColor: "var(--pi-bg)",
+    backgroundColor: "var(--pi-code-background, var(--pi-bg))",
     color: "var(--pi-dim)",
-    borderRight: "1px solid var(--pi-border-muted)",
+    borderRight: "var(--pi-divider-width, 1px) solid var(--pi-border-muted)",
   },
   ".cm-activeLineGutter": {
     backgroundColor: "transparent",

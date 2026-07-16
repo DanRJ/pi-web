@@ -339,11 +339,14 @@ describe("PluginRegistry", () => {
     registry.register({ id: "themes", plugin: themePackPlugin });
 
     expect(registry.getThemes().map((theme) => ({ id: theme.id, colorScheme: theme.colorScheme }))).toEqual([
+      { id: "themes:modernist-light", colorScheme: "light" },
       { id: "themes:pi-web-dark", colorScheme: "dark" },
+      { id: "themes:modernist-dark", colorScheme: "dark" },
       { id: "themes:pi-web-light", colorScheme: "light" },
       { id: "themes:classic", colorScheme: "dark" },
     ]);
     expect(registry.getThemePairs().map((pair) => ({ id: pair.id, light: pair.light, dark: pair.dark }))).toEqual([
+      { id: "themes:modernist", light: "themes:modernist-light", dark: "themes:modernist-dark" },
       { id: "themes:pi-web", light: "themes:pi-web-light", dark: "themes:pi-web-dark" },
     ]);
   });

@@ -1,6 +1,8 @@
-import { describe, expect, it } from "vitest";
-import { CLASSIC_THEME_ID, DEFAULT_THEME_PREFERENCE, findThemePairForTheme, resolveThemePreference } from "./theme";
-import type { QualifiedContributionId, QualifiedThemeContribution, QualifiedThemePairContribution, ThemeColorScheme, ThemeTokens } from "./plugins/types";
+import { readFileSync } from "node:fs";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { CLASSIC_THEME_ID, DEFAULT_THEME_PREFERENCE, MODERNIST_DARK_THEME_ID, MODERNIST_LIGHT_THEME_ID, findThemePairForTheme, readStoredThemePreference, resolveThemePreference, toggleThemePreference, writeStoredThemePreference } from "./theme";
+import { themePackPlugin } from "./plugins/themes";
+import type { PluginActivationContext, QualifiedContributionId, QualifiedThemeContribution, QualifiedThemePairContribution, ThemeColorScheme, ThemeTokens } from "./plugins/types";
 
 const tokens = {
   "--pi-bg": "#000000",
@@ -40,13 +42,30 @@ const tokens = {
   "--pi-terminal-selection": "#000000",
 } satisfies ThemeTokens;
 
+const themeActivationContext: PluginActivationContext = {
+  apiVersion: 1,
+  pluginId: "themes",
+  html: unavailableTemplate,
+  svg: unavailableTemplate,
+};
+
 const themes = [
+  theme("modernist-dark", "Modernist Dark", "dark"),
+  theme("modernist-light", "Modernist Light", "light"),
   theme("pi-web-dark", "PI WEB Dark", "dark"),
   theme("pi-web-light", "PI WEB Light", "light"),
   theme("classic", "PI WEB Classic", "dark"),
 ];
 
 const themePairs: QualifiedThemePairContribution[] = [
+  {
+    id: "themes:modernist",
+    pluginId: "themes",
+    localId: "modernist",
+    name: "Modernist",
+    light: MODERNIST_LIGHT_THEME_ID,
+    dark: MODERNIST_DARK_THEME_ID,
+  },
   {
     id: "themes:pi-web",
     pluginId: "themes",
@@ -57,15 +76,77 @@ const themePairs: QualifiedThemePairContribution[] = [
   },
 ];
 
-describe("resolveThemePreference", () => {
-  it("resolves the default auto preference to the dark member when the system is dark", () => {
-    expect(resolveThemePreference({ themes, themePairs, preference: DEFAULT_THEME_PREFERENCE, prefersLight: false }).activeTheme?.id)
-      .toBe("themes:pi-web-dark");
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
+describe("Modernist structural token boundaries", () => {
+  const shellThemeCss = readFileSync(new URL("../index.html", import.meta.url), "utf8");
+
+  it("uses the approved AA accent ramp for Modernist Light semantic text", () => {
+    const themes = themePackPlugin.activate(themeActivationContext).contributions.themes;
+    const modernistLight = themes?.find((theme) => theme.id === "modernist-light");
+    expect(modernistLight?.tokens["--pi-accent"]).toBe("#d1270d");
+    expect(modernistLight?.tokens["--pi-success"]).toBe("#d1270d");
   });
 
-  it("resolves the default auto preference to the light member when the system is light", () => {
+  it("keeps Classic and PI WEB on the exact legacy structural defaults", () => {
+    expect(shellThemeCss).toContain("--pi-pill-radius: 999px;");
+    expect(shellThemeCss).toContain("--pi-chat-card-radius: 10px;");
+    expect(shellThemeCss).toContain("--pi-chat-inline-card-radius: 8px;");
+    expect(shellThemeCss).toContain("--pi-inline-code-radius: 4px;");
+    expect(shellThemeCss).toContain("--pi-code-block-radius: 8px;");
+    expect(shellThemeCss).toContain("--pi-diff-inline-radius: 2px;");
+    expect(shellThemeCss).toContain("--pi-diff-panel-radius: 7px;");
+    expect(shellThemeCss).toContain("--pi-meter-marker-border-width: 2px;");
+    expect(shellThemeCss).toContain("--pi-tool-running-indicator-glyph-font-size: inherit;");
+    expect(shellThemeCss).toContain("--pi-tool-running-indicator-display: inline;");
+    expect(shellThemeCss).toContain("--pi-tool-running-indicator-spinner-size: auto;");
+    expect(shellThemeCss).toContain("--pi-tool-running-indicator-spinner-border-width: 0px;");
+    expect(shellThemeCss).toContain("--pi-tool-running-indicator-animation: none;");
+    expect(shellThemeCss).toContain("--pi-selected-nav-color: var(--pi-text);");
+    expect(shellThemeCss).toContain("--pi-selected-nav-font-weight: 400;");
+    expect(shellThemeCss).toContain("--pi-tool-error-card-border: var(--pi-danger);");
+    expect(shellThemeCss).toContain("--pi-tool-error-card-background: color-mix(in srgb, var(--pi-danger) 10%, var(--pi-bg));");
+    expect(shellThemeCss).toContain("--pi-tool-error-icon-color: var(--pi-muted);");
+    expect(shellThemeCss).toContain("--pi-tool-error-icon-stroke-width: 0px;");
+    expect(shellThemeCss).not.toMatch(/data-pi-web-theme\^="themes:(?:classic|pi-web-)"/u);
+  });
+
+  it("limits flat and ink error overrides to Modernist", () => {
+    const modernistSelector = shellThemeCss.split(':root[data-pi-web-theme^="themes:modernist-"] {')[1]?.split("\n      }")[0];
+    expect(modernistSelector).toBeDefined();
+    expect(modernistSelector).toContain("--pi-pill-radius: 0px;");
+    expect(modernistSelector).toContain("--pi-chat-card-radius: 0px;");
+    expect(modernistSelector).toContain("--pi-inline-code-radius: 0px;");
+    expect(modernistSelector).toContain("--pi-meter-marker-border-width: 2px;");
+    expect(modernistSelector).toContain("--pi-tool-running-indicator-glyph-font-size: 0px;");
+    expect(modernistSelector).toContain("--pi-tool-running-indicator-display: inline-grid;");
+    expect(modernistSelector).toContain("--pi-tool-running-indicator-spinner-size: 0.75rem;");
+    expect(modernistSelector).toContain("--pi-tool-running-indicator-spinner-border-width: 2px;");
+    expect(modernistSelector).toContain("--pi-tool-running-indicator-spinner-border-right-color: transparent;");
+    expect(modernistSelector).toContain("--pi-tool-running-indicator-animation: tool-spin 0.8s linear infinite;");
+    expect(modernistSelector).toContain("--pi-selected-nav-color: var(--pi-accent-border);");
+    expect(modernistSelector).toContain("--pi-selected-nav-font-weight: 600;");
+    expect(modernistSelector).toContain("--pi-tool-error-card-border: var(--pi-text);");
+    expect(modernistSelector).toContain("--pi-tool-error-card-background: transparent;");
+    expect(modernistSelector).toContain("--pi-tool-error-card-border-width: 2px;");
+    expect(modernistSelector).toContain("--pi-tool-error-header-rule-width: 2px;");
+    expect(modernistSelector).toContain("--pi-tool-error-icon-color: var(--pi-text);");
+    expect(modernistSelector).toContain("--pi-tool-error-icon-stroke-width: 2px;");
+    expect(modernistSelector).toContain("--pi-tool-error-text-color: var(--pi-text);");
+  });
+});
+
+describe("resolveThemePreference", () => {
+  it("resolves the no-preference default to the Modernist dark member when the system is dark", () => {
+    expect(resolveThemePreference({ themes, themePairs, preference: DEFAULT_THEME_PREFERENCE, prefersLight: false }).activeTheme?.id)
+      .toBe(MODERNIST_DARK_THEME_ID);
+  });
+
+  it("resolves the no-preference default to the Modernist light member when the system is light", () => {
     expect(resolveThemePreference({ themes, themePairs, preference: DEFAULT_THEME_PREFERENCE, prefersLight: true }).activeTheme?.id)
-      .toBe("themes:pi-web-light");
+      .toBe(MODERNIST_LIGHT_THEME_ID);
   });
 
   it("keeps an unpaired theme selected when auto is enabled", () => {
@@ -111,10 +192,41 @@ describe("resolveThemePreference", () => {
   });
 
   it("can look up a pair from either member theme", () => {
-    expect(findThemePairForTheme(themePairs, "themes:pi-web-light")?.id).toBe("themes:pi-web");
-    expect(findThemePairForTheme(themePairs, "themes:pi-web-dark")?.id).toBe("themes:pi-web");
+    expect(findThemePairForTheme(themePairs, MODERNIST_LIGHT_THEME_ID)?.id).toBe("themes:modernist");
+    expect(findThemePairForTheme(themePairs, MODERNIST_DARK_THEME_ID)?.id).toBe("themes:modernist");
+  });
+
+  it("keeps a saved user choice rather than replacing it with the Modernist default", () => {
+    const storage = { getItem: vi.fn(() => JSON.stringify({ themeId: "themes:classic", auto: false })), setItem: vi.fn() };
+    vi.stubGlobal("window", { localStorage: storage });
+
+    expect(readStoredThemePreference()).toEqual({ themeId: CLASSIC_THEME_ID, auto: false });
+    writeStoredThemePreference({ themeId: MODERNIST_DARK_THEME_ID, auto: false });
+    expect(storage.setItem).toHaveBeenCalledWith("pi-web-app-theme", JSON.stringify({ themeId: MODERNIST_DARK_THEME_ID, auto: false }));
+  });
+
+  it("toggles the visible Modernist appearance and turns auto into an explicit preference", () => {
+    expect(toggleThemePreference({
+      themes,
+      themePairs,
+      preference: { themeId: MODERNIST_LIGHT_THEME_ID, auto: true },
+      prefersLight: true,
+    })).toEqual({ themeId: MODERNIST_DARK_THEME_ID, auto: false });
+  });
+
+  it("toggles from the system-selected dark appearance when auto follows a dark system", () => {
+    expect(toggleThemePreference({
+      themes,
+      themePairs,
+      preference: { themeId: MODERNIST_LIGHT_THEME_ID, auto: true },
+      prefersLight: false,
+    })).toEqual({ themeId: MODERNIST_LIGHT_THEME_ID, auto: false });
   });
 });
+
+function unavailableTemplate(): never {
+  throw new Error("Theme registration does not render templates");
+}
 
 function theme(localId: string, name: string, colorScheme: ThemeColorScheme): QualifiedThemeContribution {
   return {

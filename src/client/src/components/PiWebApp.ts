@@ -24,7 +24,7 @@ import { sessionCleanupRequestKey, sessionCleanupUnavailableMessage } from "../s
 import { hasAuthoritativeSessionPersistence as runtimeHasAuthoritativeSessionPersistence } from "../sessionPersistence";
 import { RealtimeSocket } from "../sessionSocket";
 import type { PiWebPluginRegistration, PluginMachine, PluginPromptEditor, QualifiedContributionId, QualifiedThemeContribution, QualifiedThemePairContribution, QualifiedWorkspacePanelContribution, PluginRuntimeContext, TerminalCommandRunsInternalRuntime, WorkspaceFiles, WorkspaceHost, WorkspaceLabelContext, WorkspaceLabelItem, WorkspacePanelContext } from "../plugins/types";
-import { CLASSIC_THEME_ID, DEFAULT_THEME_PREFERENCE, applyPiWebTheme, findThemePairForTheme, readStoredThemePreference, resolveThemePreference, writeStoredThemePreference, type ThemePreference, type ThemePreferenceResolution } from "../theme";
+import { CLASSIC_THEME_ID, DEFAULT_THEME_PREFERENCE, applyPiWebTheme, findThemePairForTheme, readStoredThemePreference, resolveThemePreference, toggleThemePreference, writeStoredThemePreference, type ThemePreference, type ThemePreferenceResolution } from "../theme";
 import { corePlugin } from "../plugins/core";
 import { themePackPlugin } from "../plugins/themes";
 import { loadExternalPlugins } from "../plugins/external";
@@ -34,7 +34,7 @@ import { AppShellController } from "../appShell/appShellController";
 import { BrowserResumeController } from "../appShell/browserResumeController";
 import { NavigationSectionsController, type NavigationSection } from "../appShell/navigationState";
 import { PanelCollapseController, mainViewClass } from "../appShell/panelCollapseController";
-import { PanelResizeController, type PanelResizeConstraints, type ResizablePanelSide } from "../appShell/panelResizeController";
+import { MODERNIST_NAVIGATION_PANEL_DEFAULT_WIDTH, PanelResizeController, type PanelResizeConstraints, type ResizablePanelSide } from "../appShell/panelResizeController";
 import { readRoute, writeRoute, type AppRoute } from "../route";
 import { readSettingsSection, writeSettingsSection, type SettingsSection } from "../settingsRoute";
 import { applyActiveShortcutPreferences } from "../shortcutPreferences";
@@ -50,6 +50,7 @@ import type { ChatView } from "./ChatView";
 import "./PromptEditor";
 import type { PromptEditor } from "./PromptEditor";
 import "./StatusBar";
+import "./AppSessionHeader";
 import "./CommandPicker";
 import "./ActionPalette";
 import "./AuthDialog";
@@ -922,7 +923,7 @@ export class PiWebApp extends LitElement {
         collapseLabel="Collapse navigation panel"
         .collapsed=${this.panelCollapse.navigationPanelCollapsed}
         .resizable=${!this.appShell.isMobileNavigationLayout}
-        .panelWidth=${this.panelResize.panelWidth("navigation")}
+        .panelWidth=${this.panelResize.panelWidth("navigation", undefined, constraints)}
         .minWidth=${constraints.minWidth}
         .maxWidth=${constraints.maxWidth}
         .onToggle=${() => { this.panelCollapse.toggleNavigationPanel(); }}
@@ -945,7 +946,7 @@ export class PiWebApp extends LitElement {
         collapseLabel="Collapse workspace panel"
         .collapsed=${this.panelCollapse.workspacePanelCollapsed}
         .resizable=${!this.appShell.isMobileNavigationLayout}
-        .panelWidth=${this.panelResize.panelWidth("workspace")}
+        .panelWidth=${this.panelResize.panelWidth("workspace", undefined, constraints)}
         .minWidth=${constraints.minWidth}
         .maxWidth=${constraints.maxWidth}
         .onToggle=${() => { this.panelCollapse.toggleWorkspacePanel(); }}
@@ -960,15 +961,21 @@ export class PiWebApp extends LitElement {
   private startPanelResize(side: ResizablePanelSide): number {
     if (side === "navigation") this.panelCollapse.expandNavigationPanel();
     else this.panelCollapse.expandWorkspacePanel();
-    return this.measuredPanelWidth(side) ?? this.panelResize.panelWidth(side);
+    return this.measuredPanelWidth(side) ?? this.panelResize.panelWidth(side, undefined, this.resizablePanelConstraints(side));
   }
 
   private resizablePanelConstraints(side: ResizablePanelSide): PanelResizeConstraints {
-    const constraints = this.panelResize.constraints(side);
+    const constraints = this.effectivePanelResizeConstraints(side);
     return {
       ...constraints,
       maxWidth: this.resizablePanelMaxWidth(side, constraints),
     };
+  }
+
+  private effectivePanelResizeConstraints(side: ResizablePanelSide): PanelResizeConstraints {
+    return this.panelResize.constraints(side, side === "navigation" && this.activeThemeId.startsWith("themes:modernist-")
+      ? { defaultWidth: MODERNIST_NAVIGATION_PANEL_DEFAULT_WIDTH }
+      : {});
   }
 
   private resizablePanelMaxWidth(side: ResizablePanelSide, constraints: PanelResizeConstraints): number {
@@ -983,7 +990,7 @@ export class PiWebApp extends LitElement {
   private oppositeResizablePanelWidth(side: ResizablePanelSide): number {
     const otherSide: ResizablePanelSide = side === "navigation" ? "workspace" : "navigation";
     if (this.isResizablePanelCollapsedOrStacked(otherSide)) return 0;
-    return this.measuredPanelWidth(otherSide) ?? this.panelResize.panelWidth(otherSide);
+    return this.measuredPanelWidth(otherSide) ?? this.panelResize.panelWidth(otherSide, undefined, this.effectivePanelResizeConstraints(otherSide));
   }
 
   private isResizablePanelCollapsedOrStacked(side: ResizablePanelSide): boolean {
@@ -1797,6 +1804,21 @@ export class PiWebApp extends LitElement {
     if (persist) writeStoredThemePreference(this.themePreference);
   }
 
+  private toggleThemeAppearance(): void {
+    const preference = toggleThemePreference({
+      themes: this.plugins.getThemes(),
+      themePairs: this.plugins.getThemePairs(),
+      preference: this.themePreference,
+      prefersLight: this.systemPrefersLight(),
+    });
+    if (preference === undefined) {
+      this.openThemeDialog();
+      return;
+    }
+    this.themePreference = preference;
+    this.applyPreferredTheme(true);
+  }
+
   private resolveCurrentThemePreference(themes = this.plugins.getThemes()): ThemePreferenceResolution {
     return resolveThemePreference({
       themes,
@@ -1886,6 +1908,10 @@ export class PiWebApp extends LitElement {
     void this.openThinkingDialog();
   };
 
+  private readonly handleToggleThemeAppearance = (): void => {
+    this.toggleThemeAppearance();
+  };
+
   private renderChatView(state: AppState, session: SessionInfo) {
     return html`
       <chat-view .sessionId=${session.id} .messages=${state.messages} .messageStart=${state.messagePageStart} .messageEnd=${state.messagePageEnd} .messageTotal=${state.messagePageTotal} .hasMore=${state.messagePageStart > 0} .loadingMore=${state.isLoadingEarlierMessages} .isReceivingPartialStream=${state.isReceivingPartialStream} .isSendingPrompt=${state.sendingPrompts[session.id] === true} .isCompacting=${state.status?.isCompacting === true} .pendingMessageCount=${state.status?.pendingMessageCount ?? 0} .clientQueuedMessages=${state.clientQueuedSessionMessages[session.id] ?? []} .extensionUiRequests=${state.extensionUiRequests} .extensionUiResolutions=${state.extensionUiResolutions} .extensionUiNotifications=${state.extensionUiNotifications} .onExtensionUiRespond=${this.handleExtensionUiRespond} .status=${state.status} .activity=${state.activity} .canClearServerQueue=${this.canClearServerQueue()} .onClearServerQueue=${this.handleClearServerQueue} .onLoadMore=${() => this.withChatPrependTransition(() => this.sessions.loadEarlierMessages())}></chat-view>
@@ -1950,6 +1976,15 @@ export class PiWebApp extends LitElement {
           ${state.error ? html`<div class="error">${state.error}</div>` : null}
           <div class="mobile-navigation-panel">${this.appShell.isMobileNavigationLayout ? this.renderNavigationPanel() : null}</div>
           ${state.selectedSession ? html`
+            <app-session-header
+              .session=${state.selectedSession}
+              .workspace=${state.selectedWorkspace}
+              .status=${state.status}
+              .activity=${state.activity}
+              .canStop=${state.status?.isStreaming === true || state.status?.isBashRunning === true || state.status?.isCompacting === true || (state.status?.pendingMessageCount ?? 0) > 0}
+              .onStop=${this.handleStopActiveWork}
+              .onToggleTheme=${this.handleToggleThemeAppearance}
+            ></app-session-header>
             ${this.renderChatView(state, state.selectedSession)}
             <prompt-editor .sessionId=${state.selectedSession.id} .cwd=${state.selectedWorkspace?.path} .machineId=${selectedMachineId(state)} .projectId=${state.selectedWorkspace?.projectId} .workspaceId=${state.selectedWorkspace?.id} .workspaceScopedFileSuggestions=${this.supportsWorkspaceFileSuggestions()} .disabled=${state.selectedSession.archived === true} .canSteer=${state.status?.isStreaming === true} .isCompacting=${state.status?.isCompacting === true} .canStop=${state.status?.isStreaming === true || state.status?.isBashRunning === true || state.status?.isCompacting === true || (state.status?.pendingMessageCount ?? 0) > 0} .status=${state.status} .availableThinkingLevels=${state.availableThinkingLevels} .sending=${state.sendingPrompts[state.selectedSession.id] === true} .onSend=${this.handleSendPrompt} .onStop=${this.handleStopActiveWork} .onSelectModel=${this.handleSelectModel} .onSelectThinking=${this.handleSelectThinking}></prompt-editor>
             <status-bar .status=${state.status}></status-bar>

@@ -36,8 +36,10 @@ export type PanelSizeStorage = Pick<Storage, "getItem" | "setItem" | "removeItem
 export type PanelResizeConstraintsBySide = Partial<Record<ResizablePanelSide, PanelResizeConstraints>>;
 
 export const PANEL_SIZE_STORAGE_KEY = "pi-web:panel-sizes:v1";
+export const CLASSIC_NAVIGATION_PANEL_DEFAULT_WIDTH = 340;
+export const MODERNIST_NAVIGATION_PANEL_DEFAULT_WIDTH = 264;
 export const PANEL_RESIZE_CONSTRAINTS = {
-  navigation: { minWidth: 180, maxWidth: 4096, defaultWidth: 340, keyboardStep: 24, largeKeyboardStep: 72 },
+  navigation: { minWidth: 180, maxWidth: 4096, defaultWidth: CLASSIC_NAVIGATION_PANEL_DEFAULT_WIDTH, keyboardStep: 24, largeKeyboardStep: 72 },
   workspace: { minWidth: 240, maxWidth: 4096, defaultWidth: 480, keyboardStep: 24, largeKeyboardStep: 72 },
 } as const satisfies Record<ResizablePanelSide, PanelResizeConstraints>;
 
@@ -61,12 +63,12 @@ export class PanelResizeController implements ReactiveController {
     return;
   }
 
-  constraints(side: ResizablePanelSide): PanelResizeConstraints {
-    return panelResizeConstraints(side);
+  constraints(side: ResizablePanelSide, overrides: Partial<PanelResizeConstraints> = {}): PanelResizeConstraints {
+    return panelResizeConstraints(side, overrides);
   }
 
-  panelWidth(side: ResizablePanelSide, measuredWidth?: number): number {
-    return clampPanelWidth(side, measuredWidth ?? this.storedPanelWidth(side) ?? this.constraints(side).defaultWidth);
+  panelWidth(side: ResizablePanelSide, measuredWidth?: number, constraints = this.constraints(side)): number {
+    return clampPanelWidth(side, measuredWidth ?? this.storedPanelWidth(side) ?? constraints.defaultWidth, constraints);
   }
 
   resizePanel(side: ResizablePanelSide, width: number, options: PanelResizeOptions = {}): void {
@@ -111,8 +113,8 @@ export class PanelResizeController implements ReactiveController {
   }
 }
 
-export function panelResizeConstraints(side: ResizablePanelSide): PanelResizeConstraints {
-  return PANEL_RESIZE_CONSTRAINTS[side];
+export function panelResizeConstraints(side: ResizablePanelSide, overrides: Partial<PanelResizeConstraints> = {}): PanelResizeConstraints {
+  return { ...PANEL_RESIZE_CONSTRAINTS[side], ...overrides };
 }
 
 export function panelResizeDelta(side: ResizablePanelSide, startClientX: number, currentClientX: number): number {
