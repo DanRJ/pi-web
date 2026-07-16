@@ -224,7 +224,7 @@ export class SettingsPackagesPanel extends LitElement {
     .package-actions { display: flex; align-items: center; gap: 8px; }
     code { border: 1px solid var(--pi-border-muted); border-radius: 5px; background: var(--pi-bg); padding: 1px 4px; color: var(--pi-text); font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; overflow-wrap: anywhere; }
 
-    @media (max-width: 760px) {
+    @media (max-width: 767px) {
       .package-toolbar { display: grid; gap: 12px; }
       .package-toolbar .secondary { justify-self: start; }
       .install-row, .package-card { grid-template-columns: minmax(0, 1fr); align-items: start; }

@@ -284,7 +284,7 @@ export class SettingsGeneralPanel extends LitElement {
     .form-actions { display: flex; justify-content: flex-end; gap: 8px; padding-top: 2px; }
     .primary { border-color: var(--pi-accent); background: var(--pi-selection-bg); color: var(--pi-text-bright); }
 
-    @media (max-width: 760px) {
+    @media (max-width: 767px) {
       .effective-card dl > div { grid-template-columns: minmax(0, 1fr); gap: 3px; }
     }
   `;

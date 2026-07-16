@@ -685,7 +685,7 @@ export class TerminalPanel extends LitElement {
     /* Desktop xterm already has mouse selection and hardware keys; keep touch controls to touch/narrow layouts. */
     .copy-mode-toggle, .soft-keys-toggle, terminal-soft-keys { display: none; }
     .copy-mode-toggle.selected { display: inline-flex; }
-    @media (pointer: coarse), (max-width: 760px) {
+    @media (pointer: coarse), (max-width: 767px) {
       .copy-mode-toggle, .soft-keys-toggle { display: inline-flex; }
       terminal-soft-keys { display: block; }
     }

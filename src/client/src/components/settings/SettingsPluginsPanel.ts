@@ -108,7 +108,7 @@ export class SettingsPluginsPanel extends LitElement {
     .toggle { display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; }
     .toggle input { width: 18px; height: 18px; accent-color: var(--pi-accent); }
 
-    @media (max-width: 760px) {
+    @media (max-width: 767px) {
       .plugin-card { grid-template-columns: minmax(0, 1fr); align-items: start; }
       .toggle { justify-self: start; }
     }

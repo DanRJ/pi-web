@@ -218,7 +218,7 @@ export class AppPanelEdgeControl extends LitElement {
       :host([side="navigation"]) { grid-row: 1 / 3; }
       :host([side="workspace"]) { display: none; }
     }
-    @media (max-width: 760px) {
+    @media (max-width: 767px) {
       :host([side="navigation"]) { display: none; }
     }
   `;

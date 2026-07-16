@@ -11,6 +11,10 @@ export interface WorkspacePanelEmptyState {
 
 type WorkspacePanelBadge = string | number | TemplateResult | undefined;
 
+export function selectedWorkspacePanel<T extends { id: QualifiedContributionId }>(panels: readonly T[], tool: QualifiedContributionId): T | undefined {
+  return panels.find((panel) => panel.id === tool) ?? panels[0];
+}
+
 @customElement("workspace-panel")
 export class WorkspacePanel extends LitElement {
   @property({ attribute: false }) workspace: Workspace | undefined;
@@ -19,6 +23,7 @@ export class WorkspacePanel extends LitElement {
   @property() tool: QualifiedContributionId = "core:workspace.files";
   @property({ attribute: false }) panels: QualifiedWorkspacePanelContribution[] = [];
   @property({ type: Boolean }) hideToolTabs = false;
+  @property({ type: Boolean, reflect: true }) mobileTools = false;
   @property({ attribute: false }) onSelectTool: (tool: QualifiedContributionId) => void = () => undefined;
   @query(".workspace-header-strip") private workspaceHeaderStrip?: HTMLElement | null;
   @state() private workspaceHeaderCanScrollLeft = false;
@@ -59,19 +64,19 @@ export class WorkspacePanel extends LitElement {
       body: "Try selecting the workspace again.",
     });
     const visiblePanels = this.panels;
-    const selectedPanel = visiblePanels.find((panel) => panel.id === this.tool) ?? visiblePanels[0];
+    const selectedPanel = selectedWorkspacePanel(visiblePanels, this.tool);
     return html`
-      ${this.hideToolTabs ? null : html`
+      ${this.hideToolTabs || visiblePanels.length < 2 ? null : html`
         <header>
           <div class=${this.workspaceHeaderFrameClass()}>
             <div class="workspace-header-strip" @scroll=${this.onWorkspaceHeaderScroll}>
-              <div class="tabs">
+              <div class="tabs" aria-label="Workspace tools">
                 ${visiblePanels.map((panel) => {
                   const selected = selectedPanel?.id === panel.id;
                   const badge = panel.badge?.(context);
                   const ariaLabel = this.panelTabAriaLabel(panel, badge);
                   return html`
-                    <button class=${this.panelTabClass(panel, selected)} title=${ariaLabel} aria-label=${ariaLabel} aria-pressed=${String(selected)} @click=${() => { this.onSelectTool(panel.id); }}>
+                    <button class=${this.panelTabClass(panel, selected)} title=${ariaLabel} aria-label=${ariaLabel} aria-current=${selected ? "page" : "false"} @click=${() => { this.onSelectTool(panel.id); }} @keydown=${(event: KeyboardEvent) => { this.onPanelTabKeyDown(event, panel.id, visiblePanels); }}>
                       ${this.renderPanelTabContent(panel, badge)}
                     </button>
                   `;
@@ -90,6 +95,18 @@ export class WorkspacePanel extends LitElement {
         </div>
       `}
     `;
+  }
+
+  private onPanelTabKeyDown(event: KeyboardEvent, panelId: QualifiedContributionId, panels: readonly QualifiedWorkspacePanelContribution[]): void {
+    const direction = event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
+    const index = panels.findIndex((panel) => panel.id === panelId);
+    const target = event.key === "Home" ? panels[0] : event.key === "End" ? panels[panels.length - 1] : direction === 0 ? undefined : panels[(index + direction + panels.length) % panels.length];
+    if (target === undefined) return;
+    event.preventDefault();
+    this.onSelectTool(target.id);
+    void this.updateComplete.then(() => {
+      this.renderRoot.querySelector<HTMLButtonElement>(`button[aria-current="page"]`)?.focus();
+    });
   }
 
   private panelTabClass(panel: QualifiedWorkspacePanelContribution, selected: boolean): string {
