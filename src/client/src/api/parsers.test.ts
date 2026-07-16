@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { PI_WEB_CAPABILITIES } from "../../../shared/capabilities";
-import { parseCommandResult, parseFileContentResponse, parseFileSuggestion, parseGitStatusResponse, parseMachineRuntime, parseMessagePage, parsePiPackageMutationResponse, parsePiPackagesResponse, parsePiWebConfigResponse, parsePiWebPluginsResponse, parsePiWebRuntimeResponse, parsePiWebStatusResponse, parseSessionBulkArchiveResponse, parseSessionBulkDeleteArchivedResponse, parseSessionCleanupExecuteResponse, parseSessionCleanupPreviewResponse, parseSessionInfo, parseSessionStatus, parseSlashCommand, parseTerminalCommandRun, parseTerminalInfo, parseWorkspace, parseWorkspaceActivityResponse } from "./parsers";
+import { parseCommandResult, parseExtensionUiPendingResponse, parseExtensionUiRespondResponse, parseFileContentResponse, parseFileSuggestion, parseGitStatusResponse, parseMachineRuntime, parseMessagePage, parsePiPackageMutationResponse, parsePiPackagesResponse, parsePiWebConfigResponse, parsePiWebPluginsResponse, parsePiWebRuntimeResponse, parsePiWebStatusResponse, parseSessionBulkArchiveResponse, parseSessionBulkDeleteArchivedResponse, parseSessionCleanupExecuteResponse, parseSessionCleanupPreviewResponse, parseSessionInfo, parseSessionStatus, parseSlashCommand, parseTerminalCommandRun, parseTerminalInfo, parseWorkspace, parseWorkspaceActivityResponse } from "./parsers";
 
 describe("API parsers", () => {
   it("parses PI WEB config responses", () => {
@@ -387,6 +387,30 @@ describe("API parsers", () => {
       createdAt: "now",
       metadata: {},
     })).toThrow("Invalid terminal command run status");
+  });
+
+  it("parses extension UI discovery and idempotent response contracts", () => {
+    expect(parseExtensionUiPendingResponse({
+      requests: [
+        { id: "select-1", state: "pending", method: "select", title: "Choose", options: ["one", "two"], timeout: 500 },
+        { id: "editor-1", state: "pending", method: "editor", title: "Edit", prefill: "draft" },
+      ],
+    })).toEqual({
+      requests: [
+        { id: "select-1", state: "pending", method: "select", title: "Choose", options: ["one", "two"], timeout: 500 },
+        { id: "editor-1", state: "pending", method: "editor", title: "Edit", prefill: "draft" },
+      ],
+    });
+    expect(parseExtensionUiRespondResponse({ outcome: "already-resolved", resolution: { id: "select-1", state: "cancelled", response: { id: "select-1", cancelled: true } } })).toEqual({
+      outcome: "already-resolved",
+      resolution: { id: "select-1", state: "cancelled", response: { id: "select-1", cancelled: true } },
+    });
+    expect(parseExtensionUiRespondResponse({ outcome: "invalid-response" })).toEqual({ outcome: "invalid-response" });
+  });
+
+  it("rejects malformed extension UI payloads", () => {
+    expect(() => parseExtensionUiPendingResponse({ requests: [{ id: "x", state: "submitted", method: "input", title: "Input" }] })).toThrow("Extension UI request is not pending");
+    expect(() => parseExtensionUiRespondResponse({ outcome: "accepted", resolution: { id: "x", state: "expired", reason: "later" } })).toThrow("Invalid extension UI resolution reason");
   });
 
   it("parses command result variants", () => {

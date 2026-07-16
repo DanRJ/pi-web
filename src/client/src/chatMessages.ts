@@ -216,6 +216,7 @@ function coalesceToolExecutions(lines: ChatLine[]): ChatLine[] {
       passthroughParts = [];
     };
 
+    let mergedToolResult = false;
     for (const part of line.parts) {
       if (part.type === "toolCall") {
         flushPassthrough();
@@ -229,11 +230,18 @@ function coalesceToolExecutions(lines: ChatLine[]): ChatLine[] {
       if (part.type === "toolResult") {
         const target = part.toolCallId === undefined ? undefined : pendingTools.get(part.toolCallId);
         if (target !== undefined && mergeToolResultInto(result, target, part)) {
+          const mergedLine = result[target.lineIndex];
+          if (mergedLine !== undefined && line.meta !== undefined) result[target.lineIndex] = { ...mergedLine, meta: line.meta };
           pendingTools.delete(part.toolCallId ?? "");
+          mergedToolResult = true;
           continue;
         }
       }
 
+      // A matched result already projected its text and images beside the
+      // execution card. Do not leave a duplicate image as a second transcript
+      // line when hydrating history.
+      if (part.type === "image" && mergedToolResult) continue;
       passthroughParts.push(part);
     }
 
@@ -267,8 +275,22 @@ function mergeToolResultInto(lines: ChatLine[], target: { lineIndex: number; par
     ...(result.details === undefined ? {} : { details: result.details }),
     ...(preview === undefined ? {} : { preview }),
   };
-  lines[target.lineIndex] = { ...line, parts: [...line.parts.slice(0, target.partIndex), next, ...line.parts.slice(target.partIndex + 1)] };
+  const presentation = imageResultPresentationParts(result.content);
+  lines[target.lineIndex] = {
+    ...line,
+    parts: [...line.parts.slice(0, target.partIndex), next, ...line.parts.slice(target.partIndex + 1), ...presentation],
+  };
   return true;
+}
+
+function imageResultPresentationParts(content: unknown): Extract<ChatPart, { type: "text" | "image" }>[] {
+  const normalized = normalizeMessage({ role: "toolResult", content });
+  const images = normalized.flatMap((line) => line.parts.filter((part): part is Extract<ChatPart, { type: "image" }> => part.type === "image"));
+  if (images.length === 0) return [];
+  const text = normalized.flatMap((line) => line.parts.flatMap((part) => part.type === "toolResult"
+    ? [{ type: "text" as const, text: part.text }]
+    : []));
+  return [...text, ...images];
 }
 
 export function previewFromDetails(details: unknown): ToolPreview | undefined {

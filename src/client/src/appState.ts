@@ -1,3 +1,4 @@
+import type { ExtensionUiNotification, ExtensionUiRequest, ExtensionUiResolution } from "./api";
 import type { AuthProviderOption, CommandOption, CommandResult, FileContentResponse, FileTreeEntry, GitDiffResponse, GitStatusResponse, Machine, MachineHealth, MachineRuntime, OAuthFlowState, PiWebStatusResponse, Project, QueuedSessionMessage, SessionActivity, SessionInfo, SessionStatus, TerminalCommandRun, Workspace, WorkspaceActivity } from "./api";
 import type { ChatLine } from "./components/shared";
 import type { QualifiedContributionId } from "./plugins/ids";
@@ -22,6 +23,10 @@ export interface AppState {
   sendingPrompts: Record<string, true>;
   /** Client-side queued sends waiting for a just-created backend session, keyed by sessionId. */
   clientQueuedSessionMessages: Record<string, QueuedSessionMessage[]>;
+  /** Live extension dialogs are runtime-only and are reconciled after reconnect. */
+  extensionUiRequests: ExtensionUiRequest[];
+  extensionUiResolutions: ExtensionUiResolution[];
+  extensionUiNotifications: ExtensionUiNotification[];
   /** Client-initiated session creation requests waiting for the server. */
   startingSessionCount: number;
   isLoadingProjects: boolean;
@@ -77,6 +82,9 @@ export type AuthDialogState =
 export type WorkspaceScopedStateReset = Pick<AppState,
   | "sessions"
   | "clientQueuedSessionMessages"
+  | "extensionUiRequests"
+  | "extensionUiResolutions"
+  | "extensionUiNotifications"
   | "startingSessionCount"
   | "fileTree"
   | "expandedDirs"
@@ -96,6 +104,9 @@ export function resetWorkspaceScopedState(): WorkspaceScopedStateReset {
   return {
     sessions: [],
     clientQueuedSessionMessages: {},
+    extensionUiRequests: [],
+    extensionUiResolutions: [],
+    extensionUiNotifications: [],
     startingSessionCount: 0,
     fileTree: [],
     expandedDirs: {},
@@ -130,6 +141,9 @@ export function initialAppState(): AppState {
     isReceivingPartialStream: false,
     sendingPrompts: {},
     clientQueuedSessionMessages: {},
+    extensionUiRequests: [],
+    extensionUiResolutions: [],
+    extensionUiNotifications: [],
     startingSessionCount: 0,
     isLoadingProjects: false,
     isLoadingWorkspaces: false,

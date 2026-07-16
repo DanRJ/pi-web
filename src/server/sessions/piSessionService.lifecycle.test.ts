@@ -1,6 +1,7 @@
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { ExtensionUIContext } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it, vi } from "vitest";
 import { PiSessionService, type PiAgentSession, type PiSessionRuntime } from "./piSessionService.js";
 import { CapturingSessionEventHub, emptyArchiveStore, fakeRuntime, fakeSessionManager, runtimeCreator, sessionGateway, sessionRecord, sessionRef, type RuntimeCreator } from "./piSessionService.testSupport.js";
@@ -15,6 +16,23 @@ function deferred<T = void>() {
     reject = promiseReject;
   });
   return { promise, resolve, reject };
+}
+
+function boundExtensionBindings(value: unknown): { mode: "rpc"; uiContext: ExtensionUIContext } {
+  if (!isRecord(value) || value["mode"] !== "rpc" || !isExtensionUiContext(value["uiContext"])) throw new Error("Expected Pi extension UI bindings");
+  return { mode: "rpc", uiContext: value["uiContext"] };
+}
+
+function isExtensionUiContext(value: unknown): value is ExtensionUIContext {
+  return isRecord(value)
+    && typeof value["select"] === "function"
+    && typeof value["confirm"] === "function"
+    && typeof value["input"] === "function"
+    && typeof value["editor"] === "function";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }
 
 describe("PiSessionService lifecycle, listing, and reload", () => {
@@ -256,7 +274,44 @@ describe("PiSessionService lifecycle, listing, and reload", () => {
     expect(fake.calls.dispose).toBe(1);
   });
 
-  it("binds extensions again when the SDK runtime replaces the active session", async () => {
+  it("binds the SDK RPC UI adapter and resolves a dialog when work is aborted", async () => {
+    const fake = fakeRuntime("extension-ui-session");
+    const service = new PiSessionService(new CapturingSessionEventHub(), {
+      agentDir: TEST_AGENT_DIR,
+      createAgentRuntime: runtimeCreator(fake.runtime),
+      sessionManager: sessionGateway([]),
+      heartbeatIntervalMs: 60_000,
+    });
+
+    await service.start("/workspace");
+    const bindings = boundExtensionBindings(fake.calls.bindExtensions[0]);
+    const pending = bindings.uiContext.input("Name");
+    await service.abort(sessionRef("extension-ui-session"));
+
+    expect(bindings.mode).toBe("rpc");
+    await expect(pending).resolves.toBeUndefined();
+    await service.dispose();
+  });
+
+  it("resolves extension dialogs when a session is stopped", async () => {
+    const fake = fakeRuntime("stop-extension-ui");
+    const service = new PiSessionService(new CapturingSessionEventHub(), {
+      agentDir: TEST_AGENT_DIR,
+      createAgentRuntime: runtimeCreator(fake.runtime),
+      sessionManager: sessionGateway([]),
+      heartbeatIntervalMs: 60_000,
+    });
+
+    await service.start("/workspace");
+    const pending = boundExtensionBindings(fake.calls.bindExtensions[0]).uiContext.select("Choose", ["one"]);
+    service.stop(sessionRef("stop-extension-ui"));
+    await new Promise<void>((resolve) => setImmediate(resolve));
+
+    await expect(pending).resolves.toBeUndefined();
+    await service.dispose();
+  });
+
+  it("cancels dialogs bound to the replaced SDK session before rebinding", async () => {
     const hub = new CapturingSessionEventHub();
     const fake = fakeRuntime("session-1");
     const replacement = fakeRuntime("session-2");
@@ -270,15 +325,35 @@ describe("PiSessionService lifecycle, listing, and reload", () => {
     });
 
     await service.start("/workspace");
+    const pending = boundExtensionBindings(fake.calls.bindExtensions[0]).uiContext.select("Choose", ["one"]);
     Object.defineProperty(fake.runtime, "session", { configurable: true, value: replacement.session });
     await rebindSession?.(replacement.session);
 
     expect(fake.calls.bindExtensions).toHaveLength(1);
     expect(replacement.calls.bindExtensions).toHaveLength(1);
+    await expect(pending).resolves.toBeUndefined();
+    const resolutionEvent = hub.sessionEvents.find((entry) => entry.sessionId === "session-1" && entry.event.type === "extension-ui.resolved");
+    expect(resolutionEvent).toMatchObject({ event: { type: "extension-ui.resolved", resolution: { state: "cancelled", reason: "runtime-replaced" } } });
     expect(service.activeCount()).toBe(1);
     expect(await service.status("session-2")).toMatchObject({ sessionId: "session-2" });
 
     await service.dispose();
+  });
+
+  it("resolves extension dialogs while disposing a runtime", async () => {
+    const fake = fakeRuntime("dispose-extension-ui");
+    const service = new PiSessionService(new CapturingSessionEventHub(), {
+      agentDir: TEST_AGENT_DIR,
+      createAgentRuntime: runtimeCreator(fake.runtime),
+      sessionManager: sessionGateway([]),
+      heartbeatIntervalMs: 60_000,
+    });
+
+    await service.start("/workspace");
+    const pending = boundExtensionBindings(fake.calls.bindExtensions[0]).uiContext.confirm("Quit", "Stop?");
+    await service.dispose();
+
+    await expect(pending).resolves.toBe(false);
   });
 
   it("publishes extension errors reported while binding session extensions", async () => {

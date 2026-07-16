@@ -2,6 +2,7 @@ import type { ArchiveSessionsResponse, AuthProviderOption, AuthProviderStatus, A
 import type { PiPackageInfo, PiPackageMutationAction, PiPackageMutationResponse, PiPackageScope, PiPackagesResponse } from "../../../shared/apiTypes";
 import { parseActiveAgentProfileDescriptor } from "../../../shared/activeAgentProfile";
 import { parseKnownPiWebCapabilities } from "../../../shared/capabilities";
+import type { ExtensionUiPendingResponse, ExtensionUiRequest, ExtensionUiRespondResponse, ExtensionUiResolution, ExtensionUiResponse } from "../../../shared/extensionUi";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -58,6 +59,57 @@ export function parseMessagePage(value: unknown): MessagePage {
   if (Array.isArray(value)) return { messages: value, start: 0, total: value.length };
   const record = requireRecord(value);
   return { messages: parseUnknownArray(record["messages"]), start: requireNumber(record, "start"), total: requireNumber(record, "total") };
+}
+
+export function parseExtensionUiPendingResponse(value: unknown): ExtensionUiPendingResponse {
+  const record = requireRecord(value);
+  if (!Array.isArray(record["requests"])) throw new Error("Expected extension UI requests array");
+  return { requests: record["requests"].map(parseExtensionUiRequest) };
+}
+
+export function parseExtensionUiRespondResponse(value: unknown): ExtensionUiRespondResponse {
+  const record = requireRecord(value);
+  const outcome = requireString(record, "outcome");
+  if (outcome !== "accepted" && outcome !== "already-resolved" && outcome !== "invalid-response" && outcome !== "not-found" && outcome !== "wrong-session") throw new Error("Invalid extension UI response outcome");
+  return { outcome, ...(record["resolution"] === undefined ? {} : { resolution: parseExtensionUiResolution(record["resolution"]) }) };
+}
+
+function parseExtensionUiRequest(value: unknown): ExtensionUiRequest {
+  const record = requireRecord(value);
+  const id = requireString(record, "id");
+  const title = requireString(record, "title");
+  if (record["state"] !== "pending") throw new Error("Extension UI request is not pending");
+  const timeout = record["timeout"] === undefined ? undefined : requireNumber(record, "timeout");
+  const method = requireString(record, "method");
+  if (method === "select") return { id, title, state: "pending", method, options: arrayOfString(record["options"], "options"), ...(timeout === undefined ? {} : { timeout }) };
+  if (method === "confirm") return { id, title, state: "pending", method, message: requireString(record, "message"), ...(timeout === undefined ? {} : { timeout }) };
+  if (method === "input") {
+    const placeholder = optionalString(record, "placeholder");
+    return { id, title, state: "pending", method, ...(placeholder === undefined ? {} : { placeholder }), ...(timeout === undefined ? {} : { timeout }) };
+  }
+  if (method === "editor") {
+    const prefill = optionalString(record, "prefill");
+    return { id, title, state: "pending", method, ...(prefill === undefined ? {} : { prefill }) };
+  }
+  throw new Error("Unsupported extension UI request method");
+}
+
+function parseExtensionUiResolution(value: unknown): ExtensionUiResolution {
+  const record = requireRecord(value);
+  const state = requireString(record, "state");
+  if (state !== "submitted" && state !== "cancelled" && state !== "expired") throw new Error("Invalid extension UI resolution state");
+  const reason = optionalString(record, "reason");
+  if (reason !== undefined && reason !== "timeout" && reason !== "session-ended" && reason !== "runtime-replaced") throw new Error("Invalid extension UI resolution reason");
+  return { id: requireString(record, "id"), state, ...(record["response"] === undefined ? {} : { response: parseExtensionUiResponse(record["response"]) }), ...(reason === undefined ? {} : { reason }) };
+}
+
+function parseExtensionUiResponse(value: unknown): ExtensionUiResponse {
+  const record = requireRecord(value);
+  const id = requireString(record, "id");
+  if (record["cancelled"] === true) return { id, cancelled: true };
+  if (typeof record["value"] === "string") return { id, value: record["value"] };
+  if (typeof record["confirmed"] === "boolean") return { id, confirmed: record["confirmed"] };
+  throw new Error("Invalid extension UI response");
 }
 
 export function parseMachinesResponse(value: unknown): Machine[] {

@@ -2,6 +2,7 @@ import { statSync } from "node:fs";
 import { open, readFile, writeFile } from "node:fs/promises";
 import type { ImageContent } from "@earendil-works/pi-ai";
 import type { StreamFn } from "@earendil-works/pi-agent-core";
+import type { ExtensionUIContext } from "@earendil-works/pi-coding-agent";
 import {
   AuthStorage,
   createAgentSessionFromServices,
@@ -29,6 +30,10 @@ import { attachmentsToInlineImages, saveAttachmentsToWorkspace } from "./attachm
 import { parsePromptAttachments } from "../../shared/promptAttachments.js";
 import type { SavedPromptAttachment, SessionBulkArchiveResponse, SessionBulkDeleteArchivedResponse, SessionBulkFailure, SessionBulkMutationRef } from "../../shared/apiTypes.js";
 import type { SessionRouteLookup, SessionRouteRef, SessionRouteService } from "./sessionService.js";
+import { ExtensionUiBroker } from "./extensionUiBroker.js";
+import { createAskOptionsToolDefinition } from "./askOptionsTool.js";
+import { createShowImageToolDefinition } from "./showImageTool.js";
+import type { ExtensionUiPendingResponse, ExtensionUiRespondResponse, ExtensionUiResponse } from "../../shared/extensionUi.js";
 
 import { canonicalizeStoredCwd, cwdPathsEqual } from "../workingDirectory.js";
 import type { WorkspaceActivityService } from "../activity/workspaceActivityService.js";
@@ -200,6 +205,8 @@ interface PiExtensionError {
 }
 
 interface PiExtensionBindings {
+  uiContext?: ExtensionUIContext;
+  mode?: "rpc";
   onError?: (error: PiExtensionError) => void;
 }
 
@@ -325,6 +332,8 @@ export function createPiWebCustomToolDefinitions(
 ) {
   return [
     createPiWebEditToolDefinition(cwd),
+    createAskOptionsToolDefinition(),
+    createShowImageToolDefinition(cwd),
     ...(delegationEnabled && spawn !== undefined ? [createSpawnSessionToolDefinition(cwd, { spawn })] : []),
     ...(delegationEnabled && subsessions !== undefined ? createSubsessionToolDefinitions(cwd, subsessions) : []),
   ];
@@ -414,6 +423,7 @@ export class PiSessionService implements SessionRouteService {
   private readonly compactionPromptQueues = new Map<string, QueuedPrompt[]>();
   private readonly compactionDrainTimers = new Map<string, NodeJS.Timeout>();
   private readonly authLossWarnings = new Set<string>();
+  private readonly extensionUi: ExtensionUiBroker;
   /** Tracked subsession id -> the parent session id that spawned it. */
   private readonly subsessionParents = new Map<string, string>();
   /** Parent session id -> the set of tracked subsession ids it spawned. */
@@ -447,6 +457,19 @@ export class PiSessionService implements SessionRouteService {
     this.spawnTargets = deps.spawnTargets;
     this.logger = deps.logger ?? noopLogger;
     this.now = deps.now ?? (() => new Date());
+    this.extensionUi = new ExtensionUiBroker({
+      events: {
+        request: (sessionId, request) => {
+          this.events.publish(sessionId, { type: "extension-ui.request", request });
+        },
+        resolved: (sessionId, resolution) => {
+          this.events.publish(sessionId, { type: "extension-ui.resolved", resolution });
+        },
+        notify: (sessionId, notification) => {
+          this.events.publish(sessionId, { type: "extension-ui.notify", notification });
+        },
+      },
+    });
     // Subsessions are a beta capability gated behind their own flag, and they
     // also require the spawn capability (they share its project-scope resolver).
     const subsessionsActive = this.spawnTargets !== undefined && deps.subsessionsEnabled === true;
@@ -537,6 +560,7 @@ export class PiSessionService implements SessionRouteService {
   async dispose(): Promise<void> {
     clearInterval(this.heartbeat);
     this.clearCompactionDrainTimers();
+    this.extensionUi.cancelAll();
     const pendingOpens = this.pendingSessionOpenPromises();
     if (pendingOpens.length > 0) await Promise.allSettled(pendingOpens);
     const activeSessions = Array.from(new Set(this.active.values()));
@@ -972,6 +996,16 @@ export class PiSessionService implements SessionRouteService {
     }
   }
 
+  async extensionUiPending(ref: PiSessionLookup): Promise<ExtensionUiPendingResponse> {
+    const session = await this.getOrOpen(ref);
+    return { requests: this.extensionUi.pendingForSession(session.sessionId) };
+  }
+
+  async respondToExtensionUi(ref: PiSessionLookup, response: ExtensionUiResponse): Promise<ExtensionUiRespondResponse> {
+    const session = await this.getOrOpen(ref);
+    return this.extensionUi.respond(session.sessionId, response);
+  }
+
   async messages(ref: PiSessionLookup, page?: { before?: number; limit?: number }): Promise<unknown[] | ClientMessagePage> {
     const session = await this.getOrOpen(ref);
     return pageMessagesAtSafeBoundary(historyMessages(session), page);
@@ -1165,6 +1199,7 @@ export class PiSessionService implements SessionRouteService {
 
   private async reloadSessionRuntime(session: PiAgentSession): Promise<void> {
     if (this.hasActiveWork(session)) throw new Error("Stop current session activity before reloading");
+    this.extensionUi.cancelSession(session.sessionId, "runtime-replaced");
     this.publishActivity(session, "reloading resources", "active");
     try {
       await session.reload();
@@ -1375,6 +1410,7 @@ export class PiSessionService implements SessionRouteService {
     if (active === undefined) return;
     const sessionId = active.runtime.session.sessionId;
     this.clearCompactionPromptQueue(sessionId);
+    this.extensionUi.cancelSession(sessionId);
     clearSessionQueue(active.runtime.session);
     await active.runtime.session.abort();
     this.publishActivity(active.runtime.session, "stopped", "idle");
@@ -1582,6 +1618,7 @@ export class PiSessionService implements SessionRouteService {
     this.workspaceActivity?.removeSession(sessionId, active.runtime.session.sessionManager.getCwd());
     this.clearAuthLossWarningsForSession(sessionId);
     this.clearCompactionPromptQueue(sessionId);
+    this.extensionUi.cancelSession(sessionId);
     // Disarm subsession notification before teardown so the abort below cannot
     // emit a "stopped working" event that notifies the parent (e.g. on archive).
     // The parent/children link is kept so the parent can still see the child.
@@ -1687,9 +1724,19 @@ export class PiSessionService implements SessionRouteService {
     const active: ActiveSession<PiSessionRuntime> = { runtime, unsubscribe: noop };
     try {
       await this.bindSessionExtensions(runtime.session);
+      let boundExtensionSessionId = runtime.session.sessionId;
       this.bindRuntime(active);
       runtime.setRebindSession(async (session) => {
-        await this.bindSessionExtensions(session);
+        // The SDK swaps runtime.session before invoking this callback, so keep
+        // the previously bound id instead of reading runtime.session here.
+        this.extensionUi.cancelSession(boundExtensionSessionId, "runtime-replaced");
+        try {
+          await this.bindSessionExtensions(session);
+          boundExtensionSessionId = session.sessionId;
+        } catch (error) {
+          this.extensionUi.cancelSession(session.sessionId, "runtime-replaced");
+          throw error;
+        }
         this.bindRuntime(active);
         await this.recoverSubsessionTrackingForOpenedSession(session);
       });
@@ -1698,6 +1745,9 @@ export class PiSessionService implements SessionRouteService {
       this.publishStatus(runtime.session);
       return active;
     } catch (error: unknown) {
+      // bindExtensions can run extension startup handlers. Resolve any dialog
+      // they opened before releasing the runtime that owns their promises.
+      this.extensionUi.cancelSession(runtime.session.sessionId);
       active.unsubscribe();
       let removedActive = false;
       for (const [sessionId, candidate] of this.active.entries()) {
@@ -1722,6 +1772,11 @@ export class PiSessionService implements SessionRouteService {
 
   private async bindSessionExtensions(session: PiAgentSession): Promise<void> {
     await session.bindExtensions({
+      uiContext: this.extensionUi.createUiContext(session.sessionId),
+      // Pi only exposes tui/rpc/json/print extension modes. RPC is its
+      // documented dialog-capable compatibility mode; Pi Web still embeds the
+      // SDK directly and owns the browser transport above this adapter.
+      mode: "rpc",
       onError: (error) => {
         const message = `${error.extensionPath}: ${error.error}`;
         this.publishActivity(session, "extension error", "error", message);

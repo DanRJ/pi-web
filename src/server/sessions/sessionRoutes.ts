@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import type { SessionBulkMutationRequest, SessionBulkMutationRef, SessionCleanupRequest } from "../../shared/apiTypes.js";
+import type { ExtensionUiResponse } from "../../shared/extensionUi.js";
 import { projectBrowserMessageResponse } from "../browserMessageProjection.js";
 import { normalizeRequestCwd } from "../workingDirectory.js";
 import type { SessionEventHub } from "../realtime/sessionEventHub.js";
@@ -54,6 +55,25 @@ export function registerSessionRoutes(app: FastifyInstance, sessions: SessionRou
       return await sessions.cleanupPreview(normalizeSessionCleanupRequest(optionalRecord(request.body)));
     } catch (error) {
       return reply.code(400).send({ error: errorMessage(error) });
+    }
+  });
+
+  app.get<{ Params: { sessionId: string }; Querystring: SessionQuery }>(`${prefix}/sessions/:sessionId/extension-ui`, async (request, reply) => {
+    try {
+      return await sessions.extensionUiPending(sessionLookupFromQuery(request.params.sessionId, request.query));
+    } catch (error) {
+      return reply.code(mutationErrorStatus(error)).send({ error: errorMessage(error) });
+    }
+  });
+
+  app.post<{ Params: { sessionId: string }; Body: { cwd?: unknown; response?: unknown } | undefined }>(`${prefix}/sessions/:sessionId/extension-ui/respond`, async (request, reply) => {
+    try {
+      const body = optionalRecord(request.body);
+      const result = await sessions.respondToExtensionUi(sessionLookupFromBody(request.params.sessionId, body), parseExtensionUiResponse(body["response"]));
+      if (result.outcome === "invalid-response") return await reply.code(400).send(result);
+      return await reply.send(result);
+    } catch (error) {
+      return reply.code(mutationErrorStatus(error)).send({ error: errorMessage(error) });
     }
   });
 
@@ -355,6 +375,15 @@ function requireString(record: Record<string, unknown>, field: string): string {
   const value = record[field];
   if (typeof value !== "string") throw new Error(`${field} field must be a string`);
   return value;
+}
+
+function parseExtensionUiResponse(value: unknown): ExtensionUiResponse {
+  const record = requireRecord(value);
+  const id = requireString(record, "id");
+  if (record["cancelled"] === true) return { id, cancelled: true };
+  if (typeof record["value"] === "string") return { id, value: record["value"] };
+  if (typeof record["confirmed"] === "boolean") return { id, confirmed: record["confirmed"] };
+  throw new Error("response must include value, confirmed, or cancelled");
 }
 
 function requireThinkingLevel(value: unknown): string {

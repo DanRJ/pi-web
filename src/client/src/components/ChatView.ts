@@ -7,12 +7,14 @@ import { writeClipboardText } from "../clipboard";
 import { capturePrependScrollAnchor, PREPEND_RESTORE_SETTLE_FRAMES, restorePrependScrollAnchor, type PrependScrollAnchor } from "../chatScrollAnchoring";
 import { shouldRequestEarlierMessages } from "../chatHistoryLoading";
 import { ChatScrollController, distanceFromScrollBottom, findFirstVisibleArticle, isNearScrollBottom, type ChatAnchorScrollPosition, type ChatScrollRestoreResult } from "../chatScrollPosition";
-import type { QueuedSessionMessage, SessionActivity, SessionStatus } from "../api";
+import type { ExtensionUiNotification, ExtensionUiRequest, ExtensionUiResolution, ExtensionUiResponse, QueuedSessionMessage, SessionActivity, SessionStatus } from "../api";
 import type { ChatLine, ChatPart } from "./shared";
 import { chatStyles } from "./shared";
 import "./ConversationMeter";
 import "./FormattedText";
 import "./ToolExecutionView";
+import "./ExtensionUiCards";
+import type { ExtensionUiSubmitResult } from "./ExtensionUiCards";
 
 const messageTimestampFormatter = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "medium" });
 
@@ -88,6 +90,10 @@ export class ChatView extends LitElement {
   @property({ type: Boolean }) isCompacting = false;
   @property({ type: Number }) pendingMessageCount = 0;
   @property({ attribute: false }) clientQueuedMessages: QueuedSessionMessage[] = [];
+  @property({ attribute: false }) extensionUiRequests: ExtensionUiRequest[] = [];
+  @property({ attribute: false }) extensionUiResolutions: ExtensionUiResolution[] = [];
+  @property({ attribute: false }) extensionUiNotifications: ExtensionUiNotification[] = [];
+  @property({ attribute: false }) onExtensionUiRespond?: (response: ExtensionUiResponse) => Promise<ExtensionUiSubmitResult> | ExtensionUiSubmitResult;
   @property({ attribute: false }) status?: SessionStatus;
   @property({ attribute: false }) activity?: SessionActivity;
   @property({ type: Boolean }) canClearServerQueue = false;
@@ -219,6 +225,7 @@ export class ChatView extends LitElement {
             },
           )}
           ${this.renderQueuedMessages()}
+          <extension-ui-cards .requests=${this.extensionUiRequests} .resolutions=${this.extensionUiResolutions} .notifications=${this.extensionUiNotifications} .onRespond=${this.onExtensionUiRespond}></extension-ui-cards>
           ${this.renderSessionActivity()}
         </div>
         ${this.renderActivityDock()}

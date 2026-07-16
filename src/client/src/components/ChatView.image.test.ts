@@ -30,7 +30,7 @@ describe("ChatView image rendering", () => {
   it("renders tool images as labeled standard messages with final metadata", () => {
     const message: ChatLine = {
       role: "tool",
-      parts: [{ type: "image", mimeType: "image/png", data: "QUJD" }],
+      parts: [{ type: "text", text: "Deployment diagram" }, { type: "image", mimeType: "image/png", data: "QUJD" }],
       meta: { timestamp: "2026-07-13T22:00:00.000Z" },
     };
     const rendered = renderToolImageOutput(new ChatView(), message, 7, "read");
@@ -39,6 +39,8 @@ describe("ChatView image rendering", () => {
     expect(markup).toContain('class="msg tool-image-output"');
     expect(markup).not.toContain('class="msg tool"');
     expect(markup).toContain("<img");
+    expect(markup).toContain("<formatted-text");
+    expect(templateValuesAfterMarker(rendered, ".text=")).toEqual(["Deployment diagram"]);
     expect(templateValuesAfterMarker(rendered, '<b class="label">')).toEqual(["read output"]);
     expect(templateValuesAfterMarker(rendered, "title=")).toEqual([chatMessageMetadataLabel(message)]);
     expect(templateValuesAfterMarker(rendered, "data-scroll-anchor-id=")).toEqual(["m:7"]);

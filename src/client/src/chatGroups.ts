@@ -55,7 +55,9 @@ export function summarizeChatGroup(messages: ChatLine[]): string {
 }
 
 function isToolImageMessage(message: ChatLine): boolean {
-  return message.role === "tool" && message.parts.length > 0 && message.parts.every((part) => part.type === "image");
+  return message.role === "tool"
+    && message.parts.some((part) => part.type === "image")
+    && message.parts.every((part) => part.type === "image" || part.type === "text");
 }
 
 function toolNameFromParts(parts: ChatPart[]): string | undefined {
@@ -68,5 +70,6 @@ function toolNameFromParts(parts: ChatPart[]): string | undefined {
 function isReadablePart(message: ChatLine, part: ChatPart): boolean {
   if (message.source === "compaction" || message.source === "branch_summary") return false;
   if (part.type === "skillInvocation" || part.type === "skillRead" || part.type === "image") return true;
-  return part.type === "text" && (message.role === "user" || message.role === "assistant" || message.role === "system" || message.role === "bash");
+  return part.type === "text" && (message.role === "user" || message.role === "assistant" || message.role === "system" || message.role === "bash"
+    || (message.role === "tool" && message.parts.some((candidate) => candidate.type === "image")));
 }

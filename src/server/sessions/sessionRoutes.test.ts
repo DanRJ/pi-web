@@ -3,6 +3,7 @@ import Fastify, { type FastifyInstance } from "fastify";
 import fastifyWebsocket from "@fastify/websocket";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { MessagePage, SessionBulkArchiveResponse, SessionBulkDeleteArchivedResponse, SessionBulkMutationRef, SessionCleanupExecuteResponse, SessionCleanupPreviewResponse, SessionStatus } from "../../shared/apiTypes.js";
+import type { ExtensionUiPendingResponse, ExtensionUiResponse, ExtensionUiRespondResponse } from "../../shared/extensionUi.js";
 import { SessionEventHub } from "../realtime/sessionEventHub.js";
 import { PiSessionService, type PiSessionManagerGateway } from "./piSessionService.js";
 import type { SessionRouteLookup, SessionRouteService } from "./sessionService.js";
@@ -123,6 +124,78 @@ describe("session routes", () => {
       expect(statusResponse.statusCode).toBe(200);
       expect(promptResponse.statusCode).toBe(200);
       expect(routeService.calls).toEqual([{ id: "session-1", cwd: requestCwd }, { lookup: { id: "session-1", cwd: requestCwd }, text: "hello" }]);
+    } finally {
+      await routeService.dispose();
+      await routeApp.close();
+    }
+  });
+
+  it("discovers server-owned extension dialogs and forwards typed responses", async () => {
+    const routeApp = Fastify({ logger: false });
+    await routeApp.register(fastifyWebsocket);
+    const eventHub = new SessionEventHub();
+    const routeService = new CapturingRouteSessionService();
+    const requestCwd = resolve("/repo");
+    routeService.extensionUiPendingResponse = { requests: [{ id: "dialog-1", state: "pending", method: "confirm", title: "Delete", message: "Really?" }] };
+    routeService.extensionUiRespondResponse = { outcome: "accepted", resolution: { id: "dialog-1", state: "submitted", response: { id: "dialog-1", confirmed: true } } };
+    registerSessionRoutes(routeApp, routeService, eventHub);
+
+    try {
+      const discovery = await routeApp.inject({ method: "GET", url: `/sessions/session-1/extension-ui?cwd=${encodeURIComponent(requestCwd)}` });
+      const response = await routeApp.inject({ method: "POST", url: "/sessions/session-1/extension-ui/respond", payload: { cwd: requestCwd, response: { id: "dialog-1", confirmed: true } } });
+
+      expect(discovery.statusCode).toBe(200);
+      expect(discovery.json()).toEqual(routeService.extensionUiPendingResponse);
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toEqual(routeService.extensionUiRespondResponse);
+      expect(routeService.extensionUiPendingCalls).toEqual([{ id: "session-1", cwd: requestCwd }]);
+      expect(routeService.extensionUiResponses).toEqual([{ lookup: { id: "session-1", cwd: requestCwd }, response: { id: "dialog-1", confirmed: true } }]);
+    } finally {
+      await routeService.dispose();
+      await routeApp.close();
+    }
+  });
+
+  it("maps malformed extension responses to 400 and missing sessions to 404", async () => {
+    const routeApp = Fastify({ logger: false });
+    await routeApp.register(fastifyWebsocket);
+    const eventHub = new SessionEventHub();
+    const routeService = new CapturingRouteSessionService();
+    registerSessionRoutes(routeApp, routeService, eventHub);
+
+    try {
+      const malformed = await routeApp.inject({ method: "POST", url: "/sessions/session-1/extension-ui/respond", payload: { response: { id: "dialog-1" } } });
+      routeService.extensionUiRespondResponse = { outcome: "invalid-response" };
+      const invalidSelect = await routeApp.inject({ method: "POST", url: "/sessions/session-1/extension-ui/respond", payload: { response: { id: "dialog-1", value: "not-an-option" } } });
+      routeService.extensionUiRespondError = new Error("Session not found");
+      const missing = await routeApp.inject({ method: "POST", url: "/sessions/missing/extension-ui/respond", payload: { response: { id: "dialog-1", cancelled: true } } });
+      routeService.extensionUiPendingError = new Error("Session not found");
+      const missingDiscovery = await routeApp.inject({ method: "GET", url: "/sessions/missing/extension-ui" });
+
+      expect(malformed.statusCode).toBe(400);
+      expect(invalidSelect.statusCode).toBe(400);
+      expect(invalidSelect.json()).toEqual({ outcome: "invalid-response" });
+      expect(missing.statusCode).toBe(404);
+      expect(missingDiscovery.statusCode).toBe(404);
+    } finally {
+      await routeService.dispose();
+      await routeApp.close();
+    }
+  });
+
+  it("maps malformed extension discovery queries to 400 instead of not-found", async () => {
+    const routeApp = Fastify({ logger: false });
+    await routeApp.register(fastifyWebsocket);
+    const eventHub = new SessionEventHub();
+    const routeService = new CapturingRouteSessionService();
+    registerSessionRoutes(routeApp, routeService, eventHub);
+
+    try {
+      const malformed = await routeApp.inject({ method: "GET", url: "/sessions/session-1/extension-ui?cwd=relative" });
+
+      expect(malformed.statusCode).toBe(400);
+      expect(malformed.json()).toEqual({ error: "cwd must be an absolute path" });
+      expect(routeService.extensionUiPendingCalls).toEqual([]);
     } finally {
       await routeService.dispose();
       await routeApp.close();
@@ -312,6 +385,12 @@ class CapturingRouteSessionService implements SessionRouteService {
   readonly bulkDeleteCalls: SessionBulkMutationRef[][] = [];
   reloadError: Error | undefined;
   clearQueueError: Error | undefined;
+  extensionUiPendingError: Error | undefined;
+  extensionUiRespondError: Error | undefined;
+  extensionUiPendingResponse: ExtensionUiPendingResponse = { requests: [] };
+  extensionUiRespondResponse: ExtensionUiRespondResponse = { outcome: "not-found" };
+  readonly extensionUiPendingCalls: SessionRouteLookup[] = [];
+  readonly extensionUiResponses: { lookup: SessionRouteLookup; response: ExtensionUiResponse }[] = [];
 
   cleanupPreview(request: NormalizedSessionCleanupRequest): Promise<SessionCleanupPreviewResponse> {
     this.cleanupPreviewCalls.push(request);
@@ -345,6 +424,17 @@ class CapturingRouteSessionService implements SessionRouteService {
 
   list(): never { throw unusedRouteMethod("list"); }
   start(): never { throw unusedRouteMethod("start"); }
+  extensionUiPending(lookup: SessionRouteLookup): Promise<ExtensionUiPendingResponse> {
+    this.extensionUiPendingCalls.push(lookup);
+    if (this.extensionUiPendingError !== undefined) return Promise.reject(this.extensionUiPendingError);
+    return Promise.resolve(this.extensionUiPendingResponse);
+  }
+
+  respondToExtensionUi(lookup: SessionRouteLookup, response: ExtensionUiResponse): Promise<ExtensionUiRespondResponse> {
+    this.extensionUiResponses.push({ lookup, response });
+    if (this.extensionUiRespondError !== undefined) return Promise.reject(this.extensionUiRespondError);
+    return Promise.resolve(this.extensionUiRespondResponse);
+  }
 
   clearQueue(lookup: SessionRouteLookup): Promise<SessionStatus> {
     this.clearQueueCalls.push(lookup);

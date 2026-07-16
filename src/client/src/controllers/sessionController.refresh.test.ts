@@ -1,11 +1,17 @@
 import { describe, expect, it } from "vitest";
 import { initialAppState } from "../appState";
 import { SessionController } from "./sessionController";
-import { defaultApi, deferred, FakeSocket, oldSession, replacementSession, sessionLookupId, status, workspace, type AppState, type MessagePage, type SessionStatus } from "./sessionController.testSupport";
+import { defaultApi, deferred, EmitSocket, FakeSocket, oldSession, replacementSession, sessionLookupId, status, workspace, type AppState, type MessagePage, type SessionStatus } from "./sessionController.testSupport";
 
 function page(text: string, total: number): MessagePage {
   return { messages: [{ role: "assistant", content: text }], start: 0, total };
 }
+
+function emptyPage(): MessagePage {
+  return { messages: [], start: 0, total: 0 };
+}
+
+class ReconnectSocket extends EmitSocket {}
 
 describe("SessionController selected-session refresh", () => {
   it("shares same-turn requests and runs one trailing refresh requested during the active fetch", async () => {
@@ -61,6 +67,48 @@ describe("SessionController selected-session refresh", () => {
     expect(statusCalls).toBe(2);
     expect(state.messages).toEqual([{ role: "assistant", parts: [{ type: "text", text: "fresh" }] }]);
     expect(state.status?.messageCount).toBe(2);
+  });
+
+  it("replays live extension dialog requests and resolutions over a deferred reconnect discovery", async () => {
+    let discoveries = 0;
+    const secondDiscoveryStarted = deferred<undefined>();
+    const secondDiscovery = deferred<{ requests: [{ id: string; state: "pending"; method: "confirm"; title: string; message: string }] }>();
+    let state: AppState = { ...initialAppState(), selectedWorkspace: workspace, sessions: [oldSession] };
+    const api: typeof defaultApi = {
+      ...defaultApi,
+      messages: () => Promise.resolve(emptyPage()),
+      status: () => Promise.resolve(status(oldSession.id)),
+      extensionUiPending: () => {
+        discoveries += 1;
+        if (discoveries === 1) return Promise.resolve({ requests: [{ id: "request-1", state: "pending" as const, method: "input" as const, title: "First" }] });
+        secondDiscoveryStarted.resolve(undefined);
+        return secondDiscovery.promise;
+      },
+      thinkingLevels: () => Promise.resolve({ levels: [] }),
+    };
+    const reconnectingSocket = new ReconnectSocket();
+    const controller = new SessionController(
+      () => state,
+      (patch) => { state = { ...state, ...patch }; },
+      () => undefined,
+      undefined,
+      { api, socket: reconnectingSocket },
+    );
+
+    await controller.selectSession(oldSession, { updateUrl: false });
+    expect(state.extensionUiRequests.map((request) => request.id)).toEqual(["request-1"]);
+
+    reconnectingSocket.reconnect();
+    await secondDiscoveryStarted.promise;
+    reconnectingSocket.emit({ type: "extension-ui.request", request: { id: "live-resolved", state: "pending", method: "confirm", title: "Live", message: "Resolve me" } });
+    reconnectingSocket.emit({ type: "extension-ui.resolved", resolution: { id: "live-resolved", state: "submitted", response: { id: "live-resolved", confirmed: true } } });
+    reconnectingSocket.emit({ type: "extension-ui.request", request: { id: "live-pending", state: "pending", method: "input", title: "Keep me" } });
+    secondDiscovery.resolve({ requests: [{ id: "snapshot-pending", state: "pending", method: "confirm", title: "Snapshot", message: "Older HTTP view" }] });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+
+    expect(discoveries).toBe(2);
+    expect(state.extensionUiRequests.map((request) => request.id)).toEqual(["snapshot-pending", "live-pending"]);
+    expect(state.extensionUiResolutions).toEqual([{ id: "live-resolved", state: "submitted", response: { id: "live-resolved", confirmed: true } }]);
   });
 
   it("does not apply an older refresh after the user selects another session", async () => {

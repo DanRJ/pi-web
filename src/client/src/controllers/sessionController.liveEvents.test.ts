@@ -1,7 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { initialAppState } from "../appState";
 import { SessionController } from "./sessionController";
-import { defaultApi, EmitSocket, emptyPage, FakeSocket, oldSession, runPendingAnimationFrames, status, workspace, type AppState, type SessionActivity, type SessionInfo } from "./sessionController.testSupport";
+import { defaultApi, deferred, EmitSocket, emptyPage, FakeSocket, oldSession, replacementSession, runPendingAnimationFrames, status, workspace, type AppState, type SessionActivity, type SessionInfo } from "./sessionController.testSupport";
 
 describe("SessionController live events", () => {
   it("coalesces rapid status updates into a single state write per frame", () => {
@@ -141,6 +141,164 @@ describe("SessionController live events", () => {
     controller.applyGlobalEvent({ type: "session.created", session: spawned });
 
     expect(state.sessions.map((session) => session.id)).toEqual(["spawned-session", "old-session"]);
+  });
+
+  it("converges live extension requests and resolutions without adding them to the transcript", async () => {
+    const socket = new EmitSocket();
+    let state: AppState = { ...initialAppState(), selectedWorkspace: workspace, sessions: [oldSession] };
+    const api: typeof defaultApi = {
+      ...defaultApi,
+      messages: () => Promise.resolve(emptyPage),
+      status: () => Promise.resolve(status(oldSession.id)),
+      extensionUiPending: () => Promise.resolve({ requests: [] }),
+      thinkingLevels: () => Promise.resolve({ levels: [] }),
+    };
+    const controller = new SessionController(
+      () => state,
+      (patch) => { state = { ...state, ...patch }; },
+      () => undefined,
+      undefined,
+      { api, socket },
+    );
+
+    await controller.selectSession(oldSession, { updateUrl: false });
+    socket.emit({ type: "extension-ui.request", request: { id: "dialog-1", state: "pending", method: "confirm", title: "Delete", message: "Really?" } });
+    socket.emit({ type: "extension-ui.request", request: { id: "dialog-1", state: "pending", method: "confirm", title: "Delete", message: "Really?" } });
+    socket.emit({ type: "extension-ui.resolved", resolution: { id: "dialog-1", state: "submitted", response: { id: "dialog-1", confirmed: true } } });
+
+    expect(state.extensionUiRequests).toEqual([]);
+    expect(state.extensionUiResolutions).toEqual([{ id: "dialog-1", state: "submitted", response: { id: "dialog-1", confirmed: true } }]);
+    expect(state.messages).toEqual([]);
+  });
+
+  it("submits an extension response and applies the returned resolution", async () => {
+    let state: AppState = {
+      ...initialAppState(),
+      selectedSession: oldSession,
+      sessions: [oldSession],
+      extensionUiRequests: [{ id: "dialog-1", state: "pending", method: "input", title: "Name" }],
+    };
+    const respondToExtensionUi = vi.fn(() => Promise.resolve({ outcome: "accepted" as const, resolution: { id: "dialog-1", state: "submitted" as const, response: { id: "dialog-1", value: "Ada" } } }));
+    const api: typeof defaultApi = { ...defaultApi, respondToExtensionUi };
+    const controller = new SessionController(
+      () => state,
+      (patch) => { state = { ...state, ...patch }; },
+      () => undefined,
+      undefined,
+      { api, socket: new FakeSocket() },
+    );
+
+    await controller.respondToExtensionUi({ id: "dialog-1", value: "Ada" });
+
+    expect(respondToExtensionUi).toHaveBeenCalledWith(oldSession, { id: "dialog-1", value: "Ada" }, "local");
+    expect(state.extensionUiRequests).toEqual([]);
+    expect(state.extensionUiResolutions).toEqual([{ id: "dialog-1", state: "submitted", response: { id: "dialog-1", value: "Ada" } }]);
+  });
+
+  it("does not retain extension reconciliation mutations across repeated live submissions", async () => {
+    const socket = new EmitSocket();
+    let state: AppState = { ...initialAppState(), selectedWorkspace: workspace, sessions: [oldSession] };
+    const api: typeof defaultApi = {
+      ...defaultApi,
+      messages: () => Promise.resolve(emptyPage),
+      status: () => Promise.resolve(status(oldSession.id)),
+      extensionUiPending: () => Promise.resolve({ requests: [] }),
+      thinkingLevels: () => Promise.resolve({ levels: [] }),
+      respondToExtensionUi: (_session, response) => Promise.resolve({
+        outcome: "accepted" as const,
+        resolution: { id: response.id, state: "submitted" as const, response },
+      }),
+    };
+    const controller = new SessionController(
+      () => state,
+      (patch) => { state = { ...state, ...patch }; },
+      () => undefined,
+      undefined,
+      { api, socket },
+    );
+
+    await controller.selectSession(oldSession, { updateUrl: false });
+    for (let index = 0; index < 32; index += 1) {
+      const id = `dialog-${String(index)}`;
+      socket.emit({ type: "extension-ui.request", request: { id, state: "pending", method: "confirm", title: "Confirm", message: "Continue?" } });
+
+      await expect(controller.respondToExtensionUi({ id, confirmed: true })).resolves.toBe("settled");
+      expect(state.extensionUiRequests).toEqual([]);
+      expect(controller.extensionUiMutationLogSizeForTesting).toBe(0);
+    }
+  });
+
+  it("keeps failed or invalid extension submissions retryable and removes stale requests", async () => {
+    let attempt = 0;
+    let state: AppState = {
+      ...initialAppState(),
+      selectedWorkspace: workspace,
+      selectedSession: oldSession,
+      sessions: [oldSession],
+      extensionUiRequests: [{ id: "dialog-1", state: "pending", method: "input", title: "Name" }],
+    };
+    const api: typeof defaultApi = {
+      ...defaultApi,
+      respondToExtensionUi: () => {
+        attempt += 1;
+        if (attempt === 1) return Promise.reject(new Error("network down"));
+        if (attempt === 2) return Promise.resolve({ outcome: "invalid-response" });
+        return Promise.resolve({ outcome: "not-found" });
+      },
+      messages: () => Promise.resolve(emptyPage),
+      status: () => Promise.resolve(status(oldSession.id)),
+      extensionUiPending: () => Promise.resolve({ requests: [] }),
+      thinkingLevels: () => Promise.resolve({ levels: [] }),
+    };
+    const controller = new SessionController(
+      () => state,
+      (patch) => { state = { ...state, ...patch }; },
+      () => undefined,
+      undefined,
+      { api, socket: new FakeSocket() },
+    );
+
+    await expect(controller.respondToExtensionUi({ id: "dialog-1", value: "Ada" })).resolves.toBe("retry");
+    expect(state.extensionUiRequests).toHaveLength(1);
+    await expect(controller.respondToExtensionUi({ id: "dialog-1", value: "Ada" })).resolves.toBe("retry");
+    expect(state.extensionUiRequests).toHaveLength(1);
+    await expect(controller.respondToExtensionUi({ id: "dialog-1", value: "Ada" })).resolves.toBe("removed");
+    expect(state.extensionUiRequests).toEqual([]);
+  });
+
+  it("does not apply a deferred extension response after the selected session changes", async () => {
+    const response = deferred<{ outcome: "accepted"; resolution: { id: string; state: "submitted"; response: { id: string; value: string } } }>();
+    let state: AppState = {
+      ...initialAppState(),
+      selectedWorkspace: workspace,
+      selectedSession: oldSession,
+      sessions: [oldSession, replacementSession],
+      extensionUiRequests: [{ id: "dialog-1", state: "pending", method: "input", title: "Name" }],
+    };
+    const api: typeof defaultApi = {
+      ...defaultApi,
+      respondToExtensionUi: () => response.promise,
+      messages: () => Promise.resolve(emptyPage),
+      status: (session) => Promise.resolve(status(typeof session === "string" ? session : session.id)),
+      extensionUiPending: () => Promise.resolve({ requests: [] }),
+      thinkingLevels: () => Promise.resolve({ levels: [] }),
+    };
+    const controller = new SessionController(
+      () => state,
+      (patch) => { state = { ...state, ...patch }; },
+      () => undefined,
+      undefined,
+      { api, socket: new FakeSocket() },
+    );
+
+    const submit = controller.respondToExtensionUi({ id: "dialog-1", value: "Ada" });
+    await controller.selectSession(replacementSession, { updateUrl: false });
+    response.resolve({ outcome: "accepted", resolution: { id: "dialog-1", state: "submitted", response: { id: "dialog-1", value: "Ada" } } });
+
+    await expect(submit).resolves.toBe("removed");
+    expect(state.selectedSession?.id).toBe(replacementSession.id);
+    expect(state.extensionUiRequests).toEqual([]);
+    expect(state.extensionUiResolutions).toEqual([]);
   });
 
   it("ignores a created session for a different workspace or a duplicate id", () => {

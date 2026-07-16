@@ -6,7 +6,7 @@ import type { SessionUiEvent } from "./sessionSocket";
 type ToolResultImage = Extract<ChatLine["parts"][number], { type: "image" }>;
 
 interface ToolResultPresentation {
-  images: ToolResultImage[];
+  parts: (ToolResultImage | Extract<ChatLine["parts"][number], { type: "text" }>)[];
   meta?: ChatLine["meta"];
 }
 
@@ -162,7 +162,10 @@ function updateToolExecution(
 }
 
 function reconcileToolResultPresentation(line: ChatLine, presentation: ToolResultPresentation): ChatLine {
-  const next = { ...line, parts: [...line.parts.filter((part) => part.type !== "image"), ...presentation.images] };
+  // Tool-execution lines are created here with only technical parts. Keep their
+  // image-associated text beside the image, rather than inside the collapsed
+  // execution disclosure; ordinary text-only tool results remain technical.
+  const next = { ...line, parts: [...line.parts.filter((part) => part.type !== "image" && part.type !== "text"), ...presentation.parts] };
   return presentation.meta === undefined ? next : { ...next, meta: presentation.meta };
 }
 
@@ -170,7 +173,11 @@ function toolResultPresentation(message: unknown): ToolResultPresentation {
   const normalized = normalizeMessage(message);
   const images = normalized.flatMap((line) => line.parts.filter((part): part is ToolResultImage => part.type === "image"));
   const meta = normalized.find((line) => line.meta !== undefined)?.meta;
-  return { images, ...(meta === undefined ? {} : { meta }) };
+  if (images.length === 0) return { parts: [], ...(meta === undefined ? {} : { meta }) };
+  const text = normalized.flatMap((line) => line.parts.flatMap((part) => part.type === "toolResult"
+    ? [{ type: "text" as const, text: part.text }]
+    : []));
+  return { parts: [...text, ...images], ...(meta === undefined ? {} : { meta }) };
 }
 
 function toolResultFromRawMessage(message: unknown): ToolResultUpdate | undefined {

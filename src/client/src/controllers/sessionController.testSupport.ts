@@ -55,10 +55,12 @@ export class FakeSocket implements SessionEventSocket {
 export class EmitSocket implements SessionEventSocket {
   readonly connectedSessionIds: string[] = [];
   private handler: ((event: SessionUiEvent) => void) | undefined;
+  private reconnectHandler: (() => void) | undefined;
 
-  connect(session: SessionRef, onEvent: (event: SessionUiEvent) => void): void {
+  connect(session: SessionRef, onEvent: (event: SessionUiEvent) => void, onReconnect?: () => void): void {
     this.connectedSessionIds.push(session.id);
     this.handler = onEvent;
+    this.reconnectHandler = onReconnect;
   }
 
   setHandler(onEvent: (event: SessionUiEvent) => void): void {
@@ -69,8 +71,13 @@ export class EmitSocket implements SessionEventSocket {
     this.handler?.(event);
   }
 
+  reconnect(): void {
+    this.reconnectHandler?.();
+  }
+
   close(): void {
     this.handler = undefined;
+    this.reconnectHandler = undefined;
   }
 }
 
