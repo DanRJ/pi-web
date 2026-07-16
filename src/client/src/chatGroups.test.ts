@@ -58,6 +58,19 @@ describe("groupChatMessages", () => {
     ]);
   });
 
+  it("keeps image-associated tool text with the visible image while preserving text-only tool grouping", () => {
+    const caption = { type: "text" as const, text: "Deployment diagram" };
+    const image = { type: "image" as const, mimeType: "image/png", data: "QUJD" };
+    const execution = { type: "toolExecution" as const, toolName: "show_image", summary: "diagram.png", status: "success" as const, resultText: caption.text };
+
+    expect(groupChatMessages([{ role: "tool", parts: [execution, caption, image] }])).toEqual([
+      { kind: "group", startIndex: 0, endIndex: 0, messages: [{ role: "tool", parts: [execution] }] },
+      { kind: "tool-image", index: 0, message: { role: "tool", parts: [caption, image] }, toolName: "show_image" },
+    ]);
+    expect(groupChatMessages([{ role: "tool", parts: [{ type: "toolResult", toolName: "read", text: "ordinary result", isError: false }] }]))
+      .toEqual([{ kind: "group", startIndex: 0, endIndex: 0, messages: [{ role: "tool", parts: [{ type: "toolResult", toolName: "read", text: "ordinary result", isError: false }] }] }]);
+  });
+
   it("preserves image metadata when splitting technical and readable parts", () => {
     const meta = { timestamp: "2026-07-13T22:00:00.000Z" };
     const image = { type: "image" as const, mimeType: "image/webp", data: "QUJD" };

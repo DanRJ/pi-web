@@ -6,11 +6,11 @@ PI WEB embeds the Pi SDK and owns the browser transport. This page records the f
 
 - **Retained:** Pi remains responsible for extension discovery, lifecycle handlers, `ctx.ui` calls, agent execution, and session persistence. PI WEB retains its session daemon, transcript stream, session routes, and legacy `CommandResult` command picker.
 - **Replaced:** Pi's terminal/RPC stdout dialog transport is not used. PI WEB binds an `ExtensionUIContext` directly with `session.bindExtensions({ mode: "rpc" })`; `rpc` communicates that dialog-capable SDK semantics are available, while PI WEB supplies the implementation.
-- **New:** `ExtensionUiBroker` is the server-side boundary between SDK dialog promises and browser-visible request state. It assigns request IDs, holds pending promises, publishes request/resolution/notification events, validates typed browser responses, and makes duplicate responses idempotent. PI WEB's built-in model-facing `ask_options` tool calls the session-bound `ctx.ui.select`, so it follows this same broker flow rather than adding a separate browser transport.
+- **New:** `ExtensionUiBroker` is the server-side boundary between SDK dialog promises and browser-visible request state. It assigns request IDs, holds pending promises, publishes request/resolution/notification events, validates typed browser responses, and makes duplicate responses idempotent. PI WEB's built-in model-facing `ask_options` tool calls the session-bound `ctx.ui.select`, so it follows this same broker flow rather than adding a separate browser transport. The built-in `show_image` tool reads a decoded, validated, Pi-resized PNG, JPEG, GIF, or WebP from the session workspace and returns bounded Pi-native inline image content, which follows the existing transcript and browser rendering path.
 
 `CommandResult` remains the result of PI WEB slash commands such as the existing command picker. It must not be used for `ctx.ui` traffic: extension UI has a separate type family and endpoints.
 
-`ask_options` is reserved by PI WEB for this built-in model-facing tool. Extensions should use a different tool name rather than relying on SDK registration order for a conflicting definition.
+`ask_options` and `show_image` are reserved by PI WEB for built-in model-facing tools. Extensions should use different tool names rather than relying on SDK registration order for a conflicting definition.
 
 ## Browser contract
 
@@ -43,6 +43,6 @@ The adapter uses the public Pi SDK `ExtensionUIContext` and `bindExtensions` API
 
 ## Incremental delivery
 
-1. This slice supports `ctx.ui.select`, `confirm`, `input`, `editor`, and `notify`, plus the model-facing `ask_options` tool over `ctx.ui.select`; it includes server-owned pending discovery, typed response submission, WebSocket convergence, reconnect reconciliation, and inline cards.
+1. This slice supports `ctx.ui.select`, `confirm`, `input`, `editor`, and `notify`, plus the model-facing `ask_options` tool over `ctx.ui.select` and workspace-local `show_image` tool; it includes server-owned pending discovery, typed response submission, WebSocket convergence, reconnect reconciliation, and inline cards.
 2. Future slices can add more non-terminal UI primitives only by extending the explicit shared protocol and broker tests.
 3. Shell redesign, personal preferences, multi-agent experiences, and platform migration remain out of scope; they must not be coupled to this transport boundary.

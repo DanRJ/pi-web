@@ -42,6 +42,7 @@ describe("delegation tool capability boundary", () => {
     expect(toolNames(createPiWebCustomToolDefinitions("/workspace", true, spawn, subsessions))).toEqual([
       "edit",
       "ask_options",
+      "show_image",
       "spawn_session",
       "spawn_subsession",
       "list_subsessions",
@@ -54,14 +55,14 @@ describe("delegation tool capability boundary", () => {
   it("continues to honor global delegation feature flags for unrestricted sessions", () => {
     const { spawn } = delegationDeps();
 
-    expect(toolNames(createPiWebCustomToolDefinitions("/workspace", true, spawn))).toEqual(["edit", "ask_options", "spawn_session"]);
-    expect(toolNames(createPiWebCustomToolDefinitions("/workspace", true))).toEqual(["edit", "ask_options"]);
+    expect(toolNames(createPiWebCustomToolDefinitions("/workspace", true, spawn))).toEqual(["edit", "ask_options", "show_image", "spawn_session"]);
+    expect(toolNames(createPiWebCustomToolDefinitions("/workspace", true))).toEqual(["edit", "ask_options", "show_image"]);
   });
 
   it("removes every delegation tool but retains ordinary tools for restricted tracked children", () => {
     const { spawn, subsessions } = delegationDeps();
 
-    expect(toolNames(createPiWebCustomToolDefinitions("/workspace", false, spawn, subsessions))).toEqual(["edit", "ask_options"]);
+    expect(toolNames(createPiWebCustomToolDefinitions("/workspace", false, spawn, subsessions))).toEqual(["edit", "ask_options", "show_image"]);
   });
 
   it.each(["human-created", "spawn_session-created"])("allows delegation for a %s session without tracked-child provenance", async () => {

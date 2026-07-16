@@ -216,14 +216,43 @@ describe("applyTranscriptEvent", () => {
         resultText: "Read image file [image/png]",
         content: finalContent,
         details: { source: "message.end" },
-      }, finalImage],
+      }, { type: "text", text: "Read image file [image/png]" }, finalImage],
       meta: { timestamp },
     };
     expect(messages).toEqual([finalizedToolLine, textMessage("assistant", "done")]);
     expect(groupChatMessages(messages)).toEqual([
       { kind: "group", startIndex: 0, endIndex: 0, messages: [{ ...finalizedToolLine, parts: [finalizedToolLine.parts[0]] }] },
-      { kind: "tool-image", index: 0, message: { ...finalizedToolLine, parts: [finalImage] }, toolName: "read" },
+      { kind: "tool-image", index: 0, message: { ...finalizedToolLine, parts: [{ type: "text", text: "Read image file [image/png]" }, finalImage] }, toolName: "read" },
       { kind: "message", index: 1, message: textMessage("assistant", "done") },
+    ]);
+  });
+
+  it("projects a show_image result with native image content into the browser transcript", () => {
+    const caption = { type: "text" as const, text: "Deployment diagram" };
+    const image = { type: "image" as const, mimeType: "image/webp", data: "QUJD" };
+    const content = [caption, image];
+    let messages: ChatLine[] = [];
+
+    messages = applyTranscriptEvent(messages, { type: "tool.start", toolName: "show_image", toolCallId: "show-image-1", summary: "diagram.webp" }) ?? messages;
+    messages = applyTranscriptEvent(messages, { type: "tool.end", toolName: "show_image", toolCallId: "show-image-1", text: caption.text, isError: false, content }) ?? messages;
+    messages = applyTranscriptEvent(messages, {
+      type: "message.end",
+      message: { role: "toolResult", toolCallId: "show-image-1", toolName: "show_image", content, isError: false },
+    }) ?? messages;
+
+    const execution = {
+      type: "toolExecution" as const,
+      toolCallId: "show-image-1",
+      toolName: "show_image",
+      summary: "diagram.webp",
+      status: "success" as const,
+      resultText: "Deployment diagram",
+      content,
+    };
+    expect(messages).toEqual([{ role: "tool", parts: [execution, caption, image] }]);
+    expect(groupChatMessages(messages)).toEqual([
+      { kind: "group", startIndex: 0, endIndex: 0, messages: [{ role: "tool", parts: [execution] }] },
+      { kind: "tool-image", index: 0, message: { role: "tool", parts: [caption, image] }, toolName: "show_image" },
     ]);
   });
 

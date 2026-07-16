@@ -32,6 +32,7 @@ import type { SavedPromptAttachment, SessionBulkArchiveResponse, SessionBulkDele
 import type { SessionRouteLookup, SessionRouteRef, SessionRouteService } from "./sessionService.js";
 import { ExtensionUiBroker } from "./extensionUiBroker.js";
 import { createAskOptionsToolDefinition } from "./askOptionsTool.js";
+import { createShowImageToolDefinition } from "./showImageTool.js";
 import type { ExtensionUiPendingResponse, ExtensionUiRespondResponse, ExtensionUiResponse } from "../../shared/extensionUi.js";
 
 import { canonicalizeStoredCwd, cwdPathsEqual } from "../workingDirectory.js";
@@ -332,6 +333,7 @@ export function createPiWebCustomToolDefinitions(
   return [
     createPiWebEditToolDefinition(cwd),
     createAskOptionsToolDefinition(),
+    createShowImageToolDefinition(cwd),
     ...(delegationEnabled && spawn !== undefined ? [createSpawnSessionToolDefinition(cwd, { spawn })] : []),
     ...(delegationEnabled && subsessions !== undefined ? createSubsessionToolDefinitions(cwd, subsessions) : []),
   ];
