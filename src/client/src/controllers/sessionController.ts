@@ -1,4 +1,4 @@
-import { api as defaultApi, type CommandResult, type PromptAttachment, type QueuedSessionMessage, type SessionActivity, type SessionBulkFailure, type SessionCleanupExecuteResponse, type SessionInfo, type SessionRef, type SessionStatus, type Workspace } from "../api";
+import { api as defaultApi, type CommandResult, type ExtensionUiResponse, type PromptAttachment, type QueuedSessionMessage, type SessionActivity, type SessionBulkFailure, type SessionCleanupExecuteResponse, type SessionInfo, type SessionRef, type SessionStatus, type Workspace } from "../api";
 import type { AppState } from "../appState";
 import { forgetCachedNewSession, isCachedNewSessionInfo, markCachedNewSessionInfo, mergeCachedNewSessions, rememberCachedNewSession, stripCachedNewSessionMarker } from "../cachedNewSessions";
 import { textMessage } from "../chatMessages";
@@ -67,11 +67,30 @@ interface SelectedSessionRefreshTarget {
   selectionSeq: number;
 }
 
+type ExtensionUiMutation =
+  | { revision: number; type: "request"; request: import("../api").ExtensionUiRequest }
+  | { revision: number; type: "resolution"; resolution: import("../api").ExtensionUiResolution };
+
+type ExtensionUiMutationInput =
+  | { type: "request"; request: import("../api").ExtensionUiRequest }
+  | { type: "resolution"; resolution: import("../api").ExtensionUiResolution };
+
+interface ExtensionUiDiscovery {
+  epoch: number;
+  watermark: number;
+}
+
+export type ExtensionUiSubmitResult = "settled" | "retry" | "removed";
+
 export class SessionController {
   private readonly socket: SessionEventSocket;
   private readonly api: typeof defaultApi;
   private readonly transcripts: ChatTranscriptStore;
   private selectionSeq = 0;
+  private extensionUiRevision = 0;
+  private extensionUiMutations: ExtensionUiMutation[] = [];
+  private extensionUiReconciliationEpoch = 0;
+  private extensionUiDiscoveriesInFlight = 0;
   private catchupStreamSessionId: string | undefined;
   private pendingTranscriptEvents: SessionUiEvent[] = [];
   private pendingStatusBySession = new Map<string, SessionStatus>();
@@ -113,11 +132,12 @@ export class SessionController {
     this.socket.close();
     this.catchupStreamSessionId = undefined;
     this.clearPendingUpdates();
+    this.resetExtensionUiReconciliation();
     // Note: sendingPrompts is intentionally NOT cleared here. Deselecting a
     // session must not cancel the in-flight upload indicator of the session
     // that is still sending; the per-session entry is cleared by send()'s
     // finally block when the request settles.
-    this.setState({ selectedSession: undefined, messages: [], messagePageStart: 0, messagePageEnd: 0, messagePageTotal: 0, isLoadingEarlierMessages: false, isReceivingPartialStream: false, status: undefined, activity: undefined, availableThinkingLevels: [] });
+    this.setState({ selectedSession: undefined, messages: [], messagePageStart: 0, messagePageEnd: 0, messagePageTotal: 0, isLoadingEarlierMessages: false, isReceivingPartialStream: false, status: undefined, activity: undefined, availableThinkingLevels: [], extensionUiRequests: [], extensionUiResolutions: [], extensionUiNotifications: [] });
   }
 
   deselectSession(options?: { forgetRememberedSelection?: boolean | undefined; updateUrl?: boolean | undefined }) {
@@ -163,6 +183,7 @@ export class SessionController {
     this.socket.close();
     this.catchupStreamSessionId = undefined;
     this.clearPendingUpdates();
+    this.resetExtensionUiReconciliation();
     const transcriptKey = this.sessionCacheKey(session.id);
     const cached = this.transcripts.cachedView(transcriptKey);
     this.setState({
@@ -173,6 +194,9 @@ export class SessionController {
       status: session.archived === true ? undefined : this.getState().sessionStatuses[session.id],
       activity: session.archived === true ? undefined : this.getState().sessionActivities[session.id],
       availableThinkingLevels: [],
+      extensionUiRequests: [],
+      extensionUiResolutions: [],
+      extensionUiNotifications: [],
     });
     try {
       if (session.archived === true) {
@@ -373,6 +397,30 @@ export class SessionController {
     if (current.length === 0) return;
     const remaining = current.slice(1);
     this.setState({ clientQueuedSessionMessages: remaining.length === 0 ? omitKey(state.clientQueuedSessionMessages, sessionId) : { ...state.clientQueuedSessionMessages, [sessionId]: remaining } });
+  }
+
+  async respondToExtensionUi(response: ExtensionUiResponse): Promise<ExtensionUiSubmitResult> {
+    const session = this.getState().selectedSession;
+    if (session === undefined || session.archived === true) return "removed";
+    const machineId = selectedMachineId(this.getState());
+    const selectionSeq = this.selectionSeq;
+    try {
+      const result = await this.api.respondToExtensionUi(session, response, machineId);
+      if (!this.isCurrentSessionSelection(session.id, machineId, selectionSeq)) return "removed";
+      if (result.resolution !== undefined) this.applyExtensionUiResolution(result.resolution);
+      if (result.outcome === "accepted" || result.outcome === "already-resolved") return "settled";
+      if (result.outcome === "invalid-response") {
+        this.setState({ error: "The extension did not accept that response. Please try again." });
+        return "retry";
+      }
+      this.removeExtensionUiRequest(response.id);
+      if (result.outcome === "wrong-session") this.setState({ error: "That extension request belongs to a different session." });
+      else void this.refreshSelectedSession(session.id);
+      return "removed";
+    } catch (error) {
+      if (this.isCurrentSessionSelection(session.id, machineId, selectionSeq)) this.setState({ error: String(error) });
+      return "retry";
+    }
   }
 
   async respondToCommand(requestId: string, value: string) {
@@ -765,19 +813,31 @@ export class SessionController {
     return this.selectedSessionRefreshes.request(key, async () => {
       if (!this.isCurrentRefreshTarget(target)) return;
       this.flushPendingUpdates();
-      const [page, status] = await Promise.all([
-        this.api.messages(target.session, { limit: MESSAGE_PAGE_SIZE }, target.machineId),
-        this.api.status(target.session, target.machineId),
-      ]);
-      if (!this.isCurrentRefreshTarget(target)) return;
-      const history = this.transcripts.mergeHistory(key, page);
-      this.setState({
-        ...history,
-        status,
-        activity: this.getState().sessionActivities[target.session.id],
-        ...this.setStreamCatchup(status.isStreaming ? target.session.id : undefined),
-      });
-      this.applyStatus(status);
+      // A discovery snapshot is only authoritative up to this revision. Replay
+      // later socket/POST mutations after it returns so a delayed HTTP response
+      // cannot erase a dialog that became live during reconnect.
+      const extensionUiDiscovery = this.beginExtensionUiDiscovery();
+      try {
+        const [page, status, extensionUi] = await Promise.all([
+          this.api.messages(target.session, { limit: MESSAGE_PAGE_SIZE }, target.machineId),
+          this.api.status(target.session, target.machineId),
+          // Older remote Pi Web daemons do not have this additive endpoint yet.
+          // Preserve existing UI state if discovery is unavailable.
+          this.api.extensionUiPending(target.session, target.machineId).catch(() => undefined),
+        ]);
+        if (!this.isCurrentRefreshTarget(target)) return;
+        const history = this.transcripts.mergeHistory(key, page);
+        this.setState({
+          ...history,
+          status,
+          activity: this.getState().sessionActivities[target.session.id],
+          ...(extensionUi === undefined ? {} : { extensionUiRequests: this.reconcileExtensionUiDiscovery(extensionUi.requests, extensionUiDiscovery.watermark) }),
+          ...this.setStreamCatchup(status.isStreaming ? target.session.id : undefined),
+        });
+        this.applyStatus(status);
+      } finally {
+        this.endExtensionUiDiscovery(extensionUiDiscovery);
+      }
     });
   }
 
@@ -861,6 +921,7 @@ export class SessionController {
     this.socket.close();
     this.catchupStreamSessionId = undefined;
     this.clearPendingUpdates();
+    this.resetExtensionUiReconciliation();
     const state = this.getState();
     const pendingStart = this.pendingSessionStarts.get(session.id);
     const activity = options?.activity ?? state.sessionActivities[session.id] ?? (pendingStart !== undefined ? creatingPendingSessionActivity(session.id, pendingStart.queuedSends.length) : undefined);
@@ -876,6 +937,9 @@ export class SessionController {
       status: undefined,
       activity,
       availableThinkingLevels: [],
+      extensionUiRequests: [],
+      extensionUiResolutions: [],
+      extensionUiNotifications: [],
       ...(activity === undefined ? {} : { sessionActivities: { ...state.sessionActivities, [session.id]: activity } }),
       error: "",
     });
@@ -1109,12 +1173,96 @@ export class SessionController {
     }
 
     this.flushPendingUpdates();
+    if (event.type === "extension-ui.request") {
+      this.applyExtensionUiRequest(event.request);
+      return;
+    }
+    if (event.type === "extension-ui.resolved") {
+      this.applyExtensionUiResolution(event.resolution);
+      return;
+    }
+    if (event.type === "extension-ui.notify") {
+      const notifications = [...this.getState().extensionUiNotifications, event.notification].slice(-8);
+      this.setState({ extensionUiNotifications: notifications });
+      return;
+    }
     const transcript = this.transcripts.applyLiveEvent(this.getState().messages, event);
     if (transcript) {
       this.setState({ messages: transcript });
     } else if (event.type === "session.name") {
       this.applySessionName(event.sessionId, event.name);
     }
+  }
+
+  private applyExtensionUiRequest(request: import("../api").ExtensionUiRequest): void {
+    this.recordExtensionUiMutation({ type: "request", request });
+    const requests = this.getState().extensionUiRequests;
+    if (requests.some((candidate) => candidate.id === request.id)) return;
+    this.setState({ extensionUiRequests: [...requests, request] });
+  }
+
+  private applyExtensionUiResolution(resolution: import("../api").ExtensionUiResolution): void {
+    this.recordExtensionUiMutation({ type: "resolution", resolution });
+    const state = this.getState();
+    const resolutions = [...state.extensionUiResolutions.filter((candidate) => candidate.id !== resolution.id), resolution].slice(-8);
+    this.setState({ extensionUiRequests: state.extensionUiRequests.filter((request) => request.id !== resolution.id), extensionUiResolutions: resolutions });
+  }
+
+  private removeExtensionUiRequest(requestId: string): void {
+    const requests = this.getState().extensionUiRequests;
+    if (!requests.some((request) => request.id === requestId)) return;
+    this.setState({ extensionUiRequests: requests.filter((request) => request.id !== requestId) });
+  }
+
+  /** Test seam for asserting that connected live use does not retain mutations. */
+  get extensionUiMutationLogSizeForTesting(): number {
+    return this.extensionUiMutations.length;
+  }
+
+  private beginExtensionUiDiscovery(): ExtensionUiDiscovery {
+    this.extensionUiDiscoveriesInFlight += 1;
+    return { epoch: this.extensionUiReconciliationEpoch, watermark: this.extensionUiRevision };
+  }
+
+  private endExtensionUiDiscovery(discovery: ExtensionUiDiscovery): void {
+    // A selection change clears its own reconciliation state. An older request
+    // must not affect the newer selection's in-flight discovery count.
+    if (discovery.epoch !== this.extensionUiReconciliationEpoch) return;
+    this.extensionUiDiscoveriesInFlight -= 1;
+    if (this.extensionUiDiscoveriesInFlight !== 0) return;
+    this.extensionUiMutations = [];
+    this.extensionUiRevision = 0;
+  }
+
+  private recordExtensionUiMutation(mutation: ExtensionUiMutationInput): void {
+    // Before a discovery begins, the next snapshot necessarily includes this
+    // already-applied mutation. Keep a log only for the HTTP snapshot/live
+    // event race while discovery is actually in flight.
+    if (this.extensionUiDiscoveriesInFlight === 0) return;
+    this.extensionUiRevision += 1;
+    this.extensionUiMutations.push({ ...mutation, revision: this.extensionUiRevision });
+  }
+
+  private reconcileExtensionUiDiscovery(requests: readonly import("../api").ExtensionUiRequest[], watermark: number): import("../api").ExtensionUiRequest[] {
+    const reconciled = [...requests];
+    for (const mutation of this.extensionUiMutations) {
+      if (mutation.revision <= watermark) continue;
+      if (mutation.type === "resolution") {
+        removeById(reconciled, mutation.resolution.id);
+        continue;
+      }
+      if (!reconciled.some((request) => request.id === mutation.request.id)) reconciled.push(mutation.request);
+    }
+    // All mutations through the watermark are represented by this snapshot.
+    this.extensionUiMutations = this.extensionUiMutations.filter((mutation) => mutation.revision > watermark);
+    return reconciled;
+  }
+
+  private resetExtensionUiReconciliation(): void {
+    this.extensionUiReconciliationEpoch += 1;
+    this.extensionUiDiscoveriesInFlight = 0;
+    this.extensionUiRevision = 0;
+    this.extensionUiMutations = [];
   }
 
   private queueTranscriptEvent(event: SessionUiEvent): void {
@@ -1211,6 +1359,11 @@ export class SessionController {
 
 function omitSessionActivity(activities: Record<string, SessionActivity>, sessionId: string): Record<string, SessionActivity> {
   return omitKey(activities, sessionId);
+}
+
+function removeById(items: { id: string }[], id: string): void {
+  const index = items.findIndex((item) => item.id === id);
+  if (index !== -1) items.splice(index, 1);
 }
 
 function omitKey<T>(record: Record<string, T>, key: string): Record<string, T> {

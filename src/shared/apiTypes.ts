@@ -1,3 +1,5 @@
+import type { ExtensionUiNotification, ExtensionUiRequest, ExtensionUiResolution } from "./extensionUi.js";
+
 export type MachineKind = "local" | "remote";
 export type MachineStatus = "unknown" | "online" | "offline" | "error";
 
@@ -713,6 +715,9 @@ export type SessionUiEvent =
   | { type: "session.error"; message: string }
   | { type: "session.name"; sessionId: string; name?: string }
   | { type: "session.created"; session: SessionInfo }
+  | { type: "extension-ui.request"; request: ExtensionUiRequest }
+  | { type: "extension-ui.resolved"; resolution: ExtensionUiResolution }
+  | { type: "extension-ui.notify"; notification: ExtensionUiNotification }
   | { type: "pi.event"; eventType: string };
 
 export type GlobalSessionEvent = Extract<SessionUiEvent, { type: "status.update" | "activity.update" | "session.name" | "session.created" }>;

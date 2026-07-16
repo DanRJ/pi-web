@@ -62,6 +62,8 @@ describe("federated route contract", () => {
       ignoreParseFailure(sessionsApi.cleanup({ archiveIdleDays: 14, deleteArchivedDays: 30, projectCwds: ["/repo"] }, machineId)),
       ignoreParseFailure(sessionsApi.archiveMany([session], machineId)),
       ignoreParseFailure(sessionsApi.deleteArchivedMany([session], machineId)),
+      ignoreParseFailure(sessionsApi.extensionUiPending(session, machineId)),
+      ignoreParseFailure(sessionsApi.respondToExtensionUi(session, { id: "dialog 1", cancelled: true }, machineId)),
       ignoreParseFailure(sessionsApi.messages(session, { limit: 20, before: 10 }, machineId)),
       ignoreParseFailure(sessionsApi.status(session, machineId)),
       ignoreParseFailure(sessionsApi.clearQueue(session, machineId)),

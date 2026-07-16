@@ -1,6 +1,7 @@
 import type { DeleteWorkspaceFileResponse, FileSuggestion, MoveWorkspaceFileOptions, PiPackageInstallRequest, PiPackageRemoveRequest, PiPackageScope, PiPackageUpdateRequest, PiWebConfigValues, PromptAttachment, RunTerminalCommandInput, SessionBulkMutationRef, SessionCleanupRequest, SessionRef, TerminalCommandRun, TerminalCommandRunFilter, WriteWorkspaceFileOptions } from "../../../shared/apiTypes";
+import type { ExtensionUiResponse } from "../../../shared/extensionUi";
 import { resolveAppUrl } from "../appUrl";
-import { request } from "./http";
+import { request, requestWithAllowedErrorStatus } from "./http";
 import {
   arrayOf,
   parseAborted,
@@ -11,6 +12,8 @@ import {
   parseCommandResult,
   parseDeleted,
   parseDeleteWorkspaceFileResponse,
+  parseExtensionUiPendingResponse,
+  parseExtensionUiRespondResponse,
   parseDetached,
   parseFileContentResponse,
   parseFileSuggestion,
@@ -208,6 +211,10 @@ export const sessionsApi = {
   archiveMany: (sessions: readonly SessionLookup[], machineId = "local") => request(`${machinePrefix(machineId)}/sessions/bulk/archive`, parseSessionBulkArchiveResponse, { method: "POST", body: sessionBulkMutationBody(sessions) }),
   deleteArchivedMany: (sessions: readonly SessionLookup[], machineId = "local") => request(`${machinePrefix(machineId)}/sessions/bulk/delete-archived`, parseSessionBulkDeleteArchivedResponse, { method: "POST", body: sessionBulkMutationBody(sessions) }),
   messages: (session: SessionLookup, options?: { limit?: number; before?: number }, machineId = "local") => request(messagePath(session, options, machineId), parseMessagePage),
+  extensionUiPending: (session: SessionLookup, machineId = "local") => request(sessionQueryPath(session, "extension-ui", machineId), parseExtensionUiPendingResponse),
+  // A malformed extension response is a documented 400 protocol result, not
+  // a transport failure: parse it so the controller can keep the dialog open.
+  respondToExtensionUi: (session: SessionLookup, response: ExtensionUiResponse, machineId = "local") => requestWithAllowedErrorStatus(sessionPath(session, "extension-ui/respond", machineId), parseExtensionUiRespondResponse, 400, { method: "POST", body: sessionBody(session, { response }) }),
   status: (session: SessionLookup, machineId = "local") => request(sessionQueryPath(session, "status", machineId), parseSessionStatus),
   clearQueue: (session: SessionLookup, machineId = "local") => request(sessionPath(session, "queue/clear", machineId), parseSessionStatus, { method: "POST", body: sessionBody(session) }),
   models: (session: SessionLookup, machineId = "local") => request(sessionQueryPath(session, "models", machineId), parseModelSelectionResponse),

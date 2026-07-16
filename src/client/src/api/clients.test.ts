@@ -229,6 +229,22 @@ describe("session API compatibility", () => {
     expect(JSON.parse(requestBody(fetchCall(fetchMock, 1)[1]))).toEqual({ sessions: [{ id: "s 1", cwd: "/repo" }] });
   });
 
+  it("parses documented invalid extension responses from HTTP 400 without allowing other errors", async () => {
+    const fetchMock = stubSequenceFetch([
+      new Response(JSON.stringify({ outcome: "invalid-response" }), { status: 400, headers: { "content-type": "application/json" } }),
+      new Response(JSON.stringify({ error: "bad prompt" }), { status: 400, headers: { "content-type": "application/json" } }),
+    ]);
+
+    await expect(sessionsApi.respondToExtensionUi({ id: "s 1", cwd: "/repo" }, { id: "dialog 1", value: "not-an-option" }, "remote a")).resolves.toEqual({ outcome: "invalid-response" });
+    await expect(sessionsApi.prompt("s 1", "hello", "followUp", "remote a")).rejects.toThrow("bad prompt");
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const [url, init] = fetchCall(fetchMock, 0);
+    expect(url).toBe("https://pi.example.test/api/machines/remote%20a/sessions/s%201/extension-ui/respond");
+    expect(init?.method).toBe("POST");
+    expect(JSON.parse(requestBody(init))).toEqual({ cwd: "/repo", response: { id: "dialog 1", value: "not-an-option" } });
+  });
+
   it("keeps legacy session-id calls free of cwd context", async () => {
     const fetchMock = stubJsonFetch({ accepted: true });
 

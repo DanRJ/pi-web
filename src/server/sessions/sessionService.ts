@@ -1,3 +1,4 @@
+import type { ExtensionUiPendingResponse, ExtensionUiRespondResponse, ExtensionUiResponse } from "../../shared/extensionUi.js";
 import type {
   SavedPromptAttachment,
   SessionBulkArchiveResponse,
@@ -32,6 +33,8 @@ export type SessionRouteLookup = string | SessionRouteRef;
 export interface SessionRouteService {
   list(cwd: string): Promise<ClientSession[]>;
   start(cwd: string): Promise<ClientSession>;
+  extensionUiPending(ref: SessionRouteLookup): Promise<ExtensionUiPendingResponse>;
+  respondToExtensionUi(ref: SessionRouteLookup, response: ExtensionUiResponse): Promise<ExtensionUiRespondResponse>;
   messages(ref: SessionRouteLookup, page?: { before?: number; limit?: number }): Promise<unknown[] | ClientMessagePage>;
   status(ref: SessionRouteLookup): Promise<ClientSessionStatus>;
   clearQueue(ref: SessionRouteLookup): Promise<ClientSessionStatus>;
