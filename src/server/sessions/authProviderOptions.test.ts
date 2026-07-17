@@ -1,27 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { getLoginProviderOptions, getLogoutProviderOptions, isApiKeyLoginProvider, type AuthProviderModelRegistry } from "./authProviderOptions";
+import { getLoginProviderOptions, getLogoutProviderOptions, isApiKeyLoginProvider, type AuthProviderRuntime } from "./authProviderOptions";
 
-function registry(): AuthProviderModelRegistry {
-  const credentials = new Map<string, { type: "oauth" | "api_key" }>();
-  credentials.set("openai", { type: "api_key" });
+function runtime(): AuthProviderRuntime {
+  const credentials = [{ providerId: "openai", type: "api_key" as const }];
+  const providers = [
+    { id: "anthropic", name: "Anthropic", auth: { oauth: {}, apiKey: {} } },
+    { id: "github-copilot", name: "GitHub Copilot", auth: { oauth: {} } },
+    { id: "openai-codex", name: "ChatGPT Plus/Pro (Codex Subscription)", auth: { oauth: {}, apiKey: {} } },
+    { id: "openai", name: "OpenAI", auth: { apiKey: {} } },
+    { id: "custom", name: "Custom", auth: { apiKey: {} } },
+  ];
   return {
-    authStorage: {
-      getOAuthProviders: () => [
-        { id: "anthropic", name: "Anthropic (Claude Pro/Max)" },
-        { id: "github-copilot", name: "GitHub Copilot" },
-        { id: "openai-codex", name: "ChatGPT Plus/Pro (Codex Subscription)" },
-      ],
-      list: () => Array.from(credentials.keys()),
-      get: (provider: string) => credentials.get(provider),
-    },
-    getAll: () => [
-      { provider: "anthropic" },
-      { provider: "openai" },
-      { provider: "openai-codex" },
-      { provider: "github-copilot" },
-      { provider: "custom" },
-    ],
-    getProviderDisplayName: (provider: string) => ({ anthropic: "Anthropic", openai: "OpenAI", custom: "Custom" }[provider] ?? provider),
+    getProviders: () => providers,
+    listCredentials: () => Promise.resolve(credentials),
     getProviderAuthStatus: (provider: string) => (provider === "openai" ? { configured: true, source: "stored" } : { configured: false }),
   };
 }
@@ -33,8 +24,8 @@ describe("auth provider options", () => {
     expect(isApiKeyLoginProvider("openai", new Set(["openai-codex"]))).toBe(true);
   });
 
-  it("builds login options for OAuth-only, dual-auth, and API-key providers", () => {
-    const options = getLoginProviderOptions(registry());
+  it("builds login options for OAuth-only, dual-auth, and API-key providers", async () => {
+    const options = await getLoginProviderOptions(runtime());
     expect(options).toEqual(expect.arrayContaining([
       expect.objectContaining({ id: "anthropic", authType: "oauth" }),
       expect.objectContaining({ id: "anthropic", authType: "api_key" }),
@@ -44,8 +35,8 @@ describe("auth provider options", () => {
     expect(options).not.toEqual(expect.arrayContaining([expect.objectContaining({ id: "openai-codex", authType: "api_key" })]));
   });
 
-  it("returns only currently stored credentials for logout", () => {
-    expect(getLogoutProviderOptions(registry())).toEqual([
+  it("returns only currently stored credentials for logout", async () => {
+    expect(await getLogoutProviderOptions(runtime())).toEqual([
       expect.objectContaining({ id: "openai", authType: "api_key" }),
     ]);
   });
