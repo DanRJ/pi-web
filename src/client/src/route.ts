@@ -1,6 +1,10 @@
 import type { QualifiedContributionId } from "./plugins/types";
 
+export type TopLevelPage = "workspace" | "dashboard";
+
 export interface AppRoute {
+  /** Omitted routes are existing workspace deep links. */
+  page?: TopLevelPage;
   machineId: string | undefined;
   projectId: string | undefined;
   workspaceId: string | undefined;
@@ -12,6 +16,7 @@ export interface AppRoute {
 export function readRoute(): AppRoute {
   const params = new URLSearchParams(window.location.search);
   return {
+    page: params.get("page") === "dashboard" ? "dashboard" : "workspace",
     machineId: params.get("machine") ?? undefined,
     projectId: params.get("project") ?? undefined,
     workspaceId: params.get("workspace") ?? undefined,
@@ -23,12 +28,14 @@ export function readRoute(): AppRoute {
 
 export function writeRoute(route: AppRoute, options?: { replace?: boolean | undefined }): void {
   const url = new URL(window.location.href);
+  url.searchParams.delete("page");
   url.searchParams.delete("machine");
   url.searchParams.delete("project");
   url.searchParams.delete("workspace");
   url.searchParams.delete("session");
   url.searchParams.delete("tool");
   url.searchParams.delete("view");
+  if (route.page === "dashboard") url.searchParams.set("page", "dashboard");
   if (route.machineId !== undefined && route.machineId !== "" && route.machineId !== "local") url.searchParams.set("machine", route.machineId);
   if (route.projectId !== undefined && route.projectId !== "") url.searchParams.set("project", route.projectId);
   if (route.workspaceId !== undefined && route.workspaceId !== "") url.searchParams.set("workspace", route.workspaceId);

@@ -43,6 +43,8 @@ export const FEDERATED_HTTP_ROUTES = [
   { method: "POST", path: "/terminal-command-runs/:runId/cancel" },
   { method: "GET", path: "/files" },
   { method: "GET", path: "/activity" },
+  // Machine-scoped summary only; do not proxy the aggregate dashboard back into itself.
+  { method: "GET", path: "/session-summaries" },
   { method: "GET", path: "/sessions" },
   { method: "POST", path: "/sessions" },
   { method: "POST", path: "/sessions/cleanup/preview" },

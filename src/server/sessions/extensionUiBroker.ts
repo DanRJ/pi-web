@@ -12,6 +12,8 @@ export interface ExtensionUiBrokerEvents {
   request(sessionId: string, request: ExtensionUiRequest): void;
   resolved(sessionId: string, resolution: ExtensionUiResolution): void;
   notify(sessionId: string, notification: ExtensionUiNotification): void;
+  /** Global, content-free attention state after a request is added or settled. */
+  attention?(sessionId: string, needsAttention: boolean): void;
 }
 
 interface PendingRequest {
@@ -41,6 +43,7 @@ type NewExtensionUiRequest =
  */
 export class ExtensionUiBroker {
   private readonly pending = new Map<string, PendingRequest>();
+  private readonly pendingIdsBySession = new Map<string, Set<string>>();
   // Retain a bounded completion record so duplicate browser submissions are
   // harmless without turning ephemeral interaction state into a transcript.
   private readonly settled = new Map<string, { sessionId: string; resolution: ExtensionUiResolution }>();
@@ -50,9 +53,14 @@ export class ExtensionUiBroker {
   constructor(private readonly options: ExtensionUiBrokerOptions) {}
 
   pendingForSession(sessionId: string): ExtensionUiRequest[] {
-    return [...this.pending.values()]
-      .filter((pending) => pending.sessionId === sessionId)
-      .map((pending) => pending.request);
+    return [...(this.pendingIdsBySession.get(sessionId) ?? [])]
+      .map((requestId) => this.pending.get(requestId)?.request)
+      .filter((request): request is ExtensionUiRequest => request !== undefined);
+  }
+
+  /** A copied count snapshot lets dashboard queries avoid scanning all requests. */
+  pendingCountsBySession(): ReadonlyMap<string, number> {
+    return new Map([...this.pendingIdsBySession].map(([sessionId, ids]) => [sessionId, ids.size]));
   }
 
   createUiContext(sessionId: string): ExtensionUIContext {
@@ -135,6 +143,12 @@ export class ExtensionUiBroker {
     return new Promise((resolve) => {
       const pending: PendingRequest = { sessionId, request: completeRequest, resolve };
       this.pending.set(completeRequest.id, pending);
+      let pendingIds = this.pendingIdsBySession.get(sessionId);
+      if (pendingIds === undefined) {
+        pendingIds = new Set();
+        this.pendingIdsBySession.set(sessionId, pendingIds);
+      }
+      pendingIds.add(completeRequest.id);
       if (signal !== undefined) {
         pending.abortSignal = signal;
         pending.onAbort = () => {
@@ -148,12 +162,16 @@ export class ExtensionUiBroker {
         }, completeRequest.timeout);
       }
       this.options.events.request(sessionId, completeRequest);
+      this.options.events.attention?.(sessionId, true);
     });
   }
 
   private settle(pending: PendingRequest, resolution: ExtensionUiResolution): void {
     if (this.pending.get(pending.request.id) !== pending) return;
     this.pending.delete(pending.request.id);
+    const pendingIds = this.pendingIdsBySession.get(pending.sessionId);
+    pendingIds?.delete(pending.request.id);
+    if (pendingIds?.size === 0) this.pendingIdsBySession.delete(pending.sessionId);
     if (pending.timeout !== undefined) clearTimeout(pending.timeout);
     if (pending.abortSignal !== undefined && pending.onAbort !== undefined) pending.abortSignal.removeEventListener("abort", pending.onAbort);
     this.settled.set(pending.request.id, { sessionId: pending.sessionId, resolution });
@@ -163,6 +181,7 @@ export class ExtensionUiBroker {
       this.settled.delete(oldest);
     }
     this.options.events.resolved(pending.sessionId, resolution);
+    this.options.events.attention?.(pending.sessionId, this.pendingIdsBySession.has(pending.sessionId));
     pending.resolve(resolution);
   }
 

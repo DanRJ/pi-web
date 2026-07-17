@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { PI_WEB_CAPABILITIES } from "../../../shared/capabilities";
-import { parseCommandResult, parseExtensionUiPendingResponse, parseExtensionUiRespondResponse, parseFileContentResponse, parseFileSuggestion, parseGitStatusResponse, parseMachineRuntime, parseMessagePage, parsePiPackageMutationResponse, parsePiPackagesResponse, parsePiWebConfigResponse, parsePiWebPluginsResponse, parsePiWebRuntimeResponse, parsePiWebStatusResponse, parseSessionBulkArchiveResponse, parseSessionBulkDeleteArchivedResponse, parseSessionCleanupExecuteResponse, parseSessionCleanupPreviewResponse, parseSessionInfo, parseSessionStatus, parseSlashCommand, parseTerminalCommandRun, parseTerminalInfo, parseWorkspace, parseWorkspaceActivityResponse } from "./parsers";
+import { parseCommandResult, parseExtensionUiPendingResponse, parseExtensionUiRespondResponse, parseFederatedSessionDashboardResponse, parseFileContentResponse, parseFileSuggestion, parseGitStatusResponse, parseMachineRuntime, parseMessagePage, parsePiPackageMutationResponse, parsePiPackagesResponse, parsePiWebConfigResponse, parsePiWebPluginsResponse, parsePiWebRuntimeResponse, parsePiWebStatusResponse, parseSessionBulkArchiveResponse, parseSessionBulkDeleteArchivedResponse, parseSessionCleanupExecuteResponse, parseSessionCleanupPreviewResponse, parseSessionInfo, parseSessionStatus, parseSlashCommand, parseTerminalCommandRun, parseTerminalInfo, parseWorkspace, parseWorkspaceActivityResponse } from "./parsers";
 
 describe("API parsers", () => {
   it("parses PI WEB config responses", () => {
@@ -419,4 +419,24 @@ describe("API parsers", () => {
     expect(parseCommandResult({ type: "done", message: "ok", promptDraft: "resend me" })).toEqual({ type: "done", message: "ok", promptDraft: "resend me" });
     expect(() => parseCommandResult({ type: "later" })).toThrow("Invalid command result type");
   });
+
+  it("parses strict partial dashboard outcomes and rejects malformed compact data", () => {
+    const response = dashboardResponse();
+    const available = response.machines[0];
+    if (available === undefined || !("sessions" in available)) throw new Error("Dashboard test fixture is malformed");
+    const session = available.sessions[0];
+    if (session === undefined) throw new Error("Dashboard test fixture has no session");
+    expect(parseFederatedSessionDashboardResponse(response)).toMatchObject({ machines: [{ outcome: "available", sessions: [{ id: "s1", messageCount: 2 }] }, { outcome: "offline" }] });
+    expect(() => parseFederatedSessionDashboardResponse({ ...response, machines: [{ ...available, sessions: [{ ...session, created: "yesterday" }] }] })).toThrow("ISO timestamp");
+    expect(() => parseFederatedSessionDashboardResponse({ ...response, machines: [{ ...available, sessions: [{ ...session, messageCount: Number.NaN }] }] })).toThrow("safe-integer");
+    expect(() => parseFederatedSessionDashboardResponse({ ...response, machines: [{ ...available, sessions: [{ ...session, messageCount: 1.5 }] }] })).toThrow("safe-integer");
+    expect(() => parseFederatedSessionDashboardResponse({ ...response, machines: [{ ...available, sessions: [{ ...session, messageCount: Number.MAX_SAFE_INTEGER + 1 }] }] })).toThrow("safe-integer");
+    expect(() => parseFederatedSessionDashboardResponse({ ...response, machines: [{ ...available, outcome: "unknown" }] })).toThrow("Invalid dashboard machine outcome");
+  });
 });
+
+function dashboardResponse() {
+  const machine = { id: "local", name: "This machine", kind: "local", createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z" } as const;
+  const session = { id: "s1", cwd: "/repo", firstMessage: "Build dashboard", created: "2026-01-01T00:00:00.000Z", modified: "2026-01-02T00:00:00.000Z", messageCount: 2, runtimeStatus: "idle", displayStatus: "idle", needsAttention: false, project: { id: "p1", name: "Repo" }, workspace: { id: "w1", label: "main", isMain: true } } as const;
+  return { machines: [{ machine, outcome: "available", sessions: [session] }, { machine: { ...machine, id: "remote", name: "Remote", kind: "remote" }, outcome: "offline", error: "Timed out" }] };
+}

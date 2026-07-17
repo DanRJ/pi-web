@@ -45,9 +45,11 @@ export class AppNavigationPanel extends LitElement {
   @property({ type: Boolean }) canReloadSessions = false;
   @property({ type: Boolean }) canCleanupSessions = false;
   @property({ type: Boolean }) authoritativeSessionPersistence = false;
+  @property({ type: Boolean }) dashboardActive = false;
   @property({ type: String }) archivedDeleteUnavailableMessage = "Update and restart Pi-Web on this machine to delete archived sessions.";
   @property({ type: String }) cleanupUnavailableMessage = "Update and restart Pi-Web on this machine to clean up sessions.";
   @property({ attribute: false }) onShowActions?: () => void;
+  @property({ attribute: false }) onOpenDashboard?: () => void;
   @property({ attribute: false }) onToggleMachines?: () => void;
   @property({ attribute: false }) onToggleProjects?: () => void;
   @property({ attribute: false }) onToggleWorkspaces?: () => void;
@@ -108,9 +110,11 @@ export class AppNavigationPanel extends LitElement {
         ` : null}
         <div class="header-actions">
           ${this.refreshControl}
+          <button aria-current=${this.dashboardActive ? "page" : "false"} @click=${() => { this.onOpenDashboard?.(); }}>Dashboard</button>
           <button title="Show Actions" aria-label="Show Actions" @click=${() => { this.onShowActions?.(); }}>Actions</button>
         </div>
       </header>
+      ${this.compact ? html`<button class="dashboard-link" aria-current=${this.dashboardActive ? "page" : "false"} @click=${() => { this.onOpenDashboard?.(); }}>Dashboard</button>` : null}
       ${this.compact && shouldShowMachinesSection(this.machines) ? html`
         <machine-list
           .machines=${this.machines}
@@ -218,6 +222,8 @@ export class AppNavigationPanel extends LitElement {
     machine-switcher { flex: 1 1 auto; min-width: 0; }
     :host([compact]) header { display: none; }
     .header-actions { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; }
+    .dashboard-link { margin: 8px; border-width: var(--pi-divider-width, 1px); }
+    button[aria-current="page"] { border-color: var(--pi-accent); color: var(--pi-accent); }
     machine-list, project-list, workspace-list { flex: 0 0 auto; max-height: 26%; min-height: 0; overflow: hidden; border-bottom: var(--pi-divider-width, 1px) solid var(--pi-border-muted); }
     session-list { flex: 1 1 auto; min-height: 0; overflow: hidden; }
     machine-list[collapsed],

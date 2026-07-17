@@ -3,6 +3,7 @@ import type { PiPackageInfo, PiPackageMutationAction, PiPackageMutationResponse,
 import { parseActiveAgentProfileDescriptor } from "../../../shared/activeAgentProfile";
 import { parseKnownPiWebCapabilities } from "../../../shared/capabilities";
 import type { ExtensionUiPendingResponse, ExtensionUiRequest, ExtensionUiRespondResponse, ExtensionUiResolution, ExtensionUiResponse } from "../../../shared/extensionUi";
+import type { FederatedSessionDashboardResponse, LocalSessionDashboardSessionSummary, SessionDashboardMachineOutcome, SessionDashboardRuntimeStatus, SessionDashboardDisplayStatus } from "../../../shared/sessionDashboard";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -591,6 +592,69 @@ export function parseWorkspaceActivity(value: unknown): WorkspaceActivity {
 export function parseWorkspaceActivityResponse(value: unknown): WorkspaceActivityResponse {
   const record = requireRecord(value);
   return { workspaces: arrayOf(parseWorkspaceActivity)(record["workspaces"]), generatedAt: requireString(record, "generatedAt") };
+}
+
+/** Strict parser for the compact, content-free dashboard contract. */
+export function parseFederatedSessionDashboardResponse(value: unknown): FederatedSessionDashboardResponse {
+  const record = requireRecord(value);
+  return { machines: arrayOf(parseDashboardMachineOutcome)(record["machines"]) };
+}
+
+function parseDashboardMachineOutcome(value: unknown): SessionDashboardMachineOutcome {
+  const record = requireRecord(value);
+  const machine = parseMachine(record["machine"]);
+  const outcome = requireString(record, "outcome");
+  if (outcome === "available") return { machine, outcome, sessions: arrayOf(parseDashboardSession)(record["sessions"]) };
+  const error = optionalString(record, "error");
+  if (outcome === "unsupported" || outcome === "offline") return { machine, outcome, ...(error === undefined ? {} : { error }) };
+  if (outcome === "error") {
+    if (error === undefined || error === "") throw new Error("Expected dashboard machine error");
+    return { machine, outcome, error };
+  }
+  throw new Error("Invalid dashboard machine outcome");
+}
+
+function parseDashboardSession(value: unknown): LocalSessionDashboardSessionSummary {
+  const record = requireRecord(value);
+  const runtimeStatus = dashboardRuntimeStatus(record["runtimeStatus"]);
+  const displayStatus = dashboardDisplayStatus(record["displayStatus"]);
+  const created = requireIsoTimestamp(record, "created");
+  const modified = requireIsoTimestamp(record, "modified");
+  const messageCount = requireFiniteNonNegativeNumber(record, "messageCount");
+  const name = optionalString(record, "name");
+  const persisted = parseOptionalBoolean(record["persisted"], "persisted");
+  const project = requireRecord(record["project"]);
+  const workspace = requireRecord(record["workspace"]);
+  const branch = optionalString(workspace, "branch");
+  return {
+    id: requireString(record, "id"), cwd: requireString(record, "cwd"), firstMessage: requireString(record, "firstMessage"), created, modified, messageCount, runtimeStatus, displayStatus, needsAttention: requireBoolean(record, "needsAttention"),
+    project: { id: requireString(project, "id"), name: requireString(project, "name") },
+    workspace: { id: requireString(workspace, "id"), label: requireString(workspace, "label"), isMain: requireBoolean(workspace, "isMain"), ...(branch === undefined ? {} : { branch }) },
+    ...(name === undefined ? {} : { name }), ...(persisted === undefined ? {} : { persisted }),
+  };
+}
+
+function dashboardRuntimeStatus(value: unknown): SessionDashboardRuntimeStatus {
+  if (value === "active" || value === "idle" || value === "error") return value;
+  throw new Error("Invalid dashboard runtime status");
+}
+
+function dashboardDisplayStatus(value: unknown): SessionDashboardDisplayStatus {
+  if (value === "waiting" || value === "running" || value === "errored" || value === "idle") return value;
+  throw new Error("Invalid dashboard display status");
+}
+
+function requireFiniteNonNegativeNumber(record: Record<string, unknown>, key: string): number {
+  const value = requireNumber(record, key);
+  if (!Number.isSafeInteger(value) || value < 0) throw new Error(`Expected non-negative safe-integer number field: ${key}`);
+  return value;
+}
+
+function requireIsoTimestamp(record: Record<string, unknown>, key: string): string {
+  const value = requireString(record, key);
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime()) || date.toISOString() !== value) throw new Error(`Expected ISO timestamp field: ${key}`);
+  return value;
 }
 
 export function parsePiWebConfigResponse(value: unknown): PiWebConfigResponse {

@@ -37,6 +37,7 @@ describe("route helpers", () => {
     installWindow("http://localhost/app?machine=remote&project=p1&workspace=w1&session=s1&tool=git&view=files&core.workspace.files--file=src%2Fmain.ts&core.workspace.git--diff=README.md");
 
     expect(readRoute()).toEqual({
+      page: "workspace",
       machineId: "remote",
       projectId: "p1",
       workspaceId: "w1",
@@ -44,6 +45,15 @@ describe("route helpers", () => {
       tool: "core:workspace.git",
       view: "core:workspace.files",
     });
+  });
+
+  it("reads and writes the dashboard page without changing workspace deep-link fields", () => {
+    const { pushed } = installWindow("http://localhost/app?project=p1&workspace=w1&session=s1");
+    expect(readRoute().page).toBe("workspace");
+    writeRoute({ page: "dashboard", machineId: "remote", projectId: "p1", workspaceId: "w1", sessionId: "s1", tool: undefined, view: "chat" });
+    expect(pushed[0]).toContain("page=dashboard");
+    expect(pushed[0]).toContain("project=p1");
+    expect(pushed[0]).toContain("session=s1");
   });
 
   it("ignores unsupported tool and view values", () => {

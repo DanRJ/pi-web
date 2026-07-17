@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PI_WEB_CAPABILITIES } from "../../../shared/capabilities";
 import type { PiWebConfigValues, TerminalCommandRun, Workspace } from "../../../shared/apiTypes";
-import { configApi, filesApi, machinesApi, piPackagesApi, piWebApi, pluginsApi, sessionsApi, terminalsApi, workspacesApi } from "./clients";
+import { configApi, dashboardApi, filesApi, machinesApi, piPackagesApi, piWebApi, pluginsApi, sessionsApi, terminalsApi, workspacesApi } from "./clients";
 
 const workspace: Workspace = {
   id: "w/1",
@@ -46,6 +46,19 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+});
+
+describe("dashboard API", () => {
+  it("passes the dashboard load signal through to fetch", async () => {
+    const fetchMock = stubJsonFetch({ machines: [] });
+    const controller = new AbortController();
+
+    await dashboardApi.dashboard(controller.signal);
+
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(fetchCall(fetchMock, 0)[0]).toBe("https://pi.example.test/api/session-dashboard");
+    expect(fetchCall(fetchMock, 0)[1]).toMatchObject({ cache: "no-store", signal: controller.signal });
+  });
 });
 
 describe("machine-scoped runtime API", () => {

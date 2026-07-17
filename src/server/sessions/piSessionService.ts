@@ -29,6 +29,12 @@ import { computeEditPreview, type EditPreviewResult } from "./editPreview.js";
 import { attachmentsToInlineImages, saveAttachmentsToWorkspace } from "./attachmentService.js";
 import { parsePromptAttachments } from "../../shared/promptAttachments.js";
 import type { SavedPromptAttachment, SessionBulkArchiveResponse, SessionBulkDeleteArchivedResponse, SessionBulkFailure, SessionBulkMutationRef } from "../../shared/apiTypes.js";
+import {
+  deriveSessionDashboardDisplayStatus,
+  deriveSessionDashboardRuntimeStatus,
+  type SessionDashboardSessionSummary,
+  type SessionDashboardSnapshotResponse,
+} from "../../shared/sessionDashboard.js";
 import type { SessionRouteLookup, SessionRouteRef, SessionRouteService } from "./sessionService.js";
 import { ExtensionUiBroker } from "./extensionUiBroker.js";
 import { createAskOptionsToolDefinition } from "./askOptionsTool.js";
@@ -56,6 +62,21 @@ const noopLogger: PiSessionLogger = { info() { /* no-op */ } };
 
 function noop(): void {
   // Intentionally empty default unsubscribe callback.
+}
+
+async function mapWithConcurrency<T, R>(items: readonly T[], limit: number, map: (item: T) => Promise<R>): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  const entries = items.entries();
+  const worker = async (): Promise<void> => {
+    for (;;) {
+      const entry = entries.next();
+      if (entry.done === true) return;
+      const [index, item] = entry.value;
+      results[index] = await map(item);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, () => worker()));
+  return results;
 }
 
 function spawnTargetError(decision: Extract<SpawnTargetDecision, { allowed: false }>): Error {
@@ -468,6 +489,9 @@ export class PiSessionService implements SessionRouteService {
         notify: (sessionId, notification) => {
           this.events.publish(sessionId, { type: "extension-ui.notify", notification });
         },
+        attention: (sessionId, needsAttention) => {
+          this.events.publishRealtime({ type: "session.attention", sessionId, needsAttention });
+        },
       },
     });
     // Subsessions are a beta capability gated behind their own flag, and they
@@ -601,6 +625,60 @@ export class PiSessionService implements SessionRouteService {
       .map((record) => clientSessionFromArchivedRecord(record, sessionsById.get(record.sessionId)))
       .filter(isDefined);
     return [...unarchivedSessions, ...archivedSessions];
+  }
+
+  /**
+   * Read-only dashboard snapshot. It only lists persisted metadata and inspects
+   * already-active runtimes; it never calls getOrOpen, binds extensions, or
+   * performs archive migration.
+   */
+  async sessionSummaries(cwds: readonly string[]): Promise<SessionDashboardSnapshotResponse> {
+    const uniqueCwds = [...new Set(cwds.map(canonicalizeStoredCwd))];
+    const [archivedRecords, listedByCwd] = await Promise.all([
+      this.archiveStore.list(),
+      mapWithConcurrency(uniqueCwds, 8, async (cwd) => [cwd, await this.sessionManager.list(cwd)] as const),
+    ]);
+    const archivedIds = new Set(archivedRecords.map((record) => `${canonicalizeStoredCwd(record.cwd)}\u0000${record.sessionId}`));
+    const pendingAttention = this.extensionUi.pendingCountsBySession();
+    const summaries: SessionDashboardSessionSummary[] = [];
+
+    for (const [cwd, entries] of listedByCwd) {
+      const listedIds = new Set(entries.map((entry) => entry.id));
+      for (const entry of entries) {
+        if (archivedIds.has(`${cwd}\u0000${entry.id}`)) continue;
+        summaries.push(this.sessionDashboardSummary({
+          id: entry.id,
+          cwd,
+          ...(entry.name === undefined ? {} : { name: entry.name }),
+          firstMessage: entry.firstMessage,
+          created: entry.created.toISOString(),
+          modified: entry.modified.toISOString(),
+          messageCount: entry.messageCount,
+          persisted: true,
+        }, this.activeForLookup({ id: entry.id, cwd })?.runtime.session, pendingAttention));
+      }
+
+      // Transient sessions have no session-manager entry, but an existing
+      // runtime can still be shown safely without opening anything.
+      for (const active of this.active.values()) {
+        const session = active.runtime.session;
+        if (!cwdPathsEqual(active.runtime.cwd, cwd) || listedIds.has(session.sessionId) || archivedIds.has(`${cwd}\u0000${session.sessionId}`)) continue;
+        const timestamp = this.now().toISOString();
+        summaries.push(this.sessionDashboardSummary({
+          id: session.sessionId,
+          cwd,
+          ...(session.sessionName === undefined ? {} : { name: session.sessionName }),
+          firstMessage: firstUserMessagePreview(session.messages),
+          created: timestamp,
+          modified: timestamp,
+          messageCount: session.messages.length,
+          persisted: sessionFileExists(session.sessionFile),
+        }, session, pendingAttention));
+      }
+    }
+
+    summaries.sort((left, right) => right.modified.localeCompare(left.modified) || left.id.localeCompare(right.id) || left.cwd.localeCompare(right.cwd));
+    return { sessions: summaries };
   }
 
   async start(cwd: string, options: StartSessionOptions = {}): Promise<ClientSession> {
@@ -2022,6 +2100,26 @@ export class PiSessionService implements SessionRouteService {
     this.events.publishGlobal({ type: "activity.update", activity });
   }
 
+  private sessionDashboardSummary(
+    session: Pick<SessionDashboardSessionSummary, "id" | "cwd" | "name" | "firstMessage" | "created" | "modified" | "messageCount" | "persisted">,
+    active: PiAgentSession | undefined,
+    pendingAttention: ReadonlyMap<string, number>,
+  ): SessionDashboardSessionSummary {
+    const status = active === undefined ? undefined : this.statusFromSession(active);
+    const activity = this.activities.get(session.id);
+    const snapshot = {
+      ...(status === undefined ? {} : { status }),
+      ...(activity === undefined ? {} : { activity: { sessionId: session.id, ...activity } }),
+      pendingExtensionUi: (pendingAttention.get(session.id) ?? 0) > 0,
+    };
+    return {
+      ...session,
+      runtimeStatus: deriveSessionDashboardRuntimeStatus(snapshot),
+      displayStatus: deriveSessionDashboardDisplayStatus(snapshot),
+      needsAttention: snapshot.pendingExtensionUi,
+    };
+  }
+
   private statusFromSession(session: PiAgentSession): ClientSessionStatus {
     const stats = session.getSessionStats();
     const model = session.model === undefined ? undefined : modelToClientModel(session.model);
@@ -2493,6 +2591,22 @@ function queuedMessagesFromSession(session: PiAgentSession, extraQueuedMessages:
     ...session.getFollowUpMessages().map((text) => ({ kind: "followUp" as const, text })),
     ...extraQueuedMessages,
   ];
+}
+
+/** Content-only fallback for transient cards; it inspects the already-live message array. */
+function firstUserMessagePreview(messages: readonly unknown[]): string {
+  for (const message of messages) {
+    if (!isRecord(message) || message["role"] !== "user") continue;
+    const content = message["content"];
+    const text = typeof content === "string"
+      ? content
+      : Array.isArray(content)
+        ? content.filter(isRecord).filter((part) => part["type"] === "text").map((part) => stringValue(part["text"])).join(" ")
+        : "";
+    const compact = text.replace(/\s+/gu, " ").trim();
+    if (compact !== "") return compact.length <= 160 ? compact : `${compact.slice(0, 159)}…`;
+  }
+  return "";
 }
 
 function userTextMessage(text: string): { role: "user"; content: string } {

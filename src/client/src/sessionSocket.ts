@@ -139,9 +139,19 @@ function isGlobalSessionEvent(event: unknown): event is GlobalSessionEvent {
   return type === "status.update" || type === "activity.update" || type === "session.name" || type === "session.created";
 }
 
+function isSessionAttentionEvent(event: unknown): boolean {
+  return eventType(event) === "session.attention"
+    && typeof event === "object"
+    && event !== null
+    && "sessionId" in event
+    && typeof event.sessionId === "string"
+    && "needsAttention" in event
+    && typeof event.needsAttention === "boolean";
+}
+
 function isRealtimeEvent(event: unknown): event is RealtimeEvent {
   const type = eventType(event);
-  return isGlobalSessionEvent(event) || type === "terminal.created" || type === "terminal.exited" || type === "terminal.closed" || type === "workspace.activity";
+  return isGlobalSessionEvent(event) || isSessionAttentionEvent(event) || type === "terminal.created" || type === "terminal.exited" || type === "terminal.closed" || type === "workspace.activity";
 }
 
 function eventType(event: unknown): string {

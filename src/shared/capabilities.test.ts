@@ -30,6 +30,16 @@ describe("PI WEB capabilities", () => {
     })).toContain(PI_WEB_CAPABILITIES.sessionsPersistedState);
   });
 
+  it("requires web and session daemon support for read-only session snapshots", () => {
+    const summary = PI_WEB_CAPABILITIES.sessionsSummarySnapshot;
+    expect(WEB_RUNTIME_CAPABILITIES).toContain(summary);
+    expect(SESSIOND_RUNTIME_CAPABILITIES).toContain(summary);
+    expect(effectivePiWebCapabilities({
+      web: { available: true, capabilities: [summary] },
+      sessiond: { available: true, capabilities: [summary] },
+    })).toContain(summary);
+  });
+
   it("requires web and session daemon support for server-side queue clearing", () => {
     const clearQueue = PI_WEB_CAPABILITIES.sessionsClearQueue;
     expect(WEB_RUNTIME_CAPABILITIES).toContain(clearQueue);

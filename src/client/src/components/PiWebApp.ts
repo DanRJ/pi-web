@@ -1,11 +1,12 @@
 import { LitElement, html } from "lit";
 import { customElement, query, state } from "lit/decorators.js";
-import { configApi, effectiveWorkspaceUploadFolder, sessionsApi, terminalsApi, workspacesApi, workspaceEffectiveUploadFolder, type Machine, type MachineHealth, type PiWebConfigValues, type PiWebShortcutConfig, type Project, type RealtimeEvent, type SessionCleanupExecuteResponse, type SessionCleanupPreviewResponse, type SessionCleanupRequest, type SessionInfo, type TerminalCommandRun, type TerminalUiEvent, type Workspace } from "../api";
+import { configApi, dashboardApi, effectiveWorkspaceUploadFolder, sessionsApi, terminalsApi, workspacesApi, workspaceEffectiveUploadFolder, type LocalSessionDashboardSessionSummary, type Machine, type MachineHealth, type PiWebConfigValues, type PiWebShortcutConfig, type Project, type RealtimeEvent, type SessionCleanupExecuteResponse, type SessionCleanupPreviewResponse, type SessionCleanupRequest, type SessionInfo, type TerminalCommandRun, type TerminalUiEvent, type Workspace } from "../api";
 import type { AppAction } from "../actions";
 import { initialAppState, type AppState } from "../appState";
 import { isSessionActive } from "../../../shared/activity";
 import { PI_WEB_CAPABILITIES, supportsPiWebCapability } from "../../../shared/capabilities";
 import { ActivityController } from "../controllers/activityController";
+import { DashboardController, type DashboardControllerState } from "../controllers/dashboardController";
 import { AuthController } from "../controllers/authController";
 import { FileExplorerController } from "../controllers/fileExplorerController";
 import { GitController } from "../controllers/gitController";
@@ -36,7 +37,7 @@ import { mobileDestinationFallback, mobileDestinationFromMainView, type MobileDe
 import { NavigationSectionsController, type NavigationSection } from "../appShell/navigationState";
 import { PanelCollapseController, mainViewClass } from "../appShell/panelCollapseController";
 import { MODERNIST_NAVIGATION_PANEL_DEFAULT_WIDTH, PanelResizeController, type PanelResizeConstraints, type ResizablePanelSide } from "../appShell/panelResizeController";
-import { readRoute, writeRoute, type AppRoute } from "../route";
+import { readRoute, writeRoute, type AppRoute, type TopLevelPage } from "../route";
 import { readSettingsSection, writeSettingsSection, type SettingsSection } from "../settingsRoute";
 import { applyActiveShortcutPreferences } from "../shortcutPreferences";
 import { createTerminalCommandRunsRuntime } from "../runtime/terminalRuntime";
@@ -51,6 +52,7 @@ import type { ChatView } from "./ChatView";
 import "./PromptEditor";
 import type { PromptEditor } from "./PromptEditor";
 import "./StatusBar";
+import "./SessionDashboard";
 import "./AppSessionHeader";
 import "./CommandPicker";
 import "./ActionPalette";
@@ -112,6 +114,13 @@ export class PiWebApp extends LitElement {
     (patch) => { this.setState(patch); },
     () => { this.updateUrl(); },
     new SessionStorageSessionSelectionMemory(),
+  );
+  @state() private topLevelPage: TopLevelPage = readRoute().page ?? "workspace";
+  @state() private dashboardState: DashboardControllerState = { dashboard: undefined, loading: false, error: undefined };
+  private readonly dashboard = new DashboardController(
+    () => this.dashboardState,
+    (dashboardState) => { this.dashboardState = dashboardState; },
+    { load: (signal) => dashboardApi.dashboard(signal) },
   );
   private readonly activity = new ActivityController(
     () => this.state,
@@ -209,6 +218,12 @@ export class PiWebApp extends LitElement {
   private settingsFocusReturnTarget: HTMLElement | undefined;
   private readonly onPopState = () => void this.withChatScrollTransition(async () => {
     this.restoreSettingsRoute();
+    const route = readRoute();
+    this.topLevelPage = route.page ?? "workspace";
+    if (this.topLevelPage === "dashboard") {
+      void this.dashboard.refresh();
+      return;
+    }
     await this.restoreRoute(false);
   });
   private readonly onPageShow = () => {
@@ -261,6 +276,7 @@ export class PiWebApp extends LitElement {
     this.keyboard.reset();
     this.auth.dispose();
     this.sessions.dispose();
+    this.dashboard.dispose();
     this.realtime.close();
     this.closeMachineActivitySockets();
     this.git.dispose();
@@ -287,11 +303,16 @@ export class PiWebApp extends LitElement {
   private async loadProjectsAndRestoreRoute() {
     this.restoreSettingsRoute();
     const route = readRoute();
+    this.topLevelPage = route.page ?? "workspace";
     await this.machines.loadMachines(route.machineId);
     const effectiveRoute = this.routeForSelectedMachine(route);
     const initialRouteMachineHealth = this.state.machineStatuses[effectiveRoute.machineId ?? "local"];
     if (effectiveRoute !== route) this.replaceRouteAndClearWorkspaceQuery(effectiveRoute);
     await this.projects.loadProjects();
+    if (this.topLevelPage === "dashboard") {
+      void this.dashboard.refresh();
+      return;
+    }
     await this.withChatScrollTransition(() => this.restoreRouteFor(effectiveRoute, false));
     if (this.shouldDeferRemoteRouteRestore(effectiveRoute, initialRouteMachineHealth)) this.deferRemoteRouteRestore(effectiveRoute);
     else {
@@ -638,6 +659,7 @@ export class PiWebApp extends LitElement {
   private updateUrl(options?: { replace?: boolean | undefined }) {
     this.rememberCurrentMachineNavigation();
     writeRoute({
+      page: this.topLevelPage,
       machineId: this.state.selectedMachine?.id,
       projectId: this.state.selectedProject?.id,
       workspaceId: this.state.selectedWorkspace?.id,
@@ -758,6 +780,7 @@ export class PiWebApp extends LitElement {
   }
 
   private selectMainView(view: AppState["mainView"]) {
+    if (this.topLevelPage === "dashboard") this.leaveDashboard();
     if (view !== "navigation" && view !== "chat") {
       this.openWorkspaceTool(view);
       return;
@@ -767,8 +790,85 @@ export class PiWebApp extends LitElement {
     this.git.updatePolling();
   }
 
+  private openDashboard(): void {
+    if (this.topLevelPage === "dashboard") return;
+    this.rememberCurrentMachineNavigation();
+    this.topLevelPage = "dashboard";
+    this.updateUrl();
+    void this.dashboard.refresh();
+  }
+
+  /** Return to the already-mounted workspace surface without inventing a new session route. */
+  private leaveDashboard(destination?: MobileDestination): void {
+    if (this.topLevelPage !== "dashboard") return;
+    this.topLevelPage = "workspace";
+    if (destination === "chat") this.setState({ mainView: "chat" });
+    else if (destination === "sessions") this.setState({ mainView: "navigation" });
+    else if (destination === "tools") this.setState({ mainView: this.state.workspaceTool });
+    this.updateUrl();
+  }
+
+  private dashboardSessionHref(session: LocalSessionDashboardSessionSummary, machineId: string): string {
+    const url = new URL(window.location.href);
+    for (const key of ["page", "machine", "project", "workspace", "session", "tool", "view"]) url.searchParams.delete(key);
+    for (const namespace of [FILES_ROUTE_NAMESPACE, GIT_ROUTE_NAMESPACE, TERMINAL_ROUTE_NAMESPACE]) {
+      for (const key of [...url.searchParams.keys()]) {
+        if (key.startsWith(`${namespace}--`)) url.searchParams.delete(key);
+      }
+    }
+    if (machineId !== "local") url.searchParams.set("machine", machineId);
+    url.searchParams.set("project", session.project.id);
+    url.searchParams.set("workspace", session.workspace.id);
+    url.searchParams.set("session", session.id);
+    url.searchParams.set("view", "chat");
+    return `${url.pathname}${url.search}${url.hash}`;
+  }
+
+  private async openDashboardSession(session: LocalSessionDashboardSessionSummary, machineId: string): Promise<void> {
+    // Do not navigate away from the dashboard until every target identity has restored.
+    // Selecting a stale card can mutate workspace/session state, so retain the canonical
+    // route/surface first and put it back on any failed target restore.
+    const previous = machineNavigationSnapshotFromState(this.state);
+    const route: AppRoute = { machineId, projectId: session.project.id, workspaceId: session.workspace.id, sessionId: session.id, tool: this.state.workspaceTool, view: "chat" };
+    try {
+      await this.withChatScrollTransition(() => this.restoreRouteFor(route, false));
+      const selected = this.state;
+      const restored = (selected.selectedMachine?.id ?? "local") === machineId
+        && selected.selectedProject?.id === session.project.id
+        && selected.selectedWorkspace?.id === session.workspace.id
+        && selected.selectedSession?.id === session.id;
+      if (!restored) throw new Error("That session is no longer available.");
+    } catch (error) {
+      try {
+        await this.withChatScrollTransition(() => this.restoreRouteFor(routeFromMachineNavigationSnapshot(previous), false, previous.surface, previous.view));
+      } catch {
+        // Preserve the original restoration failure; the existing route restorer did all it could.
+      }
+      if (previous.projectId === undefined && previous.workspaceId === undefined && previous.sessionId === undefined) {
+        // An empty dashboard route has no selection to restore. Never leave a failed card's partial target behind.
+        this.workspaces.clearSelection({ updateUrl: false });
+      }
+      this.dashboard.reportError(`Could not open session: ${errorMessage(error)}`);
+      return;
+    }
+    this.topLevelPage = "workspace";
+    this.updateUrl();
+  }
+
+  private async startDashboardSession(): Promise<void> {
+    if (this.state.selectedWorkspace === undefined) {
+      this.leaveDashboard("sessions");
+      if (this.appShell.isMobileNavigationLayout) this.mobileDestination = "sessions";
+      this.setState({ error: "Select a workspace in Sessions before starting a new session." });
+      return;
+    }
+    this.leaveDashboard("chat");
+    await this.startSessionAndOpenChat();
+  }
+
   private selectMobileDestination(destination: MobileDestination): void {
     const next = mobileDestinationFallback(destination, this.mobileDestinationAvailability());
+    if (this.topLevelPage === "dashboard") this.leaveDashboard(next === "sessions" ? undefined : next);
     if (next === "settings") {
       this.openSettings();
       return;
@@ -829,6 +929,7 @@ export class PiWebApp extends LitElement {
   }
 
   private openSettings(section: SettingsSection = "general"): void {
+    if (this.topLevelPage === "dashboard") this.leaveDashboard();
     this.settingsFocusReturnTarget = deepActiveElement(this.renderRoot);
     this.reconcileSettingsRoute(section, { focusDialog: true });
     writeSettingsSection(section);
@@ -908,6 +1009,7 @@ export class PiWebApp extends LitElement {
         const workspace = this.state.selectedWorkspace;
         if (workspace !== undefined) void this.refreshActiveTerminals(workspace);
         void this.refreshWorkspaceActivity();
+        if (this.topLevelPage === "dashboard") this.dashboard.scheduleRefresh();
       },
       selectedMachineId(this.state),
     );
@@ -925,7 +1027,10 @@ export class PiWebApp extends LitElement {
       const socket = new RealtimeSocket();
       socket.connect(
         (event) => { this.handleMachineActivityEvent(machineId, event); },
-        () => { void this.refreshWorkspaceActivity(machineId); },
+        () => {
+          void this.refreshWorkspaceActivity(machineId);
+          if (this.topLevelPage === "dashboard") this.dashboard.scheduleRefresh();
+        },
         machineId,
       );
       this.machineActivitySockets.set(machineId, socket);
@@ -947,14 +1052,16 @@ export class PiWebApp extends LitElement {
 
   private handleMachineActivityEvent(machineId: string, event: RealtimeEvent): void {
     if (event.type === "workspace.activity") this.activity.applyWorkspaceActivity(event.activity, machineId);
+    if (this.topLevelPage === "dashboard") this.dashboard.applyRealtimeEvent(machineId, event);
   }
 
   private handleRealtimeEvent(event: RealtimeEvent): void {
+    if (this.topLevelPage === "dashboard") this.dashboard.applyRealtimeEvent(selectedMachineId(this.state), event);
     if (event.type === "workspace.activity") this.activity.applyWorkspaceActivity(event.activity);
     else if (isTerminalEvent(event)) {
       this.applyTerminalEvent(event);
       if (event.type === "terminal.exited") void this.refreshWorkspaceDeletionRuns();
-    } else this.sessions.applyGlobalEvent(event);
+    } else if (event.type !== "session.attention") this.sessions.applyGlobalEvent(event);
   }
 
   private applyTerminalEvent(event: TerminalUiEvent): void {
@@ -1260,6 +1367,8 @@ export class PiWebApp extends LitElement {
         .canReloadSessions=${this.canReloadSessions()}
         .canCleanupSessions=${this.canCleanupSessions()}
         .authoritativeSessionPersistence=${this.hasAuthoritativeSessionPersistence()}
+        .dashboardActive=${this.topLevelPage === "dashboard"}
+        .onOpenDashboard=${() => { this.openDashboard(); }}
         .archivedDeleteUnavailableMessage=${this.archivedDeleteUnavailableMessage()}
         .cleanupUnavailableMessage=${this.sessionCleanupUnavailableMessage()}
         .collapsible=${true}
@@ -2098,7 +2207,29 @@ export class PiWebApp extends LitElement {
     return html`<app-refresh-control .onReload=${() => { this.hardReloadApp(); }}></app-refresh-control>`;
   }
 
+  private renderDashboardPage() {
+    return html`
+      <div class=${`${this.panelCollapse.shellClass(this.state.mainView)} dashboard-page mobile-destination-${this.mobileDestination}`} style=${this.panelResize.shellStyle({ navigation: this.resizablePanelConstraints("navigation"), workspace: this.resizablePanelConstraints("workspace") })}>
+        <aside id="navigation-panel">${this.appShell.isMobileNavigationLayout ? null : this.renderNavigationPanel()}</aside>
+        ${this.renderNavigationPanelEdgeControl()}
+        <main class="dashboard-main" tabindex="-1" aria-label="Session dashboard">
+          <session-dashboard
+            .dashboard=${this.dashboardState.dashboard}
+            .loading=${this.dashboardState.loading}
+            .error=${this.dashboardState.error}
+            .hrefForSession=${(session: LocalSessionDashboardSessionSummary, machineId: string) => this.dashboardSessionHref(session, machineId)}
+            .onOpenSession=${(session: LocalSessionDashboardSessionSummary, machineId: string) => this.openDashboardSession(session, machineId)}
+            .onNewSession=${() => this.startDashboardSession()}
+            .onRetry=${() => this.dashboard.refresh()}
+          ></session-dashboard>
+        </main>
+        ${this.renderMobileDestinationTabs()}
+      </div>
+    `;
+  }
+
   override render() {
+    if (this.topLevelPage === "dashboard") return this.renderDashboardPage();
     const state = this.state;
     return html`
       <div class=${`${this.panelCollapse.shellClass(state.mainView)} mobile-destination-${this.mobileDestination}`} style=${this.panelResize.shellStyle({ navigation: this.resizablePanelConstraints("navigation"), workspace: this.resizablePanelConstraints("workspace") })}>

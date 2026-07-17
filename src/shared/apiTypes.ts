@@ -10,6 +10,7 @@ export const PI_WEB_CAPABILITIES = {
   sessionsReload: "sessions.reload",
   sessionsClearQueue: "sessions.clearQueue",
   sessionsPersistedState: "sessions.persistedState",
+  sessionsSummarySnapshot: "sessions.summarySnapshot",
   promptAttachments: "prompt.attachments",
   workspaceFileSuggestions: "workspace.fileSuggestions",
   piPackagesManage: "piPackages.manage",
@@ -679,6 +680,13 @@ export interface WorkspaceActivityUiEvent {
   activity: WorkspaceActivity;
 }
 
+/** Content-free global signal for dashboard-style attention indicators. */
+export interface SessionAttentionUiEvent {
+  type: "session.attention";
+  sessionId: string;
+  needsAttention: boolean;
+}
+
 export interface CommandOption {
   value: string;
   label: string;
@@ -721,4 +729,4 @@ export type SessionUiEvent =
   | { type: "pi.event"; eventType: string };
 
 export type GlobalSessionEvent = Extract<SessionUiEvent, { type: "status.update" | "activity.update" | "session.name" | "session.created" }>;
-export type RealtimeEvent = GlobalSessionEvent | TerminalUiEvent | WorkspaceActivityUiEvent;
+export type RealtimeEvent = GlobalSessionEvent | TerminalUiEvent | WorkspaceActivityUiEvent | SessionAttentionUiEvent;
