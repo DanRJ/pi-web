@@ -29,4 +29,10 @@ The mobile slice is complete at `<=767px`. It replaces the former horizontal mai
 
 Sessions reuses the canonical machine, project, workspace, and session navigation panel. Tools keeps one workspace-panel instance and exposes every visible core or plugin workspace contribution through its accessible tool sub-navigation, so terminals and extension panels do not restart merely because a user changes mobile destinations. Settings opens the existing dialog and returns focus to the prior available destination when closed. Desktop and tablet retain their existing session/workspace layouts.
 
+### Keyboard viewport behavior
+
+Mobile browsers that support it are asked to resize content for interactive widgets. The app shell also mirrors the visual viewport's height and layout-coordinate bottom into inherited CSS properties while it is connected. This covers browsers where the layout viewport still extends behind the keyboard and iOS cases where the visual viewport is panned (`offsetTop + height`). The fixed mobile shell uses that visible bottom with a `100dvh` fallback, so the existing bottom destination navigation remains in normal grid flow above the keyboard.
+
+The composer is not fixed or conditionally hidden. On mobile, the bridge supplies a bounded editor height from the visible viewport; CodeMirror continues to scroll while its non-shrinking action row retains coarse-pointer targets. Safe-area padding remains a separate CSS concern and is not included in the keyboard measurement. Desktop, standalone PWA, and browsers without `VisualViewport` retain their existing layout, with `innerHeight` as the bridge fallback when available.
+
 The next Modernist shell slice is the dashboard; it must not be folded into the mobile navigation work.

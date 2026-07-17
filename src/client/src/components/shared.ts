@@ -57,6 +57,11 @@ export const appStyles = css`
   @media (display-mode: standalone), (display-mode: fullscreen), (display-mode: minimal-ui) {
     :host { --pi-app-safe-area-bottom: env(safe-area-inset-bottom); }
   }
+  /* The bridge supplies visual-viewport coordinates only while connected. The
+     fallback keeps desktop, PWA, and browsers without VisualViewport unchanged. */
+  @media (max-width: 767px) {
+    :host { height: var(--pi-visible-viewport-bottom, var(--pi-visible-viewport-height, 100dvh)); }
+  }
   .shell { --navigation-panel-size: var(--pi-navigation-panel-size, 340px); --workspace-panel-size: minmax(360px, 42vw); --navigation-panel-width: var(--navigation-panel-size); --workspace-panel-width: var(--workspace-panel-size); display: grid; grid-template-columns: var(--navigation-panel-width) 1px minmax(320px, 1fr) 1px var(--workspace-panel-width); height: 100%; min-height: 0; }
   aside { grid-column: 1; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
   aside app-navigation-panel { flex: 1 1 auto; min-height: 0; }
@@ -126,7 +131,7 @@ export const appStyles = css`
     main.workspace-view { overflow: hidden; }
   }
   @media (max-width: 767px) {
-    .shell { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
+    .shell { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; height: 100%; }
     aside, .navigation-panel-edge, .workspace-panel-edge { display: none; }
     main { grid-column: 1; grid-row: 1; }
     .shell > workspace-panel { grid-column: 1; grid-row: 1; display: none; min-height: 0; }
@@ -527,10 +532,18 @@ export const promptEditorStyles = css`
     .select-model { max-width: min(58vw, 260px); }
     button { padding: 6px 8px; }
   }
+  @media (max-width: 767px) {
+    /* Keep the controls in normal flow: a smaller, scrolling editor gives the
+       non-shrinking action row and the destination nav room above the IME. */
+    .actions { flex: 0 0 auto; flex-shrink: 0; min-height: 2.75rem; }
+    .icon-button, .editor-attach { width: 2.75rem; height: 2.75rem; min-width: 2.75rem; min-height: 2.75rem; }
+    textarea, .markdown-editor .cm-editor { min-height: 3.75rem; max-height: var(--pi-mobile-editor-max-height, 13.75rem); }
+    .markdown-editor .cm-scroller { max-height: var(--pi-mobile-editor-max-height, 13.75rem); }
+    .markdown-editor .cm-content { padding-right: 3.5rem; }
+  }
   @media (max-width: 430px) {
     .compact-status { flex-basis: 170px; font-size: 11px; }
     .select-model { max-width: 48vw; }
     button { padding: 5px 7px; }
-    .icon-button { width: 34px; height: 34px; }
   }
 `;
