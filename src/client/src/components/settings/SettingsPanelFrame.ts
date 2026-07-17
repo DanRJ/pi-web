@@ -114,7 +114,7 @@ export class SettingsPanelFrame extends LitElement {
     .content { display: grid; gap: 14px; min-width: 0; }
     .content ::slotted(*) { min-width: 0; }
 
-    @media (max-width: 760px) {
+    @media (max-width: 767px) {
       .section-heading { display: grid; gap: 12px; }
       .heading-actions { justify-self: start; }
     }

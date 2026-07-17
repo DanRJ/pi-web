@@ -32,6 +32,7 @@ import { PluginRegistry, installPluginRuntimeScope, installWorkspacePanelScope }
 import { queryNamespace, readNamespacedString, setNamespacedQueryKey } from "../namespacedQueryArgs";
 import { AppShellController } from "../appShell/appShellController";
 import { BrowserResumeController } from "../appShell/browserResumeController";
+import { mobileDestinationFallback, mobileDestinationFromMainView, type MobileDestination } from "../appShell/mobileDestination";
 import { NavigationSectionsController, type NavigationSection } from "../appShell/navigationState";
 import { PanelCollapseController, mainViewClass } from "../appShell/panelCollapseController";
 import { MODERNIST_NAVIGATION_PANEL_DEFAULT_WIDTH, PanelResizeController, type PanelResizeConstraints, type ResizablePanelSide } from "../appShell/panelResizeController";
@@ -57,11 +58,13 @@ import "./AuthDialog";
 import "./ProjectDialog";
 import "./MachineDialog";
 import type { MachineDialogSubmit } from "./MachineDialog";
-import "./SettingsDialog";
+import { isFocusableElement, type SettingsDialog } from "./SettingsDialog";
 import "./WorkspacePanel";
 import type { WorkspacePanelEmptyState } from "./WorkspacePanel";
 import "./appShell/AppContextBar";
 import "./appShell/AppMobileMainTabs";
+import "./appShell/AppMobileDestinationTabs";
+import type { AppMobileDestinationTabs } from "./appShell/AppMobileDestinationTabs";
 import type { AppMobileMainTab, AppMobileMainTabIcon } from "./appShell/AppMobileMainTabs";
 import { shouldShowMachinesSection, type AppNavigationPanel, type NavigationFocusTarget } from "./appShell/AppNavigationPanel";
 import "./appShell/AppPanelEdgeControl";
@@ -100,6 +103,9 @@ export class PiWebApp extends LitElement {
   @query("app-navigation-panel") private navigationPanel?: AppNavigationPanel;
   @query("#navigation-panel") private navigationPanelFrame?: HTMLElement;
   @query("#workspace-panel") private workspacePanelFrame?: HTMLElement;
+  @query("main") private mainContent?: HTMLElement;
+  @query("app-mobile-destination-tabs") private mobileDestinationTabs?: AppMobileDestinationTabs;
+  @query("settings-dialog") private settingsDialog?: SettingsDialog;
 
   private readonly sessions = new SessionController(
     () => this.state,
@@ -155,7 +161,9 @@ export class PiWebApp extends LitElement {
   private readonly activeTerminalIds = new Set<string>();
   private readonly machineNavigation = new SessionStorageMachineNavigationMemory();
   private readonly terminalSelection = new SessionStorageTerminalSelectionMemory();
-  private readonly appShell = new AppShellController(this);
+  private readonly appShell = new AppShellController(this, {
+    onMobileNavigationLayoutChange: (isMobile) => { this.handleMobileNavigationLayoutChange(isMobile); },
+  });
   private readonly browserResume = new BrowserResumeController({
     onResumeSignal: () => { this.handleBrowserResumeSignal(); },
     refreshAfterResume: () => this.refreshAfterBrowserResume(),
@@ -196,11 +204,15 @@ export class PiWebApp extends LitElement {
   @state() private settingsSection: SettingsSection | undefined = readSettingsSection();
   @state() private shortcutConfig: PiWebShortcutConfig = {};
   @state() private workspaceUploadDefaultFolder = effectiveWorkspaceUploadFolder(undefined);
+  @state() private mobileDestination: MobileDestination = "chat";
+  private mobileDestinationBeforeSettings: MobileDestination | undefined;
+  private settingsFocusReturnTarget: HTMLElement | undefined;
   private readonly onPopState = () => void this.withChatScrollTransition(async () => {
     this.restoreSettingsRoute();
     await this.restoreRoute(false);
   });
   private readonly onPageShow = () => {
+    this.restoreSettingsRoute();
     this.appShell.repairViewportPosition();
     this.retryPendingRemoteRouteRestoreSoon();
   };
@@ -228,6 +240,7 @@ export class PiWebApp extends LitElement {
     window.addEventListener("popstate", this.onPopState);
     window.addEventListener("pageshow", this.onPageShow);
     this.browserResume.connect();
+    this.restoreSettingsRoute();
     window.addEventListener("keydown", this.onKeyDown, GLOBAL_SHORTCUT_LISTENER_OPTIONS);
     this.systemLightThemeMedia?.addEventListener("change", this.onSystemLightThemeChange);
     this.applyPreferredTheme(false);
@@ -264,6 +277,7 @@ export class PiWebApp extends LitElement {
     if (!patchChangesState(this.state, patch)) return;
     const previous = this.state;
     this.state = { ...this.state, ...patch };
+    this.ensureMobileDestination();
     this.handleActivityTransition(previous, this.state);
     this.handleWorkspaceChange(previous, this.state);
     this.handleMachineChange(previous, this.state);
@@ -288,6 +302,7 @@ export class PiWebApp extends LitElement {
   }
 
   private handleBrowserResumeSignal(): void {
+    this.restoreSettingsRoute();
     this.appShell.repairViewportPosition();
     this.schedulePiWebStatusRefresh();
     this.retryPendingRemoteRouteRestoreSoon();
@@ -397,6 +412,11 @@ export class PiWebApp extends LitElement {
         selectedDiffPath: routeSurface.selectedDiffPath,
         selectedTerminalId: routeSurface.selectedTerminalId,
       });
+      if (this.appShell.isMobileNavigationLayout) {
+        const destination = mobileDestinationFallback(mobileDestinationFromMainView(restoredMainView ?? route.view ?? this.defaultRouteView()), this.mobileDestinationAvailability());
+        if (this.settingsSection === undefined) this.mobileDestination = destination;
+        else this.mobileDestinationBeforeSettings = destination;
+      }
       if (route.projectId === undefined || route.projectId === "") {
         if (updateUrl) this.updateUrl();
         return;
@@ -668,6 +688,7 @@ export class PiWebApp extends LitElement {
 
   private openWorkspaceTool(tool: QualifiedContributionId) {
     if (tool === "core:workspace.terminal") this.terminalAutoStartWorkspaceId = this.state.selectedWorkspace?.id;
+    if (this.appShell.isMobileNavigationLayout) this.mobileDestination = "tools";
     this.setState({ workspaceTool: tool, mainView: tool });
     this.updateUrl();
     this.refreshSelectedWorkspaceTool(tool);
@@ -746,23 +767,121 @@ export class PiWebApp extends LitElement {
     this.git.updatePolling();
   }
 
+  private selectMobileDestination(destination: MobileDestination): void {
+    const next = mobileDestinationFallback(destination, this.mobileDestinationAvailability());
+    if (next === "settings") {
+      this.openSettings();
+      return;
+    }
+    this.mobileDestination = next;
+  }
+
+  private mobileDestinationAvailability() {
+    return {
+      hasSession: this.state.selectedSession !== undefined,
+      hasTools: this.state.selectedWorkspace !== undefined && this.visibleWorkspacePanels().length > 0,
+    };
+  }
+
+  private mobileDestinationForCurrentSurface(): MobileDestination {
+    return mobileDestinationFallback(mobileDestinationFromMainView(this.state.mainView), this.mobileDestinationAvailability());
+  }
+
+  private ensureMobileDestination(): void {
+    if (!this.appShell.isMobileNavigationLayout) return;
+    if (this.settingsSection !== undefined) {
+      if (this.mobileDestination !== "settings") this.mobileDestinationBeforeSettings ??= mobileDestinationFallback(this.mobileDestination, this.mobileDestinationAvailability());
+      this.mobileDestination = "settings";
+      return;
+    }
+    if (this.mobileDestination === "settings") {
+      this.mobileDestination = mobileDestinationFallback(this.mobileDestinationBeforeSettings ?? this.mobileDestinationForCurrentSurface(), this.mobileDestinationAvailability());
+      this.mobileDestinationBeforeSettings = undefined;
+      return;
+    }
+    this.mobileDestination = mobileDestinationFallback(this.mobileDestination, this.mobileDestinationAvailability());
+  }
+
+  private handleMobileNavigationLayoutChange(isMobile: boolean): void {
+    if (isMobile) {
+      if (this.settingsSection !== undefined) {
+        this.mobileDestinationBeforeSettings = this.mobileDestinationForCurrentSurface();
+        this.mobileDestination = "settings";
+        return;
+      }
+      this.mobileDestination = this.mobileDestinationForCurrentSurface();
+      return;
+    }
+
+    // Settings is a URL-backed dialog rather than a desktop main view.
+    if (this.settingsSection !== undefined) return;
+    const mainView = this.mainViewForMobileDestination();
+    if (mainView === this.state.mainView) return;
+    this.setState({ mainView });
+    this.updateUrl({ replace: true });
+    this.git.updatePolling();
+  }
+
+  private mainViewForMobileDestination(): AppState["mainView"] {
+    if (this.mobileDestination === "sessions") return "navigation";
+    if (this.mobileDestination === "tools") return this.state.workspaceTool;
+    return "chat";
+  }
+
   private openSettings(section: SettingsSection = "general"): void {
-    this.settingsSection = section;
+    this.settingsFocusReturnTarget = deepActiveElement(this.renderRoot);
+    this.reconcileSettingsRoute(section, { focusDialog: true });
     writeSettingsSection(section);
   }
 
   private closeSettings(): void {
-    this.settingsSection = undefined;
+    this.reconcileSettingsRoute(undefined, { restoreFocus: true });
     writeSettingsSection(undefined);
   }
 
   private navigateSettings(section: SettingsSection): void {
-    this.settingsSection = section;
+    this.reconcileSettingsRoute(section);
     writeSettingsSection(section);
   }
 
   private restoreSettingsRoute(): void {
-    this.settingsSection = readSettingsSection();
+    this.reconcileSettingsRoute(readSettingsSection(), { restoreFocus: this.settingsSection !== undefined && readSettingsSection() === undefined });
+  }
+
+  /** Keeps the URL-backed dialog and the independent mobile destination in one state transition. */
+  private reconcileSettingsRoute(section: SettingsSection | undefined, options: { focusDialog?: boolean; restoreFocus?: boolean } = {}): void {
+    const wasOpen = this.settingsSection !== undefined;
+    this.settingsSection = section;
+    if (this.appShell.isMobileNavigationLayout) {
+      if (section !== undefined) {
+        if (this.mobileDestination !== "settings") this.mobileDestinationBeforeSettings = mobileDestinationFallback(this.mobileDestination, this.mobileDestinationAvailability());
+        else this.mobileDestinationBeforeSettings ??= this.mobileDestinationForCurrentSurface();
+        this.mobileDestination = "settings";
+      } else if (wasOpen || this.mobileDestination === "settings") {
+        this.mobileDestination = mobileDestinationFallback(this.mobileDestinationBeforeSettings ?? this.mobileDestinationForCurrentSurface(), this.mobileDestinationAvailability());
+        this.mobileDestinationBeforeSettings = undefined;
+      }
+    }
+    if (section !== undefined && options.focusDialog === true) {
+      void this.updateComplete.then(() => { this.settingsDialog?.focusInitialControl(); });
+    }
+    if (section === undefined && options.restoreFocus === true) this.restoreSettingsFocus();
+  }
+
+  private restoreSettingsFocus(): void {
+    const target = this.settingsFocusReturnTarget;
+    this.settingsFocusReturnTarget = undefined;
+    void this.updateComplete.then(() => {
+      if (target?.isConnected === true && isFocusableElement(target)) {
+        target.focus();
+        return;
+      }
+      if (this.appShell.isMobileNavigationLayout) {
+        this.mobileDestinationTabs?.focusSelected();
+        return;
+      }
+      this.mainContent?.focus();
+    });
   }
 
   private handleWorkspaceChange(previous: AppState, next: AppState) {
@@ -907,6 +1026,7 @@ export class PiWebApp extends LitElement {
         .emptyState=${emptyState}
         .tool=${this.state.workspaceTool}
         .panels=${this.visibleWorkspacePanels()}
+        .mobileTools=${this.appShell.isMobileNavigationLayout}
         .onSelectTool=${(tool: QualifiedContributionId) => { this.openWorkspaceTool(tool); }}
       ></workspace-panel>
     `;
@@ -1177,7 +1297,10 @@ export class PiWebApp extends LitElement {
   }
 
   private openNavigationSection(section: NavigationSection): void {
-    this.navigationSections.open(section, () => { this.selectMainView("navigation"); });
+    this.navigationSections.open(section, () => {
+      if (this.appShell.isMobileNavigationLayout) this.selectMobileDestination("sessions");
+      else this.selectMainView("navigation");
+    });
   }
 
   private async selectNavigationItem(section: NavigationSection, nextTarget: NavigationFocusTarget, action: () => Promise<void>): Promise<void> {
@@ -1225,7 +1348,7 @@ export class PiWebApp extends LitElement {
       return;
     }
     this.panelCollapse.expandNavigationPanel();
-    if (this.appShell.isMobileNavigationLayout) this.selectMainView("navigation");
+    if (this.appShell.isMobileNavigationLayout) this.selectMobileDestination("sessions");
     this.navigationSections.expand(section);
     await this.updateComplete;
     await nextFrame();
@@ -1233,7 +1356,8 @@ export class PiWebApp extends LitElement {
   }
 
   private async focusChatComposer(): Promise<void> {
-    if (this.state.mainView !== "chat") this.selectMainView("chat");
+    if (this.appShell.isMobileNavigationLayout) this.selectMobileDestination("chat");
+    else if (this.state.mainView !== "chat") this.selectMainView("chat");
     await this.updateComplete;
     await nextFrame();
     this.promptEditor?.focusInput();
@@ -1944,6 +2068,16 @@ export class PiWebApp extends LitElement {
     `;
   }
 
+  private renderMobileDestinationTabs() {
+    return html`
+      <app-mobile-destination-tabs
+        .selected=${this.mobileDestination}
+        .toolsAvailable=${this.mobileDestinationAvailability().hasTools}
+        .onSelect=${(destination: MobileDestination) => { this.selectMobileDestination(destination); }}
+      ></app-mobile-destination-tabs>
+    `;
+  }
+
   private mobileMainTabs(): AppMobileMainTab[] {
     return [
       { id: "navigation", label: "Sessions", icon: "navigation", className: "navigation-tab" },
@@ -1967,10 +2101,10 @@ export class PiWebApp extends LitElement {
   override render() {
     const state = this.state;
     return html`
-      <div class=${this.panelCollapse.shellClass(state.mainView)} style=${this.panelResize.shellStyle({ navigation: this.resizablePanelConstraints("navigation"), workspace: this.resizablePanelConstraints("workspace") })}>
+      <div class=${`${this.panelCollapse.shellClass(state.mainView)} mobile-destination-${this.mobileDestination}`} style=${this.panelResize.shellStyle({ navigation: this.resizablePanelConstraints("navigation"), workspace: this.resizablePanelConstraints("workspace") })}>
         <aside id="navigation-panel">${this.appShell.isMobileNavigationLayout ? null : this.renderNavigationPanel()}</aside>
         ${this.renderNavigationPanelEdgeControl()}
-        <main class=${mainViewClass(state.mainView)}>
+        <main class=${mainViewClass(state.mainView)} tabindex="-1" aria-label="PI WEB workspace">
           ${this.renderContextBar()}
           ${this.renderMobileMainTabs()}
           ${state.error ? html`<div class="error">${state.error}</div>` : null}
@@ -1996,6 +2130,7 @@ export class PiWebApp extends LitElement {
         </main>
         ${this.renderWorkspacePanelEdgeControl()}
         ${this.renderWorkspacePanel()}
+        ${this.renderMobileDestinationTabs()}
         ${state.actionPaletteOpen ? html`<action-palette .actions=${this.getActions()} .onRun=${(action: AppAction) => { this.setState({ actionPaletteOpen: false }); this.runAction(action); }} .onCancel=${() => { this.setState({ actionPaletteOpen: false }); }}></action-palette>` : null}
         ${state.projectDialogOpen ? html`<project-dialog .machineId=${selectedMachineId(state)} .onSubmit=${(path: string, create: boolean) => this.projects.addProject(path, create)} .onCancel=${() => { this.setState({ projectDialogOpen: false }); }}></project-dialog>` : null}
         ${state.machineDialogOpen ? html`<machine-dialog .error=${state.error} .onSubmit=${(input: MachineDialogSubmit) => this.submitMachineDialog(input)} .onCancel=${() => { this.setState({ machineDialogOpen: false }); }}></machine-dialog>` : null}
@@ -2007,6 +2142,22 @@ export class PiWebApp extends LitElement {
   }
 
   static override styles = appStyles;
+}
+
+function deepActiveElement(root: ParentNode | undefined): HTMLElement | undefined {
+  if (root === undefined) return undefined;
+  let active = activeElementIn(root);
+  while (active?.shadowRoot?.activeElement != null) active = active.shadowRoot.activeElement;
+  return active instanceof HTMLElement ? active : undefined;
+}
+
+function activeElementIn(root: ParentNode): Element | null {
+  if (hasActiveElement(root)) return root.activeElement;
+  return root.ownerDocument?.activeElement ?? null;
+}
+
+function hasActiveElement(root: ParentNode): root is ParentNode & { activeElement: Element | null } {
+  return "activeElement" in root;
 }
 
 function createPluginRegistry(): PluginRegistry {

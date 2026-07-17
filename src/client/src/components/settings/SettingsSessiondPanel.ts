@@ -253,7 +253,7 @@ export class SettingsSessiondPanel extends LitElement {
     dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
     .muted { color: var(--pi-muted); }
 
-    @media (max-width: 760px) {
+    @media (max-width: 767px) {
       .effective-card dl > div { grid-template-columns: minmax(0, 1fr); gap: 3px; }
     }
   `;

@@ -63,6 +63,15 @@ export class SettingsDialog extends LitElement {
     void this.loadPackagesForTarget();
   }
 
+  override firstUpdated(): void {
+    this.focusInitialControl();
+  }
+
+  /** Lets the shell hand focus into this modal after it has rendered. */
+  focusInitialControl(): void {
+    this.renderRoot.querySelector<HTMLButtonElement>(".close-button")?.focus();
+  }
+
   override disconnectedCallback(): void {
     if (this.savedMessageTimer !== undefined) window.clearTimeout(this.savedMessageTimer);
     this.savedMessageTimer = undefined;
@@ -638,10 +647,18 @@ export class SettingsDialog extends LitElement {
   }
 
   private handleKeyDown(event: KeyboardEvent): void {
-    if (event.key !== "Escape") return;
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      this.onClose?.();
+      return;
+    }
+    if (event.key !== "Tab") return;
+    const focusable = dialogFocusableElements(this.renderRoot);
+    if (focusable.length === 0) return;
+    const next = nextDialogFocus(focusable, deepActiveElement(this.renderRoot), event.shiftKey);
     event.preventDefault();
-    event.stopPropagation();
-    this.onClose?.();
+    next?.focus();
   }
 
   static override styles = css`
@@ -663,16 +680,69 @@ export class SettingsDialog extends LitElement {
     .settings-nav small { color: var(--pi-muted); }
     .settings-content { min-width: 0; min-height: 0; overflow: auto; padding: 18px; }
 
-    @media (max-width: 760px) {
+    @media (max-width: 767px) {
       .backdrop { padding: 0; place-items: stretch; }
       .settings-shell { width: 100%; height: 100dvh; max-height: none; min-height: 0; border: 0; border-radius: 0; }
       .settings-header { padding: max(12px, env(safe-area-inset-top)) 12px 12px; }
+      .close-button { width: 2.75rem; height: 2.75rem; }
       .settings-body { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
       .settings-nav { display: flex; gap: 8px; padding: 8px; border-right: 0; border-bottom: var(--pi-divider-width, 1px) solid var(--pi-border); overflow-x: auto; overflow-y: hidden; }
       .settings-nav button { flex: 0 0 auto; width: auto; min-width: 128px; margin: 0; }
       .settings-content { padding: 14px 12px calc(18px + env(safe-area-inset-bottom)); }
     }
   `;
+}
+
+const FOCUSABLE_SELECTOR = "button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [contenteditable]:not([contenteditable='false']), [tabindex]:not([tabindex^='-'])";
+
+interface FocusTraversalRoot {
+  readonly children: ArrayLike<FocusTraversalNode>;
+}
+
+interface FocusTraversalNode extends FocusTraversalRoot {
+  readonly shadowRoot: FocusTraversalRoot | null;
+  matches(selectors: string): boolean;
+}
+
+export interface FocusableElement extends FocusTraversalNode {
+  focus(options?: FocusOptions): void;
+}
+
+/** Returns keyboard-focusable controls, including controls in nested custom-element shadow roots. */
+export function dialogFocusableElements(root: FocusTraversalRoot): FocusableElement[] {
+  const focusable: FocusableElement[] = [];
+  const visit = (node: FocusTraversalRoot): void => {
+    for (const element of Array.from(node.children)) {
+      if (isFocusableElement(element)) focusable.push(element);
+      if (element.shadowRoot !== null) visit(element.shadowRoot);
+      visit(element);
+    }
+  };
+  visit(root);
+  return focusable;
+}
+
+export function isFocusableElement(element: FocusTraversalNode): element is FocusableElement {
+  return "focus" in element && typeof element.focus === "function" && element.matches(FOCUSABLE_SELECTOR);
+}
+
+export function nextDialogFocus(focusable: readonly FocusableElement[], current: FocusableElement | undefined, shiftKey: boolean): FocusableElement | undefined {
+  if (focusable.length === 0) return undefined;
+  const index = current === undefined ? -1 : focusable.indexOf(current);
+  return shiftKey
+    ? focusable[index <= 0 ? focusable.length - 1 : index - 1]
+    : focusable[index === focusable.length - 1 ? 0 : index + 1];
+}
+
+function deepActiveElement(root: ParentNode): HTMLElement | undefined {
+  let active = activeElementIn(root);
+  while (active?.shadowRoot?.activeElement != null) active = active.shadowRoot.activeElement;
+  return active instanceof HTMLElement ? active : undefined;
+}
+
+function activeElementIn(root: ParentNode): Element | null {
+  if (root instanceof Document || root instanceof ShadowRoot) return root.activeElement;
+  return root instanceof Node ? root.ownerDocument?.activeElement ?? null : null;
 }
 
 function errorMessage(error: unknown): string {

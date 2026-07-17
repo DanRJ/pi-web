@@ -23,4 +23,10 @@ Phase A covers shell chrome: the session header, context bar, mobile main tabs, 
 
 Phase B extends the same structural hooks to the session surface. Chat uses readable transcript sizing, right-aligned user blocks, visually lighter assistant prose, a retained conversation meter/activity dock, and the existing history and reconnect behavior. Tool and extension interactions use flat bordered cards with state semantics; code and diff surfaces use flat dividers and tokenized addition/removal treatments. The composer and status bar remain the real controls owned by the existing controllers, including attachments, queue/steer/stop, drafts, and CodeMirror behavior.
 
-Mobile navigation remains structurally unchanged in this slice: the existing narrow-viewport navigation view, main tabs, chat, and composer layout are preserved. The proposed four-tab bottom shell that relocates Chat, Sessions, Tools, and Settings is explicitly deferred to the next slice. Phase B deliberately does not relocate navigation or create unsupported composer modes; it keeps the chat and composer usable within the existing narrow-viewport and safe-area layout.
+## Mobile shell
+
+The mobile slice is complete at `<=767px`. It replaces the former horizontal main-tab strip with a safe-area-aware bottom tablist in this fixed order: Chat, Sessions, Tools, Settings. The compact session header remains the real session title/status/theme control; Chat retains the existing transcript and composer rather than introducing a second prompt model.
+
+Sessions reuses the canonical machine, project, workspace, and session navigation panel. Tools keeps one workspace-panel instance and exposes every visible core or plugin workspace contribution through its accessible tool sub-navigation, so terminals and extension panels do not restart merely because a user changes mobile destinations. Settings opens the existing dialog and returns focus to the prior available destination when closed. Desktop and tablet retain their existing session/workspace layouts.
+
+The next Modernist shell slice is the dashboard; it must not be folded into the mobile navigation work.

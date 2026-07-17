@@ -82,7 +82,7 @@ export const appStyles = css`
   .context-chip.empty { border-style: dashed; color: var(--pi-muted); }
   .context-kind { display: none; }
   .context-value { min-width: 0; overflow: visible; text-overflow: clip; white-space: nowrap; }
-  app-mobile-main-tabs { display: none; }
+  app-mobile-main-tabs, app-mobile-destination-tabs { display: none; }
   .mobile-tabs-frame { position: relative; display: none; flex: 0 0 auto; min-width: 0; border-bottom: var(--pi-divider-width, 1px) solid var(--pi-border); background: var(--pi-bg); }
   .mobile-tabs-frame::before, .mobile-tabs-frame::after { content: ""; position: absolute; top: 0; bottom: 0; z-index: 2; width: 20px; opacity: 0; pointer-events: none; transition: opacity .15s ease; }
   .mobile-tabs-frame::before { left: 0; background: linear-gradient(90deg, color-mix(in srgb, var(--pi-shadow-strong) 55%, transparent) 0%, transparent 100%); }
@@ -125,22 +125,37 @@ export const appStyles = css`
     main.workspace-view .empty { display: none; }
     main.workspace-view { overflow: hidden; }
   }
-  @media (max-width: 760px) {
-    .shell { grid-template-columns: minmax(0, 1fr); }
-    aside, .navigation-panel-edge { display: none; }
-    main, .shell.workspace-view > workspace-panel { grid-column: 1; }
-    .context-bar { display: flex; }
-    .mobile-navigation-tab { display: block; }
-    main.navigation-view chat-view, main.navigation-view prompt-editor, main.navigation-view status-bar,
-    main.navigation-view .empty { display: none; }
-    main.navigation-view .mobile-navigation-panel { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
-    main.navigation-view .mobile-navigation-panel app-navigation-panel { flex: 1 1 auto; min-height: 0; }
-    main.navigation-view .mobile-navigation-panel project-list,
-    main.navigation-view .mobile-navigation-panel workspace-list,
-    main.navigation-view .mobile-navigation-panel session-list { flex: 1 1 auto; max-height: none; min-height: 0; overflow: hidden; }
-    main.navigation-view .mobile-navigation-panel project-list[collapsed],
-    main.navigation-view .mobile-navigation-panel workspace-list[collapsed],
-    main.navigation-view .mobile-navigation-panel session-list[collapsed] { flex: 0 0 auto; min-height: auto; overflow: hidden; }
+  @media (max-width: 767px) {
+    .shell { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
+    aside, .navigation-panel-edge, .workspace-panel-edge { display: none; }
+    main { grid-column: 1; grid-row: 1; }
+    .shell > workspace-panel { grid-column: 1; grid-row: 1; display: none; min-height: 0; }
+    .shell.mobile-destination-chat > workspace-panel,
+    .shell.mobile-destination-sessions > workspace-panel,
+    .shell.mobile-destination-settings > workspace-panel { display: none; }
+    .shell.mobile-destination-tools > main { display: none; }
+    .shell.mobile-destination-tools > workspace-panel { display: flex; }
+    /* Chat is an independent mobile destination: keep its transcript and composer visible after selecting a workspace tool. */
+    .shell.mobile-destination-chat main.workspace-view chat-view { display: flex; }
+    .shell.mobile-destination-chat main.workspace-view prompt-editor,
+    .shell.mobile-destination-chat main.workspace-view status-bar,
+    .shell.mobile-destination-chat main.workspace-view .empty { display: block; }
+    app-mobile-main-tabs, .context-bar { display: none; }
+    app-mobile-destination-tabs { grid-column: 1; grid-row: 2; display: block; min-width: 0; }
+    .mobile-navigation-panel { display: none; }
+    .shell.mobile-destination-sessions main app-session-header,
+    .shell.mobile-destination-sessions main chat-view,
+    .shell.mobile-destination-sessions main prompt-editor,
+    .shell.mobile-destination-sessions main status-bar,
+    .shell.mobile-destination-sessions main .empty { display: none; }
+    .shell.mobile-destination-sessions .mobile-navigation-panel { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+    .shell.mobile-destination-sessions .mobile-navigation-panel app-navigation-panel { flex: 1 1 auto; min-height: 0; }
+    .shell.mobile-destination-sessions .mobile-navigation-panel project-list,
+    .shell.mobile-destination-sessions .mobile-navigation-panel workspace-list,
+    .shell.mobile-destination-sessions .mobile-navigation-panel session-list { flex: 1 1 auto; max-height: none; min-height: 0; overflow: hidden; }
+    .shell.mobile-destination-sessions .mobile-navigation-panel project-list[collapsed],
+    .shell.mobile-destination-sessions .mobile-navigation-panel workspace-list[collapsed],
+    .shell.mobile-destination-sessions .mobile-navigation-panel session-list[collapsed] { flex: 0 0 auto; min-height: auto; overflow: hidden; }
   }
   status-bar { flex: 0 0 auto; }
   chat-view { flex: 1 1 auto; min-height: 0; overflow: hidden; }
@@ -149,7 +164,7 @@ export const appStyles = css`
   button:focus-visible { outline: var(--pi-focus-ring-width, 2px) solid var(--pi-accent); outline-offset: var(--pi-focus-ring-offset, 2px); }
   .empty { margin: auto; color: var(--pi-muted); }
   .error { padding: 10px 16px; border-bottom: var(--pi-divider-width, 1px) solid var(--pi-border); color: var(--pi-danger); }
-  @media (max-width: 760px) { main.navigation-view app-session-header { display: none; } }
+  @media (max-width: 767px) { .shell.mobile-destination-sessions main app-session-header { display: none; } }
 `;
 
 export const workspacePanelStyles = css`
@@ -180,7 +195,8 @@ export const workspacePanelStyles = css`
   .empty-state h2 { margin: 0; color: var(--pi-text); font-size: 15px; line-height: 1.3; }
   .empty-state p { margin: 0; line-height: 1.45; }
   small, .muted { color: var(--pi-muted); }
-  @media (max-width: 1180px) { header { display: none; } }
+  @media (max-width: 1180px) { :host(:not([mobileTools])) header { display: none; } }
+  @media (max-width: 767px) { :host([mobileTools]) .workspace-header-strip { min-height: 2.75rem; padding: 0.25rem 0.5rem; } :host([mobileTools]) button { min-height: 2.75rem; } }
   .workspace-label { min-width: 0; display: inline-flex; align-items: baseline; gap: 5px; max-width: 100%; overflow: hidden; white-space: nowrap; }
   .workspace-label-base, .workspace-label-item, .workspace-label-render { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
   .workspace-label-item, .workspace-label-render, .workspace-label-separator { color: var(--pi-muted); }

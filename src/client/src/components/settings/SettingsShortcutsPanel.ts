@@ -392,7 +392,7 @@ export class SettingsShortcutsPanel extends LitElement {
     .unassigned { color: var(--pi-muted); font-size: 12px; }
     .recording-hint { color: var(--pi-accent); font-size: 12px; }
 
-    @media (max-width: 760px) {
+    @media (max-width: 767px) {
       .prompt-enter-card { grid-template-columns: minmax(0, 1fr); }
       .shortcut-row { grid-template-columns: minmax(0, 1fr); align-items: start; }
       .shortcut-status, .shortcut-actions { justify-content: flex-start; }
