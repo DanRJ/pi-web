@@ -1,7 +1,5 @@
 import type { AuthProviderOption, AuthProviderStatus, AuthType } from "../../shared/apiTypes.js";
 
-const OAUTH_ONLY_PROVIDERS = new Set(["github-copilot", "openai-codex"]);
-
 /** Minimal provider shape needed to enumerate login/logout options. */
 interface AuthProviderInfo {
   id: string;
@@ -29,7 +27,6 @@ export interface AuthProviderRuntime {
 
 export function getLoginProviderOptions(runtime: AuthProviderRuntime, authType?: AuthType): AuthProviderOption[] {
   const providers = runtime.getProviders();
-  const oauthProviderIds = new Set(providers.filter((provider) => provider.auth.oauth !== undefined).map((provider) => provider.id));
 
   const options: AuthProviderOption[] = [];
   for (const provider of providers) {
@@ -44,7 +41,6 @@ export function getLoginProviderOptions(runtime: AuthProviderRuntime, authType?:
 
   for (const provider of providers) {
     if (provider.auth.apiKey === undefined) continue;
-    if (!isApiKeyLoginProvider(provider.id, oauthProviderIds)) continue;
     options.push({
       id: provider.id,
       name: provider.name,
@@ -68,13 +64,6 @@ export async function getLogoutProviderOptions(runtime: AuthProviderRuntime): Pr
     });
   }
   return filterAndSort(options);
-}
-
-export function isApiKeyLoginProvider(providerId: string, oauthProviderIds: ReadonlySet<string>): boolean {
-  if (OAUTH_ONLY_PROVIDERS.has(providerId)) return false;
-  if (providerId === "anthropic") return true;
-  if (oauthProviderIds.has(providerId)) return false;
-  return true;
 }
 
 function filterAndSort(options: AuthProviderOption[], authType?: AuthType): AuthProviderOption[] {
