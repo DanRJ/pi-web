@@ -13,4 +13,8 @@ export interface RouteTarget {
   workspaceId?: string | undefined;
   sessionId?: string | undefined;
   updateUrl?: boolean | undefined;
+  /** Select only the explicit workspace, never a remembered fallback. */
+  selectWorkspace?: boolean | undefined;
+  /** Do not revive a remembered session after selecting a workspace. */
+  selectSession?: boolean | undefined;
 }

@@ -1,6 +1,9 @@
 import { LitElement, css, html, nothing } from "lit";
-import { customElement, property, state } from "lit/decorators.js";
+import { customElement, property, query, state } from "lit/decorators.js";
+import type { Project, Workspace } from "../api";
 import type { FederatedSessionDashboardResponse, LocalSessionDashboardSessionSummary, SessionDashboardMachineOutcome } from "../../../shared/sessionDashboard";
+import "./DashboardNewSessionChooser";
+import type { DashboardNewSessionChooser } from "./DashboardNewSessionChooser";
 
 export type DashboardFilter = "all" | "attention";
 
@@ -9,10 +12,16 @@ export class SessionDashboard extends LitElement {
   @property({ attribute: false }) dashboard: FederatedSessionDashboardResponse | undefined;
   @property({ type: Boolean }) loading = false;
   @property({ type: String }) error: string | undefined;
+  @property({ type: String }) selectionError = "";
   @property({ attribute: false }) hrefForSession: (session: LocalSessionDashboardSessionSummary, machineId: string) => string = () => "#";
   @property({ attribute: false }) onOpenSession?: (session: LocalSessionDashboardSessionSummary, machineId: string) => void | Promise<void>;
-  @property({ attribute: false }) onNewSession?: () => void | Promise<void>;
+  @property({ attribute: false }) projects: Project[] = [];
+  @property({ type: String }) selectedProjectId: string | undefined;
+  @property({ type: String }) selectedWorkspaceId: string | undefined;
+  @property({ attribute: false }) loadWorkspaces: (project: Project) => Promise<Workspace[]> = () => Promise.resolve([]);
+  @property({ attribute: false }) onStartNewSession?: (workspace: Workspace) => Promise<void>;
   @property({ attribute: false }) onRetry?: () => void | Promise<void>;
+  @query("dashboard-new-session-chooser") private newSessionChooser?: DashboardNewSessionChooser;
   @state() private filter: DashboardFilter = "all";
   @state() private now = Date.now();
   private timer: number | undefined;
@@ -40,7 +49,7 @@ export class SessionDashboard extends LitElement {
             <p class="eyebrow">SESSION DASHBOARD</p>
             <h1 id="dashboard-heading">Sessions <span aria-label="${String(cards.length)} sessions">${cards.length}</span></h1>
           </div>
-          <button class="new-session" type="button" @click=${() => { void this.onNewSession?.(); }}>New session</button>
+          <button class="new-session" type="button" @click=${(event: Event) => { void this.newSessionChooser?.openChooser(event.currentTarget instanceof HTMLElement ? event.currentTarget : undefined); }}>New session</button>
         </header>
         <div class="controls" aria-label="Dashboard filters">
           <div role="group" aria-label="Session filter">
@@ -50,8 +59,16 @@ export class SessionDashboard extends LitElement {
           <button class="refresh" type="button" ?disabled=${this.loading} @click=${() => { void this.onRetry?.(); }}>${this.loading ? "Refreshing…" : "Refresh"}</button>
         </div>
         ${this.error === undefined ? nothing : html`<div class="notice error" role="alert">Could not refresh sessions: ${this.error} <button type="button" @click=${() => { void this.onRetry?.(); }}>Retry</button></div>`}
+        ${this.selectionError === "" ? nothing : html`<div class="notice error" role="alert">Could not change selection: ${this.selectionError}</div>`}
         ${partial.length === 0 ? nothing : html`<div class="notice partial" role="status">${partial.map((outcome) => `${outcome.machine.name}: ${outcome.outcome}${outcome.error === undefined ? "" : ` — ${outcome.error}`}`).join(" · ")}</div>`}
         ${this.loading && this.dashboard === undefined ? html`<p class="state" role="status">Loading session dashboard…</p>` : visible.length === 0 ? html`<p class="state">${this.filter === "attention" ? "No sessions need your attention." : "No sessions are available yet."}</p>` : html`<div class="grid">${visible.map(({ session, machineId, machineName }) => this.renderCard(session, machineId, machineName))}</div>`}
+        <dashboard-new-session-chooser
+          .projects=${this.projects}
+          .selectedProjectId=${this.selectedProjectId}
+          .selectedWorkspaceId=${this.selectedWorkspaceId}
+          .loadWorkspaces=${this.loadWorkspaces}
+          .onStart=${this.onStartNewSession}
+        ></dashboard-new-session-chooser>
       </section>
     `;
   }

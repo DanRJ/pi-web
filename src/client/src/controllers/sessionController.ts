@@ -51,6 +51,7 @@ interface PendingSessionStart {
   workspaceId: string;
   cwd: string;
   machineId: string;
+  updateUrl: boolean;
   session: ClientPendingStartSessionInfo;
   queuedSends: QueuedPendingSessionSend[];
   discarded: boolean;
@@ -154,18 +155,25 @@ export class SessionController {
     this.deselectSession({ forgetRememberedSelection: true });
   }
 
-  async startSession() {
+  /**
+   * Optimistically inserts a temporary session as before, then resolves whether
+   * the backend creation itself succeeded. Callers that need to navigate only
+   * after creation (such as the dashboard chooser) can await the boolean.
+   */
+  async startSession(options?: { updateUrl?: boolean | undefined }): Promise<boolean> {
     const workspace = this.getState().selectedWorkspace;
-    if (!workspace) return;
+    if (!workspace) return false;
     const machineId = selectedMachineId(this.getState());
-    const pending = this.createPendingSessionStart(workspace, machineId);
+    const pending = this.createPendingSessionStart(workspace, machineId, options?.updateUrl !== false);
     this.pendingSessionStarts.set(pending.tempId, pending);
-    this.insertAndSelectPendingSession(pending.session);
+    this.insertAndSelectPendingSession(pending.session, pending.updateUrl);
     try {
       const session = await this.api.startSession(workspace.path, machineId);
       await this.resolvePendingSessionStart(pending.tempId, session);
+      return !pending.discarded;
     } catch (error) {
       this.failPendingSessionStart(pending.tempId, error);
+      return false;
     }
   }
 
@@ -888,7 +896,7 @@ export class SessionController {
     });
   }
 
-  private createPendingSessionStart(workspace: Workspace, machineId: string): PendingSessionStart {
+  private createPendingSessionStart(workspace: Workspace, machineId: string, updateUrl: boolean): PendingSessionStart {
     const tempId = `pending-session-${String(++this.pendingSessionStartSeq)}-${Date.now().toString(36)}`;
     const now = new Date().toISOString();
     const session: ClientPendingStartSessionInfo = {
@@ -904,12 +912,13 @@ export class SessionController {
       clientPendingStart: true,
       machineId,
     };
-    return { tempId, workspaceId: workspace.id, cwd: workspace.path, machineId, session, queuedSends: [], discarded: false };
+    return { tempId, workspaceId: workspace.id, cwd: workspace.path, machineId, updateUrl, session, queuedSends: [], discarded: false };
   }
 
-  private insertAndSelectPendingSession(session: ClientPendingStartSessionInfo): void {
+  private insertAndSelectPendingSession(session: ClientPendingStartSessionInfo, updateUrl: boolean): void {
     const state = this.getState();
     this.selectClientPendingStartSession(session, {
+      updateUrl,
       activity: creatingPendingSessionActivity(session.id),
       sessions: [session, ...state.sessions.filter((candidate) => candidate.id !== session.id)],
     });
@@ -983,7 +992,7 @@ export class SessionController {
     });
     this.applyReleasedCreatedSessions(releasedCreatedSessions, pending.machineId);
     if (wasSelected) {
-      this.updateUrl({ replace: true });
+      if (pending.updateUrl) this.updateUrl({ replace: true });
       await this.selectSession(cachedSession, { updateUrl: false });
     }
     await this.flushQueuedPendingSends(cachedSession, pending.machineId, queuedSends);

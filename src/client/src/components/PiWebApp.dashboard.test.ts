@@ -37,6 +37,69 @@ describe("PiWebApp dashboard transitions", () => {
     expect(Reflect.get(app, "topLevelPage")).toBe("workspace");
   });
 
+  it("lets the browser route win when popstate supersedes a deferred card open", async () => {
+    const app = createApp("?page=dashboard");
+    const original = appState();
+    const browserState = { ...original, selectedWorkspace: workspace("browser"), selectedSession: session("browser") };
+    setState(app, original);
+    Reflect.set(app, "topLevelPage", "dashboard");
+    const cardRestore = deferred<undefined>();
+    Reflect.set(app, "restoreRouteFor", vi.fn(() => cardRestore.promise));
+    const restoreRoute = vi.fn(() => {
+      setState(app, browserState);
+      return Promise.resolve();
+    });
+    Reflect.set(app, "restoreRoute", restoreRoute);
+    const updateUrl = vi.fn();
+    Reflect.set(app, "updateUrl", updateUrl);
+
+    const openingCard = callAsync(app, "openDashboardSession", card("card"), "local");
+    await flush();
+    window.location.search = "?project=project&workspace=browser&session=browser&view=chat";
+    const handler: unknown = Reflect.get(app, "onPopState");
+    if (!isVoidMethod(handler)) throw new Error("Popstate handler unavailable");
+    handler.call(app);
+    await flush();
+    cardRestore.resolve(undefined);
+    await openingCard;
+
+    expect(restoreRoute).toHaveBeenCalledWith(false);
+    expect(Reflect.get(app, "topLevelPage")).toBe("workspace");
+    expect(projectAppState(app)).toMatchObject({ selectedWorkspace: { id: "browser" }, selectedSession: { id: "browser" } });
+    expect(Reflect.get(app, "dashboardState")).toMatchObject({ error: undefined });
+    expect(updateUrl).not.toHaveBeenCalled();
+  });
+
+  it("ignores a stale card completion after a newer card opens", async () => {
+    const app = createApp();
+    const original = appState();
+    setState(app, original);
+    Reflect.set(app, "topLevelPage", "dashboard");
+    const first = deferred<undefined>();
+    const second = deferred<undefined>();
+    const restoreRouteFor = vi.fn((route: { sessionId?: string }) => {
+      if (route.sessionId === "first") return first.promise;
+      return second.promise.then(() => {
+        const project = original.projects[0];
+        if (project === undefined) throw new Error("Expected project");
+        setState(app, { ...original, selectedProject: project, selectedWorkspace: workspace("second"), selectedSession: session("second") });
+      });
+    });
+    Reflect.set(app, "restoreRouteFor", restoreRouteFor);
+
+    const openingFirst = callAsync(app, "openDashboardSession", card("first"), "local");
+    const openingSecond = callAsync(app, "openDashboardSession", card("second"), "local");
+    second.resolve(undefined);
+    await openingSecond;
+    first.resolve(undefined);
+    await openingFirst;
+
+    expect(restoreRouteFor).toHaveBeenCalledTimes(2);
+    expect(Reflect.get(app, "topLevelPage")).toBe("workspace");
+    expect(projectAppState(app)).toMatchObject({ selectedWorkspace: { id: "second" }, selectedSession: { id: "second" } });
+    expect(Reflect.get(app, "dashboardState")).toMatchObject({ error: undefined });
+  });
+
   it("rolls back a stale card restoration and keeps its visible error on the dashboard", async () => {
     const app = createApp();
     const original = appState();
@@ -108,22 +171,181 @@ describe("PiWebApp dashboard transitions", () => {
     expect(Reflect.get(app, "mobileDestination")).toBe("chat");
   });
 
-  it("starts from a retained workspace but returns to Sessions without one", async () => {
-    const retained = createApp();
-    setState(retained, appState());
-    Reflect.set(retained, "topLevelPage", "dashboard");
-    const start = vi.fn(() => Promise.resolve());
-    Reflect.set(retained, "startSessionAndOpenChat", start);
-    await callAsync(retained, "startDashboardSession");
-    expect(start).toHaveBeenCalledOnce();
-    expect(Reflect.get(retained, "topLevelPage")).toBe("workspace");
+  it("starts through the existing session flow only after the dashboard chooser selects its workspace", async () => {
+    const app = createApp();
+    const original = appState();
+    const selectedProject = original.projects[0];
+    if (selectedProject === undefined) throw new Error("Expected project");
+    setState(app, original);
+    Reflect.set(app, "topLevelPage", "dashboard");
+    const chosen = workspace("chosen");
+    const selectWorkspace = vi.fn(() => {
+      setState(app, { ...original, selectedProject, selectedWorkspace: chosen, selectedSession: undefined });
+      return Promise.resolve(true);
+    });
+    Reflect.set(app, "workspaces", { selectWorkspace });
+    const start = vi.fn(() => Promise.resolve(true));
+    Reflect.set(app, "sessions", { startSession: start });
+    const updateUrl = vi.fn();
+    Reflect.set(app, "updateUrl", updateUrl);
 
-    const empty = createApp();
-    setState(empty, { ...initialAppState(), selectedWorkspace: undefined });
-    Reflect.set(empty, "topLevelPage", "dashboard");
-    await callAsync(empty, "startDashboardSession");
-    expect(Reflect.get(empty, "topLevelPage")).toBe("workspace");
-    expect(Reflect.get(empty, "state")).toMatchObject({ mainView: "navigation" });
+    await callAsync(app, "startDashboardSession", chosen);
+
+    expect(selectWorkspace).toHaveBeenCalledWith(chosen, { updateUrl: false, selectSession: false });
+    expect(start).toHaveBeenCalledWith({ updateUrl: false });
+    expect(updateUrl).toHaveBeenCalledOnce();
+    expect(Reflect.get(app, "topLevelPage")).toBe("workspace");
+    expect(Reflect.get(app, "state")).toMatchObject({ selectedWorkspace: { id: "chosen" }, selectedSession: undefined });
+  });
+
+  it("rolls back the retained selection and stays on the dashboard when backend creation fails", async () => {
+    const app = createApp();
+    const original = appState();
+    const chosen = workspace("chosen");
+    setState(app, original);
+    Reflect.set(app, "topLevelPage", "dashboard");
+    Reflect.set(app, "workspaces", { selectWorkspace: vi.fn(() => {
+      setState(app, { ...projectAppState(app), selectedWorkspace: chosen, selectedSession: undefined });
+      return Promise.resolve(true);
+    }) });
+    Reflect.set(app, "sessions", { startSession: vi.fn(() => {
+      setState(app, { ...projectAppState(app), error: "backend unavailable" });
+      return Promise.resolve(false);
+    }) });
+    Reflect.set(app, "restoreRouteFor", () => { setState(app, original); return Promise.resolve(); });
+
+    await expect(callAsync(app, "startDashboardSession", chosen)).rejects.toThrow("backend unavailable");
+
+    expect(Reflect.get(app, "topLevelPage")).toBe("dashboard");
+    expect(projectAppState(app)).toMatchObject({ selectedProject: original.selectedProject, selectedWorkspace: original.selectedWorkspace, selectedSession: original.selectedSession, error: "" });
+  });
+
+  it("selects an explicitly chosen workspace from another project without restoring its remembered session", async () => {
+    const app = createApp();
+    const original = appState();
+    const other = { id: "other", name: "Other", path: "/other", createdAt: "2026-01-01T00:00:00.000Z" };
+    const chosen = { ...workspace("other-workspace"), projectId: other.id, path: "/other" };
+    setState(app, { ...original, projects: [...original.projects, other] });
+    Reflect.set(app, "topLevelPage", "dashboard");
+    const selectProject = vi.fn(() => {
+      setState(app, { ...projectAppState(app), selectedProject: other, selectedWorkspace: chosen, selectedSession: undefined });
+      return Promise.resolve(true);
+    });
+    Reflect.set(app, "workspaces", { selectProject });
+    Reflect.set(app, "sessions", { startSession: vi.fn(() => Promise.resolve(true)) });
+
+    await callAsync(app, "startDashboardSession", chosen);
+
+    expect(selectProject).toHaveBeenCalledWith(other, { workspaceId: chosen.id, selectSession: false, updateUrl: false });
+    expect(projectAppState(app).selectedSession).toBeUndefined();
+    expect(Reflect.get(app, "topLevelPage")).toBe("workspace");
+  });
+
+  it("keeps the dashboard visible when chooser workspace selection fails", async () => {
+    const app = createApp();
+    setState(app, appState());
+    Reflect.set(app, "topLevelPage", "dashboard");
+    Reflect.set(app, "workspaces", { selectWorkspace: vi.fn(() => Promise.resolve(false)) });
+
+    await expect(callAsync(app, "startDashboardSession", workspace("chosen"))).rejects.toThrow("That workspace is no longer available.");
+
+    expect(Reflect.get(app, "topLevelPage")).toBe("dashboard");
+  });
+
+  it("leaves the dashboard after successful desktop project and session navigation", async () => {
+    const projectApp = createApp();
+    const projectState = appState();
+    setState(projectApp, projectState);
+    Reflect.set(projectApp, "topLevelPage", "dashboard");
+    await callAsync(projectApp, "selectNavigationItem", "projects", "workspaces", () => Promise.resolve(), () => projectAppState(projectApp).selectedProject?.id === "project");
+    expect(Reflect.get(projectApp, "topLevelPage")).toBe("workspace");
+    expect(projectAppState(projectApp).mainView).toBe("navigation");
+
+    const sessionApp = createApp();
+    setState(sessionApp, appState());
+    Reflect.set(sessionApp, "topLevelPage", "dashboard");
+    await callAsync(sessionApp, "selectNavigationItem", "sessions", "chat", () => Promise.resolve(), () => projectAppState(sessionApp).selectedSession?.id === "session");
+    expect(Reflect.get(sessionApp, "topLevelPage")).toBe("workspace");
+    expect(projectAppState(sessionApp).mainView).toBe("chat");
+  });
+
+  it("leaves the dashboard through the Sessions mobile destination after workspace navigation", async () => {
+    const app = createApp();
+    setState(app, appState());
+    setMobileLayout(app);
+    Reflect.set(app, "topLevelPage", "dashboard");
+
+    await callAsync(app, "selectNavigationItem", "workspaces", "sessions", () => Promise.resolve(), () => projectAppState(app).selectedWorkspace?.id === "workspace");
+
+    expect(Reflect.get(app, "topLevelPage")).toBe("workspace");
+    expect(Reflect.get(app, "mobileDestination")).toBe("sessions");
+  });
+
+  it.each([
+    ["projects", "workspaces", (state: AppState) => {
+      if (state.selectedProject === undefined) throw new Error("Expected selected project");
+      return { ...state, selectedProject: { ...state.selectedProject, id: "partial-project" } };
+    }],
+    ["workspaces", "sessions", (state: AppState) => ({ ...state, selectedWorkspace: workspace("partial-workspace"), selectedSession: undefined })],
+    ["sessions", "chat", (state: AppState) => ({ ...state, selectedSession: session("partial-session") })],
+  ] as const)("rolls back a failed dashboard %s selection", async (section, target, partial) => {
+    const app = createApp();
+    const original = appState();
+    setState(app, original);
+    Reflect.set(app, "topLevelPage", "dashboard");
+    Reflect.set(app, "restoreRouteFor", () => { setState(app, original); return Promise.resolve(); });
+
+    await callAsync(app, "selectNavigationItem", section, target, () => {
+      setState(app, { ...partial(projectAppState(app)), error: "offline" });
+      return Promise.resolve();
+    }, () => false);
+
+    expect(Reflect.get(app, "topLevelPage")).toBe("dashboard");
+    expect(projectAppState(app)).toMatchObject({ selectedProject: original.selectedProject, selectedWorkspace: original.selectedWorkspace, selectedSession: original.selectedSession, error: "offline" });
+  });
+
+  it("does not let a stale failed dashboard selection clear a newer successful selection", async () => {
+    const app = createApp();
+    setState(app, initialAppState());
+    Reflect.set(app, "topLevelPage", "dashboard");
+    const rollback = deferred<undefined>();
+    const clearSelection = vi.fn();
+    Reflect.set(app, "restoreRouteFor", vi.fn(() => rollback.promise));
+    Reflect.set(app, "workspaces", { clearSelection });
+
+    const failedFirst = callAsync(app, "selectNavigationItem", "projects", "workspaces", () => {
+      setState(app, { ...projectAppState(app), selectedProject: { id: "partial", name: "Partial", path: "/partial", createdAt: "2026-01-01T00:00:00.000Z" }, error: "offline" });
+      return Promise.resolve();
+    }, () => false);
+    await flush();
+
+    const successfulSecond = callAsync(app, "selectNavigationItem", "projects", "workspaces", () => {
+      setState(app, appState());
+      return Promise.resolve();
+    }, () => projectAppState(app).selectedProject?.id === "project");
+    await successfulSecond;
+    rollback.resolve(undefined);
+    await failedFirst;
+
+    expect(clearSelection).not.toHaveBeenCalled();
+    expect(Reflect.get(app, "topLevelPage")).toBe("workspace");
+    expect(projectAppState(app)).toMatchObject({ selectedProject: { id: "project" }, selectedWorkspace: { id: "workspace" }, selectedSession: { id: "session" }, error: "" });
+  });
+
+  it("clears a failed navigation target when the dashboard retained no selection", async () => {
+    const app = createApp();
+    const original = initialAppState();
+    setState(app, original);
+    Reflect.set(app, "topLevelPage", "dashboard");
+    Reflect.set(app, "restoreRouteFor", () => Promise.resolve());
+
+    await callAsync(app, "selectNavigationItem", "projects", "workspaces", () => {
+      setState(app, { ...projectAppState(app), selectedProject: { id: "partial", name: "Partial", path: "/partial", createdAt: "2026-01-01T00:00:00.000Z" }, selectedWorkspace: workspace("partial"), error: "offline" });
+      return Promise.resolve();
+    }, () => false);
+
+    expect(projectAppState(app)).toMatchObject({ selectedProject: undefined, selectedWorkspace: undefined, selectedSession: undefined, error: "offline" });
+    expect(Reflect.get(app, "topLevelPage")).toBe("dashboard");
   });
 });
 
@@ -146,6 +368,12 @@ function workspace(id: string) { return { id, projectId: "project", path: "/repo
 function session(id: string) { return { id, cwd: "/repo", path: `/repo/${id}.jsonl`, created: "2026-01-01T00:00:00.000Z", modified: "2026-01-01T00:00:00.000Z", messageCount: 1, firstMessage: "Open dashboard" }; }
 function card(id: string): LocalSessionDashboardSessionSummary { return { ...session(id), runtimeStatus: "idle", displayStatus: "idle", needsAttention: false, project: { id: "project", name: "Project" }, workspace: { id, label: id, isMain: true } }; }
 function setState(app: PiWebApp, state: AppState): void { if (!Reflect.set(app, "state", state)) throw new Error("Could not set state"); }
+function projectAppState(app: PiWebApp): AppState {
+  const state: unknown = Reflect.get(app, "state");
+  if (!isAppState(state)) throw new Error("App state unavailable");
+  return state;
+}
+function isAppState(value: unknown): value is AppState { return typeof value === "object" && value !== null && "projects" in value && "selectedWorkspace" in value && "mainView" in value; }
 function setMobileLayout(app: PiWebApp): void {
   const shell: unknown = Reflect.get(app, "appShell");
   if (typeof shell !== "object" || shell === null || !("isMobileNavigationLayout" in shell)) throw new Error("App shell unavailable");
@@ -189,3 +417,9 @@ function isVoidMethod(value: unknown): value is { call(thisArg: unknown, ...args
 }
 
 async function flush(): Promise<void> { await Promise.resolve(); await Promise.resolve(); }
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((complete) => { resolve = complete; });
+  return { promise, resolve };
+}
