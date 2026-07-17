@@ -31,8 +31,12 @@ interface AuthChangeContext {
 
 const noopLogger: AuthServiceLogger = { error() { /* no-op */ } };
 
-export function createModelRuntimeForAgentDir(agentDir: string): Promise<ModelRuntime> {
-  return ModelRuntime.create({ authPath: join(agentDir, "auth.json"), modelsPath: join(agentDir, "models.json") });
+export function createModelRuntimeForAgentDir(agentDir: string, allowModelNetwork?: boolean): Promise<ModelRuntime> {
+  return ModelRuntime.create({
+    authPath: join(agentDir, "auth.json"),
+    modelsPath: join(agentDir, "models.json"),
+    ...(allowModelNetwork === undefined ? {} : { allowModelNetwork }),
+  });
 }
 
 export class AuthService {

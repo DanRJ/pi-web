@@ -5,7 +5,7 @@ import { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { InMemoryCredentialStore, type AuthPrompt, type Credential } from "@earendil-works/pi-ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { OAuthFlowState } from "../../shared/apiTypes.js";
-import { AuthService, type AuthChange, type AuthServiceLogger } from "./authService.js";
+import { AuthService, createModelRuntimeForAgentDir, type AuthChange, type AuthServiceLogger } from "./authService.js";
 import { OAuthLoginFlowService } from "./oauthLoginFlowService.js";
 
 const tempDirs: string[] = [];
@@ -251,7 +251,8 @@ describe("AuthService", () => {
 
   it("stores credentials in the configured agent directory", async () => {
     const agentDir = await tempAgentDir();
-    const auth = await AuthService.create({ agentDir });
+    const runtime = await createModelRuntimeForAgentDir(agentDir, false);
+    const auth = await AuthService.create({ runtime });
 
     await auth.saveApiKey("anthropic", "sk-test");
 

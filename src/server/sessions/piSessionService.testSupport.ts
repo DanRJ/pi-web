@@ -79,7 +79,7 @@ export async function seedCredential(store: InMemoryCredentialStore, providerId:
  * behavior (e.g. auth-loss warnings).
  */
 export function createTestModelRuntime(credentials: CredentialStore = new InMemoryCredentialStore()): Promise<ModelRuntime> {
-  return ModelRuntime.create({ credentials });
+  return ModelRuntime.create({ credentials, modelsPath: null, allowModelNetwork: false });
 }
 
 /**

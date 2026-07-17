@@ -2,4 +2,4 @@
 "@jmfederico/pi-web": patch
 ---
 
-Fix the session daemon crashing on startup with Pi (`@earendil-works/pi-coding-agent`) 0.80.8 and newer. Pi removed the `AuthStorage` API in 0.80.8, which caused Pi Web to fail at module load. Authentication, OAuth login, API-key save/logout, provider listing, and the Anthropic subscription warning now run on Pi's new `ModelRuntime` credential APIs. Pi Web now requires Pi `>=0.80.8`.
+Restore session-daemon startup and authentication on supported Pi `>=0.80.8 <0.81` releases by migrating model and credential handling to `ModelRuntime`. Login options now follow each provider's interactive API-key and OAuth capabilities, OAuth prompts retain their input, selection, and device-code semantics, and unsupported multi-step API-key setup fails safely instead of storing malformed credentials. PI WEB now requires Node.js `>=22.19.0`.
