@@ -51,7 +51,7 @@ export class AuthService {
 
   async authProviders(mode: "login" | "logout", authType?: AuthType): Promise<AuthProvidersResponse> {
     await this.runtime.refresh();
-    const providers = mode === "logout" ? await getLogoutProviderOptions(this.runtime) : await getLoginProviderOptions(this.runtime, authType);
+    const providers = mode === "logout" ? await getLogoutProviderOptions(this.runtime) : getLoginProviderOptions(this.runtime, authType);
     return { providers };
   }
 
@@ -61,8 +61,8 @@ export class AuthService {
     // credential through the runtime's credential store; feed the key back via a
     // non-interactive AuthInteraction.
     const interaction: AuthInteraction = {
-      prompt: async () => key,
-      notify: () => {},
+      prompt: () => Promise.resolve(key),
+      notify: () => undefined,
     };
     await this.runtime.login(providerId, "api_key", interaction);
     await this.refreshAuthState();
@@ -110,7 +110,7 @@ export class AuthService {
 
   private async requireOAuthLoginProvider(providerId: string) {
     await this.runtime.refresh();
-    const provider = (await getLoginProviderOptions(this.runtime, "oauth")).find((option) => option.id === providerId);
+    const provider = getLoginProviderOptions(this.runtime, "oauth").find((option) => option.id === providerId);
     if (provider === undefined) throw new Error(`OAuth provider not found: ${providerId}`);
     return provider;
   }

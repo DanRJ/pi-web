@@ -24,8 +24,8 @@ describe("auth provider options", () => {
     expect(isApiKeyLoginProvider("openai", new Set(["openai-codex"]))).toBe(true);
   });
 
-  it("builds login options for OAuth-only, dual-auth, and API-key providers", async () => {
-    const options = await getLoginProviderOptions(runtime());
+  it("builds login options for OAuth-only, dual-auth, and API-key providers", () => {
+    const options = getLoginProviderOptions(runtime());
     expect(options).toEqual(expect.arrayContaining([
       expect.objectContaining({ id: "anthropic", authType: "oauth" }),
       expect.objectContaining({ id: "anthropic", authType: "api_key" }),

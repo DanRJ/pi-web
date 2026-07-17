@@ -27,7 +27,7 @@ export interface AuthProviderRuntime {
   getProviderAuthStatus(providerId: string): AuthProviderStatus;
 }
 
-export async function getLoginProviderOptions(runtime: AuthProviderRuntime, authType?: AuthType): Promise<AuthProviderOption[]> {
+export function getLoginProviderOptions(runtime: AuthProviderRuntime, authType?: AuthType): AuthProviderOption[] {
   const providers = runtime.getProviders();
   const oauthProviderIds = new Set(providers.filter((provider) => provider.auth.oauth !== undefined).map((provider) => provider.id));
 

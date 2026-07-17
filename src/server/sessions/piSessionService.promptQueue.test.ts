@@ -1,9 +1,8 @@
-import { createAssistantMessageEventStream, type AssistantMessage } from "@earendil-works/pi-ai";
+import { createAssistantMessageEventStream, InMemoryCredentialStore, type AssistantMessage } from "@earendil-works/pi-ai";
 import type { StreamFn } from "@earendil-works/pi-agent-core";
-import { AuthStorage, ModelRegistry } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it, vi } from "vitest";
 import { PiSessionService } from "./piSessionService.js";
-import { CapturingSessionEventHub, fakeRuntime, runtimeCreator, sessionGateway, sessionRecord, sessionRef, TEST_MODEL_ID, TEST_MODEL_PROVIDER, testModel, type RuntimeCreator } from "./piSessionService.testSupport.js";
+import { CapturingSessionEventHub, createTestModelRuntime, fakeRuntime, runtimeCreator, seedCredential, sessionGateway, sessionRecord, sessionRef, TEST_MODEL_ID, TEST_MODEL_PROVIDER, testModel, testModelRuntime, type RuntimeCreator } from "./piSessionService.testSupport.js";
 
 const TEST_AGENT_DIR = "/tmp/pi-web-test-agent";
 
@@ -12,6 +11,7 @@ describe("PiSessionService prompt, queue, and auth warnings", () => {
     const fake = fakeRuntime("prompt-session");
     const service = new PiSessionService(new CapturingSessionEventHub(), {
       agentDir: TEST_AGENT_DIR,
+      modelRuntime: testModelRuntime,
       createAgentRuntime: runtimeCreator(fake.runtime),
       sessionManager: sessionGateway([sessionRecord("prompt-session")]),
       heartbeatIntervalMs: 60_000,
@@ -30,6 +30,7 @@ describe("PiSessionService prompt, queue, and auth warnings", () => {
     const hub = new CapturingSessionEventHub();
     const service = new PiSessionService(hub, {
       agentDir: TEST_AGENT_DIR,
+      modelRuntime: testModelRuntime,
       createAgentRuntime: runtimeCreator(fake.runtime),
       sessionManager: sessionGateway([sessionRecord("echo-session")]),
       heartbeatIntervalMs: 60_000,
@@ -60,6 +61,7 @@ describe("PiSessionService prompt, queue, and auth warnings", () => {
     };
     const service = new PiSessionService(new CapturingSessionEventHub(), {
       agentDir: TEST_AGENT_DIR,
+      modelRuntime: testModelRuntime,
       createAgentRuntime,
       sessionManager: sessionGateway([sessionRecord("prompt-session")]),
       heartbeatIntervalMs: 60_000,
@@ -96,6 +98,7 @@ describe("PiSessionService prompt, queue, and auth warnings", () => {
     const fake = fakeRuntime("name-session", { model, agent: { streamFn } });
     const service = new PiSessionService(hub, {
       agentDir: TEST_AGENT_DIR,
+      modelRuntime: testModelRuntime,
       createAgentRuntime: runtimeCreator(fake.runtime),
       sessionManager: sessionGateway([sessionRecord("name-session")]),
       heartbeatIntervalMs: 60_000,
@@ -118,6 +121,7 @@ describe("PiSessionService prompt, queue, and auth warnings", () => {
     });
     const service = new PiSessionService(new CapturingSessionEventHub(), {
       agentDir: TEST_AGENT_DIR,
+      modelRuntime: testModelRuntime,
       createAgentRuntime: runtimeCreator(fake.runtime),
       sessionManager: sessionGateway([sessionRecord("status-session")]),
       heartbeatIntervalMs: 60_000,
@@ -139,6 +143,7 @@ describe("PiSessionService prompt, queue, and auth warnings", () => {
     });
     const service = new PiSessionService(new CapturingSessionEventHub(), {
       agentDir: TEST_AGENT_DIR,
+      modelRuntime: testModelRuntime,
       createAgentRuntime: runtimeCreator(fake.runtime),
       sessionManager: sessionGateway([sessionRecord("dedupe-session")]),
       heartbeatIntervalMs: 60_000,
@@ -155,6 +160,7 @@ describe("PiSessionService prompt, queue, and auth warnings", () => {
     const fake = fakeRuntime("queued-session", { isStreaming: true });
     const service = new PiSessionService(hub, {
       agentDir: TEST_AGENT_DIR,
+      modelRuntime: testModelRuntime,
       createAgentRuntime: runtimeCreator(fake.runtime),
       sessionManager: sessionGateway([sessionRecord("queued-session")]),
       heartbeatIntervalMs: 60_000,
@@ -181,6 +187,7 @@ describe("PiSessionService prompt, queue, and auth warnings", () => {
     };
     const service = new PiSessionService(hub, {
       agentDir: TEST_AGENT_DIR,
+      modelRuntime: testModelRuntime,
       createAgentRuntime: runtimeCreator(fake.runtime),
       sessionManager: sessionGateway([sessionRecord("compacting-session")]),
       heartbeatIntervalMs: 60_000,
@@ -245,6 +252,7 @@ describe("PiSessionService prompt, queue, and auth warnings", () => {
     fake.session.clearQueue = clearRuntimeQueue;
     const service = new PiSessionService(hub, {
       agentDir: TEST_AGENT_DIR,
+      modelRuntime: testModelRuntime,
       createAgentRuntime: runtimeCreator(fake.runtime),
       sessionManager: sessionGateway([sessionRecord("clear-queue-session")]),
       heartbeatIntervalMs: 60_000,
@@ -285,6 +293,7 @@ describe("PiSessionService prompt, queue, and auth warnings", () => {
     const fake = fakeRuntime("clear-empty-queue-session");
     const service = new PiSessionService(new CapturingSessionEventHub(), {
       agentDir: TEST_AGENT_DIR,
+      modelRuntime: testModelRuntime,
       createAgentRuntime: runtimeCreator(fake.runtime),
       sessionManager: sessionGateway([sessionRecord("clear-empty-queue-session")]),
       heartbeatIntervalMs: 60_000,
@@ -304,6 +313,7 @@ describe("PiSessionService prompt, queue, and auth warnings", () => {
     const fake = fakeRuntime("abort-session");
     const service = new PiSessionService(new CapturingSessionEventHub(), {
       agentDir: TEST_AGENT_DIR,
+      modelRuntime: testModelRuntime,
       createAgentRuntime: runtimeCreator(fake.runtime),
       sessionManager: sessionGateway([sessionRecord("abort-session")]),
       heartbeatIntervalMs: 60_000,
@@ -321,6 +331,7 @@ describe("PiSessionService prompt, queue, and auth warnings", () => {
     const fake = fakeRuntime("abort-compaction-session", { isCompacting: true });
     const service = new PiSessionService(new CapturingSessionEventHub(), {
       agentDir: TEST_AGENT_DIR,
+      modelRuntime: testModelRuntime,
       createAgentRuntime: runtimeCreator(fake.runtime),
       sessionManager: sessionGateway([sessionRecord("abort-compaction-session")]),
       heartbeatIntervalMs: 60_000,
@@ -338,15 +349,20 @@ describe("PiSessionService prompt, queue, and auth warnings", () => {
 
   it("refreshes auth state and dedupes warnings when logout removes the current model's credentials", async () => {
     const hub = new CapturingSessionEventHub();
-    const authStorage = AuthStorage.inMemory({ anthropic: { type: "api_key", key: "sk-test" } });
-    const modelRegistry = ModelRegistry.inMemory(authStorage);
-    const model = modelRegistry.find(TEST_MODEL_PROVIDER, TEST_MODEL_ID);
+    // The shared model runtime reads a live credential store; auth changes are
+    // simulated by mutating the store and refreshing the runtime (the same
+    // sequence AuthService performs before emitting an AuthChange), then
+    // notifying the service via applyAuthChange.
+    const credentials = new InMemoryCredentialStore();
+    await seedCredential(credentials, "anthropic", { type: "api_key", key: "sk-test" });
+    const modelRuntime = await createTestModelRuntime(credentials);
+    const model = modelRuntime.getModel(TEST_MODEL_PROVIDER, TEST_MODEL_ID);
     if (model === undefined) throw new Error("Expected Anthropic model fixture");
-    const fake = fakeRuntime("auth-session", { model, modelRegistry });
+    const fake = fakeRuntime("auth-session", { model, modelRuntime });
 
     const service = new PiSessionService(hub, {
       agentDir: TEST_AGENT_DIR,
-      modelRegistry,
+      modelRuntime,
       createAgentRuntime: runtimeCreator(fake.runtime),
       sessionManager: sessionGateway([sessionRecord("auth-session")]),
       heartbeatIntervalMs: 60_000,
@@ -356,7 +372,8 @@ describe("PiSessionService prompt, queue, and auth warnings", () => {
     hub.sessionEvents.length = 0;
     hub.globalEvents.length = 0;
 
-    authStorage.logout("anthropic");
+    await credentials.delete("anthropic");
+    await modelRuntime.refresh();
     service.applyAuthChange({ removedProviderId: "anthropic" });
     service.applyAuthChange({ removedProviderId: "anthropic" });
 
@@ -364,9 +381,11 @@ describe("PiSessionService prompt, queue, and auth warnings", () => {
     expect(warningCount()).toBe(1);
     expect(hub.globalEvents.some((event) => event.type === "status.update" && event.status.sessionId === "auth-session")).toBe(true);
 
-    authStorage.set("anthropic", { type: "api_key", key: "sk-new" });
+    await seedCredential(credentials, "anthropic", { type: "api_key", key: "sk-new" });
+    await modelRuntime.refresh();
     service.applyAuthChange();
-    authStorage.logout("anthropic");
+    await credentials.delete("anthropic");
+    await modelRuntime.refresh();
     service.applyAuthChange({ removedProviderId: "anthropic" });
     expect(warningCount()).toBe(2);
 
@@ -377,6 +396,7 @@ describe("PiSessionService prompt, queue, and auth warnings", () => {
     const fake = fakeRuntime("stop-session");
     const service = new PiSessionService(new CapturingSessionEventHub(), {
       agentDir: TEST_AGENT_DIR,
+      modelRuntime: testModelRuntime,
       createAgentRuntime: runtimeCreator(fake.runtime),
       sessionManager: sessionGateway([sessionRecord("stop-session")]),
       heartbeatIntervalMs: 60_000,
