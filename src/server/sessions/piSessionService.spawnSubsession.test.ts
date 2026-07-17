@@ -782,6 +782,9 @@ describe("PiSessionService", () => {
 
     it("notifies the parent once when the tracked child stops working", async () => {
       const { parent, child, service } = subsessionService({ allowed: true, cwd: "/workspace-feature" });
+      child.session.sessionManager.getBranch = () => [
+        { type: "message", message: { role: "assistant", content: "all done" } },
+      ];
       await service.start("/workspace");
       await service.spawnSubsession({ spawningCwd: "/workspace", parentSessionId: "parent-1", parentSessionFile: "/tmp/parent-1.jsonl", prompt: "go", cwd: "/workspace-feature" });
       parent.calls.prompt.length = 0; // ignore the spawn prompt to the child; focus on the parent notification
@@ -795,9 +798,33 @@ describe("PiSessionService", () => {
 
       expect(parent.calls.sendCustomMessage).toHaveLength(1);
       expect(parent.calls.sendCustomMessage[0]?.message.content).toContain("Subsession child-1 stopped working");
+      expect(parent.calls.sendCustomMessage[0]?.message.content).toContain("--- SUBSESSION OUTPUT: child-1 ---\nall done");
       expect(parent.calls.sendCustomMessage[0]?.message.customType).toBe("subsession.completion");
       expect(parent.calls.sendCustomMessage[0]?.options).toEqual({ triggerTurn: true, deliverAs: "followUp" });
       expect(parent.calls.prompt).toHaveLength(0); // not a user-authored message
+      await service.dispose();
+    });
+
+    it("omits oversized output from the completion notice while keeping it available for inspection", async () => {
+      const { parent, child, service } = subsessionService({ allowed: true, cwd: "/workspace-feature" });
+      const longOutput = `BEGIN_LONG_OUTPUT\n${"x".repeat(2100)}\nEND_LONG_OUTPUT`;
+      child.session.sessionManager.getBranch = () => [
+        { type: "message", message: { role: "assistant", content: longOutput } },
+      ];
+      await service.start("/workspace");
+      await service.spawnSubsession({ spawningCwd: "/workspace", parentSessionId: "parent-1", parentSessionFile: "/tmp/parent-1.jsonl", prompt: "go", cwd: "/workspace-feature" });
+
+      child.session.isStreaming = true;
+      child.emit({ type: "agent_start" });
+      child.session.isStreaming = false;
+      child.emit({ type: "agent_end" });
+      await new Promise((resolve) => setTimeout(resolve, 20));
+
+      expect(parent.calls.sendCustomMessage[0]?.message.content).toBe(
+        "Subsession child-1 stopped working (idle).\nNo other tracked subsessions are working.\n\nOutput from subsession child-1 was too long for this completion notice and was omitted. Call check_subsession with sessionId \"child-1\" to retrieve the final output.",
+      );
+      expect(parent.calls.sendCustomMessage[0]?.message.content).not.toContain("BEGIN_LONG_OUTPUT");
+      await expect(service.checkSubsession("parent-1", "child-1", "/tmp/parent-1.jsonl")).resolves.toMatchObject({ finalText: longOutput });
       await service.dispose();
     });
 

@@ -924,12 +924,12 @@ export class PiSessionService implements SessionRouteService {
     this.subsessionNotifyArmed.set(childId, false);
     const status: SubsessionStatus = this.activities.get(childId)?.phase === "error" ? "error" : "idle";
     const finalText = finalAssistantText(historyMessages(session));
-    const preview = finalText === "" ? "(no output)" : truncateForNotification(finalText);
+    const outputSection = formatSubsessionNotificationOutput(childId, finalText);
     const workingIds = this.workingSubsessionIds(link.parentSessionId);
     const next = workingIds.length === 0
       ? "No other tracked subsessions are working."
       : `Still working: ${workingIds.join(", ")}. Continue working, or call yield_to_subsessions alone and last at the next join point. Further completion notices arrive automatically; do not poll.`;
-    const text = `Subsession ${childId} stopped working (${status}).\n${next}\n\n--- SUBSESSION OUTPUT: ${childId} ---\n${preview}`;
+    const text = `Subsession ${childId} stopped working (${status}).\n${next}\n\n${outputSection}`;
     void this.notifyParentOfSubsession(link.parentSessionId, childId, text);
   }
 
@@ -2489,11 +2489,14 @@ const SUBSESSION_CHILD_LINK_CUSTOM_TYPE = "pi-web.subsession.spawned";
 /** customType marking a parent-facing subsession-completion notice. */
 const SUBSESSION_NOTIFICATION_CUSTOM_TYPE = "subsession.completion";
 
-const SUBSESSION_NOTIFICATION_PREVIEW_CHARS = 2000;
+const SUBSESSION_NOTIFICATION_MAX_OUTPUT_CHARS = 2000;
 
-function truncateForNotification(text: string): string {
-  if (text.length <= SUBSESSION_NOTIFICATION_PREVIEW_CHARS) return text;
-  return `${text.slice(0, SUBSESSION_NOTIFICATION_PREVIEW_CHARS)}…`;
+/** Avoid duplicating a partial result in context when deliberate inspection can return the full output. */
+function formatSubsessionNotificationOutput(childSessionId: string, text: string): string {
+  if (text.length > SUBSESSION_NOTIFICATION_MAX_OUTPUT_CHARS) {
+    return `Output from subsession ${childSessionId} was too long for this completion notice and was omitted. Call check_subsession with sessionId "${childSessionId}" to retrieve the final output.`;
+  }
+  return `--- SUBSESSION OUTPUT: ${childSessionId} ---\n${text === "" ? "(no output)" : text}`;
 }
 
 /** Most recent assistant text from a history message list, or "" if none. */
