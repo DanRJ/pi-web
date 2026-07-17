@@ -2,6 +2,7 @@ import type { ReactiveController } from "lit";
 import type { AppState } from "../appState";
 import { createPwaDisplayModeMedia, detectPwaDisplayMode } from "../pwaDisplayMode";
 import { ViewportPositionRepairer } from "./viewportPositionRepair";
+import { VisualViewportBridge, type ViewportBridge } from "./visualViewportBridge";
 
 export const MOBILE_NAVIGATION_MEDIA_QUERY = "(max-width: 767px)";
 
@@ -24,6 +25,7 @@ export interface AppShellControllerOptions {
   mobileNavigationMedia?: MobileNavigationMedia | undefined;
   pwaDisplayModeMedia?: MediaQueryList[] | undefined;
   viewportPositionRepairer?: ViewportPositionRepairer | undefined;
+  visualViewportBridge?: ViewportBridge | undefined;
   onMobileNavigationLayoutChange?: ((isMobile: boolean) => void) | undefined;
 }
 
@@ -31,6 +33,7 @@ export class AppShellController implements ReactiveController {
   private readonly mobileNavigationMedia: MobileNavigationMedia | undefined;
   private readonly pwaDisplayModeMedia: MediaQueryList[];
   private readonly viewportPositionRepairer: ViewportPositionRepairer;
+  private readonly visualViewportBridge: ViewportBridge;
   private readonly onMobileNavigationLayoutChange: ((isMobile: boolean) => void) | undefined;
   isMobileNavigationLayout: boolean;
   isPwaDisplayMode: boolean;
@@ -40,17 +43,20 @@ export class AppShellController implements ReactiveController {
     this.mobileNavigationMedia = options.mobileNavigationMedia ?? createMobileNavigationMedia();
     this.pwaDisplayModeMedia = options.pwaDisplayModeMedia ?? createPwaDisplayModeMedia();
     this.viewportPositionRepairer = options.viewportPositionRepairer ?? new ViewportPositionRepairer();
+    this.visualViewportBridge = options.visualViewportBridge ?? new VisualViewportBridge();
     this.onMobileNavigationLayoutChange = options.onMobileNavigationLayoutChange;
     this.isMobileNavigationLayout = this.mobileNavigationMedia?.matches ?? false;
     this.isPwaDisplayMode = detectPwaDisplayMode(this.pwaDisplayModeMedia);
   }
 
   hostConnected(): void {
+    this.visualViewportBridge.connect();
     this.mobileNavigationMedia?.addEventListener("change", this.onMobileNavigationMediaChange);
     for (const media of this.pwaDisplayModeMedia) media.addEventListener("change", this.onPwaDisplayModeChange);
   }
 
   hostDisconnected(): void {
+    this.visualViewportBridge.disconnect();
     this.mobileNavigationMedia?.removeEventListener("change", this.onMobileNavigationMediaChange);
     for (const media of this.pwaDisplayModeMedia) media.removeEventListener("change", this.onPwaDisplayModeChange);
     this.viewportPositionRepairer.clear();

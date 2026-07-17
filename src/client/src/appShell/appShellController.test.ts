@@ -3,6 +3,18 @@ import type { AppShellControllerHost, MobileNavigationMedia, MobileNavigationMed
 import { AppShellController } from "./appShellController";
 
 describe("AppShellController mobile layout lifecycle", () => {
+  it("connects and disconnects the visual viewport bridge with the app shell", () => {
+    const bridge = { connect: vi.fn(), disconnect: vi.fn() };
+    const host: AppShellControllerHost = { addController: () => undefined, requestUpdate: () => undefined };
+    const controller = new AppShellController(host, { pwaDisplayModeMedia: [], visualViewportBridge: bridge });
+
+    controller.hostConnected();
+    controller.hostDisconnected();
+
+    expect(bridge.connect).toHaveBeenCalledOnce();
+    expect(bridge.disconnect).toHaveBeenCalledOnce();
+  });
+
   it("notifies the app when the media query crosses the mobile breakpoint", () => {
     let listener: ((event: MobileNavigationMediaEvent) => void) | undefined;
     const media: MobileNavigationMedia = {
