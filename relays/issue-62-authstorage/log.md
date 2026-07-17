@@ -313,3 +313,57 @@ sessionRoutes (1). `piSessionService.ts` lints clean. Committed `--no-verify`
 added `piSessionService.ts` (a session-daemon path) to the pending-restart
 surface; do not clear the note. Handing off to leg 6 (slice 5: tests +
 testSupport).
+
+## Leg 6 — slice 5 (tests + testSupport migration) — commit `d0cc55c`
+
+**What:** Migrated all test doubles + `piSessionService.testSupport.ts` off the
+removed `AuthStorage.inMemory` / `ModelRegistry.create|inMemory` surface to the
+pi-ai `InMemoryCredentialStore` + async `ModelRuntime.create({ credentials })`.
+`npm run verify` is now **fully green** (typecheck + lint + knip + 1390 tests,
+2 skipped) — the migration goal (charter criteria 1, 2, 5) is met; only the
+changeset (criterion 4) remains for slice 6.
+
+**Files changed (all `src/server/sessions/`):**
+- `piSessionService.testSupport.ts`: new seams `createTestModelRuntime`,
+  shared `testModelRuntime` (top-level await), `seedCredential`; `fakeRuntime`
+  and `testModel` moved onto `modelRuntime`; dropped AuthStorage/ModelRegistry.
+- `archiveCleanup`/`lifecycle`/`promptQueue`/`spawnSession`/`spawnSubsession`/
+  `sessionRoutes` tests: injected `modelRuntime: testModelRuntime` into every
+  `new PiSessionService(...)` (now required) + imported the shared runtime.
+- `promptQueue.test.ts` auth-loss test: live `InMemoryCredentialStore` +
+  `createTestModelRuntime(credentials)`, driving changes through
+  `delete`/`seedCredential` + `refresh()` + `applyAuthChange(...)`.
+- `warnings.test.ts`: `anthropicSubscriptionWarning` seam is now a temp
+  `auth.json` read via `readStoredCredential(id, authPath)`; type narrowed.
+- `authService.test.ts`: reworked to async `AuthService.create` +
+  `InMemoryCredentialStore`; awaits async ops; OAuth-complete uses `vi.waitFor`.
+
+**Decisions:**
+- Used a single shared `testModelRuntime` (top-level `await` in testSupport, an
+  allowed ESM pattern here) for the no-auth catalog case so the many
+  `PiSessionService` constructions and `fakeRuntime` sessions inject it
+  synchronously — avoided making `fakeRuntime` itself async (which would have
+  rippled through ~90 call sites). Auth-dependent tests build a dedicated
+  per-test runtime via `createTestModelRuntime(credentials)`.
+- `anthropicSubscriptionWarning` seam: chose the on-disk temp `auth.json` +
+  `readStoredCredential` path (matches production exactly) rather than adding a
+  new injectable credential-read seam. Clean; no intervention needed.
+- Made `getLoginProviderOptions` **synchronous** (it did no async work) to
+  satisfy `require-await`; de-awaited its 2 call sites in `authService.ts` and
+  the test. Also fixed pre-existing lint debt from earlier slices surfaced now
+  that lint ran green for the first time: `authRoutes.ts` return-await,
+  `authService.ts` api-key interaction (`() => Promise.resolve(key)` /
+  `notify: () => undefined`).
+- Verified SDK behavior empirically with throwaway probe scripts (removed)
+  before writing doubles: providers/models catalog, api-key login persistence,
+  `getModel`, `hasConfiguredAuth` across store mutations + refresh, and
+  `readStoredCredential` against a temp auth.json.
+
+**Verification:** `npm run verify` green. Pre-commit hook (whole-project
+typecheck + knip + eslint + related vitest) passed — committed normally
+(no `--no-verify` needed since the tree is verify-green).
+
+**Blockers:** none. **Sessiond-restart-pending note still ACTIVE** — unchanged
+this leg but slices 1 + 4 touched session-daemon paths; only the human clears
+it after restarting the sessiond service. Handing off to leg 7 (slice 6:
+changeset + final verify + cleanup; the finish line — no PR).

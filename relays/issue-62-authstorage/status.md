@@ -1,6 +1,59 @@
 # Relay status — issue-62-authstorage
 
 ## Current position
+Slice 5 (tests + testSupport) complete and committed (`d0cc55c`).
+**`npm run verify` is fully GREEN** — typecheck + lint + knip + 1390 tests
+pass (2 skipped). All production code and all test/support code are now off the
+removed `AuthStorage` / `ModelRegistry.create|inMemory` surface. Goal criteria
+1, 2, 5 are met; criteria 3 (dep ranges) was done in slice 0/1; only criterion
+4 (changeset) remains — that is slice 6.
+
+What slice 5 changed (all under `src/server/sessions/`):
+- **`piSessionService.testSupport.ts`** (central helper): dropped
+  `AuthStorage`/`ModelRegistry` imports; added pi-ai `InMemoryCredentialStore`.
+  New seams: `createTestModelRuntime(credentials?)` (wraps
+  `ModelRuntime.create({ credentials })`), a shared `testModelRuntime`
+  (top-level `await createTestModelRuntime()` — the common no-auth catalog
+  runtime), and `seedCredential(store, providerId, credential)` (writes via the
+  `CredentialStore.modify` path). `fakeRuntime` session now carries
+  `modelRuntime: testModelRuntime`; `testModel()` reads
+  `testModelRuntime.getModel(...)`.
+- Threaded `modelRuntime: testModelRuntime` into every `new PiSessionService(...)`
+  (now a required dep) across `archiveCleanup`/`lifecycle`/`promptQueue`/
+  `spawnSession`/`spawnSubsession`/`sessionRoutes` tests, importing
+  `testModelRuntime` in each.
+- **`piSessionService.promptQueue.test.ts`** auth-loss test rewritten: builds a
+  live `InMemoryCredentialStore` + `createTestModelRuntime(credentials)`, and
+  simulates auth changes via `credentials.delete/seedCredential` +
+  `modelRuntime.refresh()` + `applyAuthChange(...)` (matching AuthService's
+  real refresh-then-emit sequence). Removed the `modelRegistry` dep line.
+- **`piSessionService.warnings.test.ts`**: `anthropicSubscriptionWarning` now
+  reads `readStoredCredential("anthropic", authPath)`, so the test seam is a
+  temp `auth.json` written per case (helper `anthropicAuthPath(...)`), passed
+  as the 2nd arg. `SubscriptionSession` type narrowed to
+  `Pick<PiAgentSession, "model" | "settingsManager">`. The "no credential"
+  case points at a temp dir with no auth.json (deterministic).
+- **`authService.test.ts`** fully reworked to the async `AuthService.create({
+  runtime | agentDir })` + `InMemoryCredentialStore` model. `saveApiKey`/
+  `logoutProvider`/`startOAuthLogin` are awaited; OAuth-complete test asserts
+  `startOptions.runtime === runtime` and uses `vi.waitFor` for the async
+  refresh; credential assertions go through `credentials.read(...)`.
+- Lint fixes surfaced by running lint green for the first time this relay:
+  `getLoginProviderOptions` made **synchronous** (it did no async work) and its
+  call sites in `authService.ts` + `authProviderOptions.test.ts` de-awaited;
+  `authRoutes.ts` handlers now `return await ...` (return-await rule);
+  `authService.ts` api-key interaction uses `() => Promise.resolve(key)` /
+  `notify: () => undefined`; test `modify` arrows use `() => Promise.resolve(...)`.
+
+SDK behavior verified empirically before writing doubles (throwaway probe
+scripts, since removed): `ModelRuntime.create({ credentials })` exposes 36
+providers / 1072 models; `login(id, "api_key", interaction)` persists to the
+store; `getModel("anthropic", "claude-sonnet-4-5-20250929")` resolves;
+`hasConfiguredAuth` flips correctly across `delete`/`modify` + `refresh`;
+`readStoredCredential(id, authPath)` reads a temp auth.json and returns
+`undefined` for a missing file.
+
+### Prior position (slice 4, leg 5, commit `4ccd4f8`)
 Slice 4 (`piSessionService.ts` migration) complete and committed (`4ccd4f8`).
 `piSessionService.ts` now uses the new `ModelRuntime` API end to end:
 - `createDefaultRuntimeFactory(modelRuntime, ...)` passes `modelRuntime` to
@@ -109,56 +162,39 @@ Remaining errors otherwise live in slices 2/3/4 files and all test/support
 files (slice 5).
 
 ## Leg tracking
-- **Last completed leg:** 5 (slice 4 — piSessionService.ts migration).
-- **Next leg to run:** 6.
+- **Last completed leg:** 6 (slice 5 — tests + testSupport migration).
+- **Next leg to run:** 7.
 
 ## Next task
-Run **charter slice 5 (tests + testSupport)** as leg 6: migrate all test
-doubles off `AuthStorage.inMemory(...)` / `ModelRegistry.create|inMemory(...)`
-to the pi-ai `InMemoryCredentialStore` + `await ModelRuntime.create({
-credentials })`, and get `npm run verify` green. Follow the testing-guide skill
-(async construction seams, no over-mocking of the SDK).
+Run **charter slice 6 (changeset + final verify + cleanup)** as leg 7. This is
+the closing leg:
+1. Add a `.changeset/*.md` fragment for `@jmfederico/pi-web` describing the
+   user-visible fix (session daemon crash with Pi 0.80.8+ fixed by migrating
+   to the new `ModelRuntime` API; requires Pi `>=0.80.8`). Use the
+   `changeset-changelog` skill. Do **not** edit `CHANGELOG.md` directly. The
+   maintainer's call on patch vs minor — the assessment §5 suggests patch or
+   minor; a **minor** is defensible since the supported Pi range narrows
+   (`>=0.80.8 <0.81`, dropping 0.80.0–0.80.7), but follow the changeset skill
+   and keep it a single fragment.
+2. Re-run the full `npm run verify` to confirm still green.
+3. Confirm the goal criteria in `charter.md` are all met (1 no AuthStorage/
+   registry use — done; 2 auth surfaces on new APIs — done; 3 dep ranges —
+   already corrected in slice 0/1, double-check `package.json` peer/dev ranges;
+   4 changeset — this leg; 5 verify green — confirm).
+4. Cleanup: `ASSESSMENT-issue-62.md` stays (it's the plan of record).
+   `/srv/dev/pi-inspect` is outside the repo, not ours to touch. Confirm no
+   scratch files were left in the repo (e.g. no stray `probe*.mjs`,
+   `.tmp-build/`).
+5. **Do NOT open a PR** (explicitly out of scope for this relay).
 
-**Scope note (important):** slice 4 made `modelRuntime` a *required*
-`PiSessionServiceDependencies` field (see Current position for why). That means
-the slice-5 test surface is LARGER than the four files originally listed in the
-assessment. Current `npx tsc --noEmit` failing files (all tests/support):
-- `piSessionService.testSupport.ts` (4) — `fakeRuntime` builds
-  `modelRegistry: ModelRegistry.create(AuthStorage.inMemory())`; the
-  `TestSession` type still has `modelRegistry`. Give the fake a `modelRuntime`
-  (e.g. `await ModelRuntime.create({ credentials: new InMemoryCredentialStore() })`
-  — note this makes `fakeRuntime` async, which ripples into its callers) and
-  update `TestSession`. This is the central helper; fixing it first will clear
-  many downstream errors.
-- `authService.test.ts` (10) — already partly slice-1/2/3 debt.
-- `piSessionService.warnings.test.ts` (5) — `anthropicSubscriptionWarning` no
-  longer takes a registry; it now reads `readStoredCredential("anthropic",
-  authPath)`. Tests that build credentials via `authStorage.set(...)` must
-  instead write an `auth.json` (temp dir) and pass its path, OR the test seam
-  must be reconsidered. `SubscriptionSession` type ref to `modelRegistry` is
-  gone. Check whether `readStoredCredential` can be pointed at a temp authPath
-  cleanly; if not, consider whether the warning fn needs a small injectable
-  credential-read seam (raise via intervention if the API can't support the
-  test without contortion).
-- `piSessionService.promptQueue.test.ts` (17), `.lifecycle.test.ts` (19),
-  `.archiveCleanup.test.ts` (9), `.spawnSession.test.ts` (3),
-  `.spawnSubsession.test.ts` (18), `sessionRoutes.test.ts` (1) — mostly the
-  new required `modelRuntime` dep on `new PiSessionService(...)` plus
-  `fakeRuntime`/`ModelRegistry.inMemory` usages. Many of these should clear
-  automatically once `testSupport.ts` provides a shared `modelRuntime` helper
-  and the `PiSessionService` test-construction path supplies it.
+This is the finish line. After confirming everything, the goal is reached:
+update `status.md`/`log.md`, commit, and per the charter **stop** (the goal is
+reached) — or if you prefer, hand off a final "relay complete" confirmation
+leg. Either way, surface to the human that the **sessiond restart is still
+pending** (see Blockers) and a PR was intentionally not opened.
 
-Suggested approach: add a small shared test helper (e.g.
-`await createTestModelRuntime()` wrapping `ModelRuntime.create({ credentials:
-new InMemoryCredentialStore(...) })`) in `testSupport.ts`, thread it into
-`fakeRuntime` and the `new PiSessionService(...)` call sites, then work file by
-file until `npm run verify` (typecheck + lint + knip + test) is green.
-
-Then slice 6 adds the `.changeset/*.md` fragment, runs the full `npm run
-verify`, and does final cleanup (ASSESSMENT stays).
-
-If slice 5 is already done when you arrive, apply the charter's task-selection
-policy: pick the lowest-numbered incomplete slice (6).
+Verification already passing as of slice 5 (leg 6): `npm run verify` green
+(typecheck + lint + knip + 1390 tests, 2 skipped).
 
 ### Build/tooling note (important for every leg)
 **Update (leg 2):** the human reports `/tmp` is now fully usable again, so the
@@ -174,10 +210,11 @@ verify-green). Node: v24.18.0.
 ## Relevant context for the next runner
 - **Plan of record:** `ASSESSMENT-issue-62.md` (root) — read once. §5 has the
   per-file migration shape; §3 has the exact new API shapes; §6 the dep ranges.
-- **Files to change** (all under `src/server/sessions/` unless noted):
-  `authService.ts`, `authProviderOptions.ts`, `oauthLoginFlowService.ts`,
-  `piSessionService.ts`, plus `src/server/sessiond.ts` (async auth
-  construction), and the test/support files listed in assessment §2.
+- **Changeset skill:** `.agents/skills/changeset-changelog/SKILL.md` (and
+  `changeset-changelog` in the skills list). Follow it for the fragment format.
+- **The migration is done** — slice 6 is docs/changeset + confirmation only.
+  No further source changes are expected; if you find yourself editing
+  `src/`, re-check whether that's really in scope.
 - **New API cheat-sheet:** `ModelRuntime.create({ authPath, modelsPath,
   credentials? }): Promise<ModelRuntime>`; credential persistence via the
   pi-ai `CredentialStore.modify` path; `runtime.login(providerId, type,
