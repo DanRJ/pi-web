@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { ExtensionUiBroker } from "./extensionUiBroker.js";
 
 function brokerFixture() {
-  const events = { request: vi.fn(), resolved: vi.fn(), notify: vi.fn() };
+  const events = { request: vi.fn(), resolved: vi.fn(), notify: vi.fn(), attention: vi.fn() };
   let id = 0;
   return { events, broker: new ExtensionUiBroker({ events, createId: () => `req-${String(++id)}` }) };
 }
@@ -18,6 +18,26 @@ describe("ExtensionUiBroker", () => {
     expect(await promise).toBe("two");
     expect(broker.respond("session-a", { id: "req-1", value: "one" })).toMatchObject({ outcome: "already-resolved" });
     expect(events.resolved).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps attention true until the final pending request settles", async () => {
+    const { broker, events } = brokerFixture();
+    const ui = broker.createUiContext("session-a");
+    const first = ui.input("First");
+    const second = ui.input("Second");
+
+    expect(broker.pendingCountsBySession()).toEqual(new Map([["session-a", 2]]));
+    broker.respond("session-a", { id: "req-1", value: "one" });
+    expect(broker.pendingCountsBySession()).toEqual(new Map([["session-a", 1]]));
+    broker.respond("session-a", { id: "req-2", value: "two" });
+    await Promise.all([first, second]);
+
+    expect(events.attention.mock.calls).toEqual([
+      ["session-a", true],
+      ["session-a", true],
+      ["session-a", true],
+      ["session-a", false],
+    ]);
   });
 
   it("rejects cross-session responses without touching the pending promise", async () => {

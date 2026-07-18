@@ -35,4 +35,8 @@ Mobile browsers that support it are asked to resize content for interactive widg
 
 The composer is not fixed or conditionally hidden. On mobile, the bridge supplies a bounded editor height from the visible viewport; CodeMirror continues to scroll while its non-shrinking action row retains coarse-pointer targets. Safe-area padding remains a separate CSS concern and is not included in the keyboard measurement. Desktop, standalone PWA, and browsers without `VisualViewport` retain their existing layout, with `innerHeight` as the bridge fallback when available.
 
-The next Modernist shell slice is the dashboard; it must not be folded into the mobile navigation work.
+## Dashboard
+
+The dashboard is a distinct top-level page rather than a workspace tool, panel, or mobile destination. It retains the Modernist structural language: Archivo, zero-radius controls, two-pixel rules, flat light/dark token surfaces, and a responsive three/two/one-column grid. Running, waiting, idle, and error states always include text or an icon in addition to visual treatment; errors use an ink rule and X rather than a red fill. The running spinner respects reduced-motion preferences.
+
+On narrow screens the existing bottom navigation remains intact. Dashboard is entered from Sessions/navigation and leaving it restores Chat, Sessions, Tools, or Settings without changing their destination semantics or the keyboard viewport bridge.

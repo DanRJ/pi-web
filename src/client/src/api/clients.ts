@@ -1,4 +1,5 @@
 import type { DeleteWorkspaceFileResponse, FileSuggestion, MoveWorkspaceFileOptions, PiPackageInstallRequest, PiPackageRemoveRequest, PiPackageScope, PiPackageUpdateRequest, PiWebConfigValues, PromptAttachment, RunTerminalCommandInput, SessionBulkMutationRef, SessionCleanupRequest, SessionRef, TerminalCommandRun, TerminalCommandRunFilter, WriteWorkspaceFileOptions } from "../../../shared/apiTypes";
+import type { FederatedSessionDashboardResponse } from "../../../shared/sessionDashboard";
 import type { ExtensionUiResponse } from "../../../shared/extensionUi";
 import { resolveAppUrl } from "../appUrl";
 import { request, requestWithAllowedErrorStatus } from "./http";
@@ -11,6 +12,7 @@ import {
   parseClosed,
   parseCommandResult,
   parseDeleted,
+  parseFederatedSessionDashboardResponse,
   parseDeleteWorkspaceFileResponse,
   parseExtensionUiPendingResponse,
   parseExtensionUiRespondResponse,
@@ -161,6 +163,11 @@ export const piPackagesApi = {
 
 export const activityApi = {
   workspaceActivity: (machineId = "local") => request(`${machinePrefix(machineId)}/activity`, parseWorkspaceActivityResponse),
+};
+
+/** Aggregate only: individual machine summaries stay behind the federated server boundary. */
+export const dashboardApi = {
+  dashboard: (signal?: AbortSignal): Promise<FederatedSessionDashboardResponse> => request("api/session-dashboard", parseFederatedSessionDashboardResponse, { cache: "no-store", ...(signal === undefined ? {} : { signal }) }),
 };
 
 export const projectsApi = {
@@ -332,6 +339,7 @@ export const api = {
   ...pluginsApi,
   ...piPackagesApi,
   ...activityApi,
+  ...dashboardApi,
   ...projectsApi,
   ...workspacesApi,
   ...sessionsApi,

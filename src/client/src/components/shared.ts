@@ -107,6 +107,9 @@ export const appStyles = css`
   .shell.workspace-panel-collapsed .workspace-panel-edge-button { transform: translateX(calc(-50% + .5px)); }
   .navigation-panel-edge-icon, .workspace-panel-edge-icon { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
   workspace-panel { grid-column: 5; min-width: 0; min-height: 0; overflow: hidden; }
+  .shell.dashboard-page { grid-template-columns: var(--navigation-panel-width) 1px minmax(0, 1fr); }
+  .shell.dashboard-page main { grid-column: 3; }
+  .dashboard-main session-dashboard { flex: 1 1 auto; min-height: 0; }
   @media (min-width: 1181px) {
     .shell.navigation-panel-collapsed { --navigation-panel-width: 0px; }
     .shell.navigation-panel-collapsed > aside { display: none; }
@@ -123,6 +126,7 @@ export const appStyles = css`
     app-mobile-main-tabs { display: block; flex: 0 0 auto; min-width: 0; }
     .mobile-tabs-frame { display: flex; }
     .shell.workspace-view main { grid-row: 1; min-height: auto; }
+    .shell.dashboard-page main { grid-column: 3; grid-row: 1 / 3; }
     .shell.workspace-view > workspace-panel { grid-column: 3; grid-row: 2; display: flex; border-left: 0; }
     .shell:not(.workspace-view) > workspace-panel { display: none; }
     .workspace-panel-edge { display: none; }
@@ -135,6 +139,7 @@ export const appStyles = css`
     aside, .navigation-panel-edge, .workspace-panel-edge { display: none; }
     main { grid-column: 1; grid-row: 1; }
     .shell > workspace-panel { grid-column: 1; grid-row: 1; display: none; min-height: 0; }
+    .shell.dashboard-page main { grid-column: 1; grid-row: 1; display: flex; }
     .shell.mobile-destination-chat > workspace-panel,
     .shell.mobile-destination-sessions > workspace-panel,
     .shell.mobile-destination-settings > workspace-panel { display: none; }

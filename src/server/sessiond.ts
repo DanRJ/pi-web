@@ -11,6 +11,7 @@ import { registerAuthRoutes } from "./sessions/authRoutes.js";
 import { PiSessionService } from "./sessions/piSessionService.js";
 import { createPiSessionManagerGateway } from "./sessions/piSessionManagerGateway.js";
 import { registerSessionRoutes } from "./sessions/sessionRoutes.js";
+import { registerSessionSummaryRoutes } from "./sessions/sessionSummaryRoutes.js";
 import { ProjectScopedSpawnTargetResolver } from "./sessions/spawnTargetResolver.js";
 import { ProjectService } from "./projects/projectService.js";
 import { ProjectStore } from "./storage/projectStore.js";
@@ -68,6 +69,7 @@ await runSessionDaemonStartup({
     registerWorkspaceActivityRoutes(app, workspaceActivity);
     registerAuthRoutes(app, auth);
     registerSessionRoutes(app, sessions, eventHub);
+    registerSessionSummaryRoutes(app, sessions);
     registerTerminalRoutes(app, terminals);
 
     app.get("/health", () => ({

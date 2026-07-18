@@ -30,42 +30,60 @@ export class WorkspaceController {
     if (options?.updateUrl !== false) this.updateUrl();
   }
 
+  /** Keep the selected project and its loaded workspace list, but clear its route selection. */
+  clearWorkspaceSelection(options?: { updateUrl?: boolean | undefined }): void {
+    this.sessions.clearActiveSession();
+    this.setState({ selectedWorkspace: undefined, isLoadingWorkspaces: false, ...resetWorkspaceScopedState() });
+    if (options?.updateUrl !== false) this.updateUrl();
+  }
+
   forgetProject(projectId: string): void {
     this.workspaceSelection.forgetProject(machineProjectKey(selectedMachineId(this.getState()), projectId));
     const workspacesByProjectId = Object.fromEntries(Object.entries(this.getState().workspacesByProjectId).filter(([candidate]) => candidate !== projectId));
     this.setState({ workspacesByProjectId });
   }
 
-  async selectProject(project: Project, target?: RouteTarget) {
+  async selectProject(project: Project, target?: RouteTarget): Promise<boolean> {
     const machineId = selectedMachineId(this.getState());
     this.sessions.clearActiveSession();
     this.setState({ selectedProject: project, selectedWorkspace: undefined, workspaces: [], isLoadingWorkspaces: true, ...resetWorkspaceScopedState() });
     try {
       const workspaces = await this.api.workspaces(project.id, machineId);
-      if (selectedMachineId(this.getState()) !== machineId || this.getState().selectedProject?.id !== project.id) return;
+      if (selectedMachineId(this.getState()) !== machineId || this.getState().selectedProject?.id !== project.id) return false;
       this.setState({ workspaces, workspacesByProjectId: { ...this.getState().workspacesByProjectId, [project.id]: workspaces }, isLoadingWorkspaces: false });
-      const workspace = selectPreferredWorkspace(workspaces, { targetWorkspaceId: target?.workspaceId, latestWorkspaceId: this.workspaceSelection.latestWorkspaceId(machineProjectKey(machineId, project.id)) });
-      if (workspace) await this.selectWorkspace(workspace, { sessionId: target?.sessionId, updateUrl: target?.updateUrl });
-      else if (target?.updateUrl !== false) this.updateUrl();
+      if (target?.selectWorkspace === false) {
+        if (target.updateUrl !== false) this.updateUrl();
+        return true;
+      }
+      const explicitlyRequestedWorkspace = target?.workspaceId;
+      const workspace = explicitlyRequestedWorkspace === undefined
+        ? selectPreferredWorkspace(workspaces, { latestWorkspaceId: this.workspaceSelection.latestWorkspaceId(machineProjectKey(machineId, project.id)) })
+        : workspaces.find((candidate) => candidate.id === explicitlyRequestedWorkspace);
+      if (workspace) return await this.selectWorkspace(workspace, { sessionId: target?.sessionId, updateUrl: target?.updateUrl, selectSession: target?.selectSession });
+      if (target?.updateUrl !== false) this.updateUrl();
+      return explicitlyRequestedWorkspace === undefined;
     } catch (error) {
       if (selectedMachineId(this.getState()) === machineId && this.getState().selectedProject?.id === project.id) this.setState({ error: String(error), isLoadingWorkspaces: false });
+      return false;
     }
   }
 
-  async selectWorkspace(workspace: Workspace, target?: { sessionId?: string | undefined; updateUrl?: boolean | undefined }) {
+  async selectWorkspace(workspace: Workspace, target?: { sessionId?: string | undefined; updateUrl?: boolean | undefined; selectSession?: boolean | undefined }): Promise<boolean> {
     const machineId = selectedMachineId(this.getState());
     this.workspaceSelection.rememberWorkspace({ ...workspace, projectId: machineProjectKey(machineId, workspace.projectId) });
     this.sessions.clearActiveSession();
     this.setState({ selectedWorkspace: workspace, isLoadingWorkspaces: false, ...resetWorkspaceScopedState() });
     try {
       const sessions = mergeCachedNewSessions(workspace.path, await this.api.sessions(workspace.path, machineId), machineId);
-      if (selectedMachineId(this.getState()) !== machineId || this.getState().selectedWorkspace?.id !== workspace.id || this.getState().selectedProject?.id !== workspace.projectId) return;
+      if (selectedMachineId(this.getState()) !== machineId || this.getState().selectedWorkspace?.id !== workspace.id || this.getState().selectedProject?.id !== workspace.projectId) return false;
       this.setState({ sessions });
-      const session = this.sessions.preferredSession(workspace.path, sessions, target?.sessionId);
+      const session = target?.selectSession === false ? undefined : this.sessions.preferredSession(workspace.path, sessions, target?.sessionId);
       if (session) await this.sessions.selectSession(session, { updateUrl: target?.updateUrl });
       else if (target?.updateUrl !== false) this.updateUrl();
+      return true;
     } catch (error) {
       if (selectedMachineId(this.getState()) === machineId && this.getState().selectedWorkspace?.id === workspace.id) this.setState({ error: String(error) });
+      return false;
     }
   }
 

@@ -35,6 +35,9 @@ import { MachineService } from "./machines/machineService.js";
 import { registerMachineRoutes } from "./machines/machineRoutes.js";
 import { registerMachineProxyRoutes } from "./machines/machineProxyRoutes.js";
 import { proxyMachinePluginAsset, registerMachinePluginProxyRoutes } from "./machines/machinePluginProxyRoutes.js";
+import { SessionDashboardFederationService } from "./machines/sessionDashboardFederationService.js";
+import { LocalSessionDashboardService } from "./sessions/sessionDashboardService.js";
+import { registerSessionDashboardRoutes } from "./sessions/sessionDashboardRoutes.js";
 import type { Project, Workspace } from "./types.js";
 
 export interface AppDependencies {
@@ -47,6 +50,8 @@ export interface AppDependencies {
   piPackages?: PiPackageService;
   piWebStatusCache?: PiWebStatusCache;
   config?: PiWebConfigService;
+  localSessionDashboard?: Pick<LocalSessionDashboardService, "summary">;
+  federatedSessionDashboard?: Pick<SessionDashboardFederationService, "summary">;
   clientDist?: string | false;
   logger?: FastifyServerOptions["logger"];
   /** Maximum accepted HTTP request body size in bytes. */
@@ -186,6 +191,8 @@ export async function buildApp(deps: AppDependencies = {}): Promise<FastifyInsta
   const machines = deps.machines ?? new MachineService(undefined, {
     localRuntime: () => getPiWebRuntime(sessionDaemon),
   });
+  const localSessionDashboard = deps.localSessionDashboard ?? new LocalSessionDashboardService({ projects, workspaces, sessionDaemon });
+  const federatedSessionDashboard = deps.federatedSessionDashboard ?? new SessionDashboardFederationService({ local: localSessionDashboard, machines });
 
   app.get("/pi-web-plugins/manifest.json", async (_request, reply) => withProfileDependency(reply, () => piWebPlugins.manifest()));
 
@@ -223,6 +230,7 @@ export async function buildApp(deps: AppDependencies = {}): Promise<FastifyInsta
 
   registerSessionProxyRoutes(app, sessionDaemon);
   registerSessionProxyRoutes(app, sessionDaemon, "/api/machines/local");
+  registerSessionDashboardRoutes(app, localSessionDashboard, federatedSessionDashboard);
   registerWorkspaceExplorerRoutes(app, projects, workspaces, "/api", { config: configService });
   registerWorkspaceExplorerRoutes(app, projects, workspaces, "/api/machines/local", { config: configService });
   registerGitRoutes(app, projects, workspaces);

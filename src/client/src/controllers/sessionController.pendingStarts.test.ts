@@ -37,7 +37,7 @@ describe("SessionController pending starts", () => {
     expect(statusCalls).toEqual([]);
 
     startRequest.resolve(started);
-    await start;
+    await expect(start).resolves.toBe(true);
 
     expect(state.sessions.map((session) => session.id)).toEqual(["started-session"]);
     expect(state.selectedSession?.id).toBe("started-session");
@@ -242,7 +242,7 @@ describe("SessionController pending starts", () => {
       { api, socket: new FakeSocket() },
     );
 
-    await controller.startSession();
+    await expect(controller.startSession()).resolves.toBe(false);
     const temporaryId = state.selectedSession?.id;
 
     expect(temporaryId).toMatch(/^pending-session-/);
