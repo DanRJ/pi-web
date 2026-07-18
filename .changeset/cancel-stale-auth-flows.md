@@ -2,4 +2,4 @@
 "@jmfederico/pi-web": patch
 ---
 
-Cancel auth flows created after their browser start operation becomes stale, preventing abandoned provider polling or callback listeners after the dialog closes.
+Keep auth interactions bound to their originating machine and cancel flows created after their browser start operation becomes stale, preventing secrets from reaching the wrong remote or abandoned provider resources from surviving a closed dialog.

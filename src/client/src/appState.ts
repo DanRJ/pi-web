@@ -70,7 +70,7 @@ export type AuthDialogState =
   | { step: "method" }
   | { step: "providers"; mode: "login"; authType?: "oauth" | "api_key"; providers: AuthProviderOption[] }
   | { step: "apiKey"; provider: AuthProviderOption; value: string; saving?: boolean; error?: string }
-  | { step: "oauth"; flow: OAuthFlowState; responding?: boolean; inputValue?: string; error?: string }
+  | { step: "oauth"; flow: OAuthFlowState; machineId: string; responding?: boolean; inputValue?: string; error?: string }
   | { step: "logout"; providers: AuthProviderOption[] };
 
 export type WorkspaceScopedStateReset = Pick<AppState,

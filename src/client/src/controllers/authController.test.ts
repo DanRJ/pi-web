@@ -62,7 +62,7 @@ describe("AuthController", () => {
   it("keeps OAuth prompt input and submit state across poll refreshes for the same request", async () => {
     const flow = oauthFlow({ prompt: { requestId: "request-1", message: "Paste callback", kind: "manual" } });
     const { controller, getState } = createController(
-      { authDialog: { step: "oauth", flow, inputValue: "https://callback", responding: true } },
+      { authDialog: { step: "oauth", flow, machineId: "local", inputValue: "https://callback", responding: true } },
       { respondOAuthFlow: () => Promise.resolve(oauthFlow({ prompt: { requestId: "request-1", message: "Paste callback", kind: "manual" }, progress: ["Still waiting"] })) },
     );
 
@@ -77,7 +77,7 @@ describe("AuthController", () => {
     });
     const respondCalls: string[] = [];
     const { controller } = createController(
-      { authDialog: { step: "oauth", flow, inputValue: "" } },
+      { authDialog: { step: "oauth", flow, machineId: "local", inputValue: "" } },
       {
         respondOAuthFlow: (_flowId, _requestId, value) => {
           respondCalls.push(value);
@@ -94,7 +94,7 @@ describe("AuthController", () => {
   it("resets OAuth prompt input and submit state when the request id changes", async () => {
     const flow = oauthFlow({ prompt: { requestId: "request-1", message: "Paste callback", kind: "manual" } });
     const { controller, getState } = createController(
-      { authDialog: { step: "oauth", flow, inputValue: "https://callback", responding: true } },
+      { authDialog: { step: "oauth", flow, machineId: "local", inputValue: "https://callback", responding: true } },
       {
         respondOAuthFlow: () => Promise.resolve(oauthFlow({
           select: { requestId: "request-2", message: "Choose an account", options: [{ value: "acct-1", label: "Account 1" }] },
@@ -121,7 +121,7 @@ describe("AuthController", () => {
     const statusCalls: { session: Parameters<typeof defaultApi.status>[0]; machineId: string | undefined }[] = [];
     const appliedStatuses: SessionStatus[] = [];
     const { controller, getState } = createController(
-      { selectedSession: session, authDialog: { step: "oauth", flow, inputValue: "https://callback" } },
+      { selectedSession: session, authDialog: { step: "oauth", flow, machineId: "local", inputValue: "https://callback" } },
       {
         respondOAuthFlow: (flowId, requestId, value, machineId) => {
           respondCalls.push({ flowId, requestId, value, machineId });
@@ -147,7 +147,7 @@ describe("AuthController", () => {
   it("leaves the OAuth dialog ready to retry if responding fails", async () => {
     const flow = oauthFlow({ prompt: { requestId: "request-1", message: "Paste callback", kind: "manual" } });
     const { controller, getState } = createController(
-      { authDialog: { step: "oauth", flow, inputValue: "https://callback", responding: true } },
+      { authDialog: { step: "oauth", flow, machineId: "local", inputValue: "https://callback", responding: true } },
       { respondOAuthFlow: () => Promise.reject(new Error("Invalid callback")) },
     );
 
@@ -168,7 +168,7 @@ describe("AuthController", () => {
     const response = deferred<OAuthFlowState>();
     const cancellation = deferred<OAuthFlowState>();
     const { controller, getState } = createController(
-      { authDialog: { step: "oauth", flow, inputValue: "https://callback" } },
+      { authDialog: { step: "oauth", flow, machineId: "local", inputValue: "https://callback" } },
       {
         respondOAuthFlow: () => response.promise,
         cancelOAuthFlow: () => cancellation.promise,
@@ -219,6 +219,78 @@ describe("AuthController", () => {
     expect(getState().error).toBe("");
   });
 
+  it("keeps prompt responses and cancellation bound to the flow's originating machine", async () => {
+    const prompt = { requestId: "request-1", message: "Enter secret", kind: "prompt", promptType: "secret" } as const;
+    const flow = oauthFlow({ providerId: "amazon-bedrock", prompt });
+    const respondCalls: { value: string; machineId: string | undefined }[] = [];
+    const cancelCalls: { flowId: string; machineId: string | undefined }[] = [];
+    const { controller } = createController(
+      {
+        selectedMachine: remoteMachine("remote-2"),
+        authDialog: { step: "oauth", flow, machineId: "remote-1", inputValue: "secret-value" },
+      },
+      {
+        respondOAuthFlow: (_flowId, _requestId, value, machineId) => {
+          respondCalls.push({ value, machineId });
+          return Promise.resolve(flow);
+        },
+        cancelOAuthFlow: (flowId, machineId) => {
+          cancelCalls.push({ flowId, machineId });
+          return Promise.resolve(oauthFlow({ status: "cancelled" }));
+        },
+      },
+    );
+
+    await controller.respondOAuth();
+    await controller.cancelOAuth();
+
+    expect(respondCalls).toEqual([{ value: "secret-value", machineId: "remote-1" }]);
+    expect(cancelCalls).toEqual([{ flowId: "flow-1", machineId: "remote-1" }]);
+  });
+
+  it("keeps polling bound to the machine where an interactive flow started", async () => {
+    let pollCallback: (() => void) | undefined;
+    vi.stubGlobal("window", {
+      setInterval: (callback: () => void) => {
+        pollCallback = callback;
+        return 1;
+      },
+      clearInterval: () => undefined,
+    });
+    const prompt = { requestId: "request-1", message: "Enter secret", kind: "prompt", promptType: "secret" } as const;
+    const flow = oauthFlow({ providerId: "amazon-bedrock", prompt });
+    const provider: AuthProviderOption = { ...authProvider("amazon-bedrock", "api_key"), loginFlow: "interactive" };
+    const pollMachines: (string | undefined)[] = [];
+    const { controller, getState, setState } = createController(
+      {
+        selectedMachine: remoteMachine("remote-1"),
+        authDialog: { step: "providers", mode: "login", authType: "api_key", providers: [provider] },
+      },
+      {
+        startInteractiveApiKeyLogin: () => Promise.resolve(flow),
+        oauthFlow: (_flowId, machineId) => {
+          pollMachines.push(machineId);
+          return Promise.resolve(flow);
+        },
+      },
+    );
+
+    try {
+      await controller.selectLoginProvider(provider.id, provider.authType);
+      expect(getState().authDialog).toMatchObject({ step: "oauth", machineId: "remote-1" });
+
+      setState({ selectedMachine: remoteMachine("remote-2") });
+      if (pollCallback === undefined) throw new Error("Expected auth polling to start");
+      pollCallback();
+      await flushMicrotasks();
+
+      expect(pollMachines).toEqual(["remote-1"]);
+    } finally {
+      controller.dispose();
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("does not let a stale OAuth response overwrite a newer flow", async () => {
     vi.stubGlobal("window", { setInterval: () => 1, clearInterval: () => undefined });
     const oldPrompt = { requestId: "request-1", message: "Paste callback", kind: "manual" } as const;
@@ -227,7 +299,7 @@ describe("AuthController", () => {
     const response = deferred<OAuthFlowState>();
     const providers = [authProvider("anthropic", "oauth")];
     const { controller, getState } = createController(
-      { authDialog: { step: "oauth", flow: oldFlow, inputValue: "https://old-callback" } },
+      { authDialog: { step: "oauth", flow: oldFlow, machineId: "local", inputValue: "https://old-callback" } },
       {
         respondOAuthFlow: () => response.promise,
         authProviders: () => Promise.resolve({ providers }),
@@ -296,7 +368,7 @@ describe("AuthController", () => {
     const flow = oauthFlow({ prompt: { requestId: "request-1", message: "Paste callback", kind: "manual" } });
     const cancelCalls: { flowId: string; machineId: string | undefined }[] = [];
     const { controller, getState } = createController(
-      { authDialog: { step: "oauth", flow } },
+      { authDialog: { step: "oauth", flow, machineId: "local" } },
       {
         cancelOAuthFlow: (flowId, machineId) => {
           cancelCalls.push({ flowId, machineId });
@@ -390,13 +462,14 @@ function createController(
 ) {
   let state: AppState = { ...initialAppState(), ...statePatch };
   const api = { ...defaultApi, ...apiPatch };
+  const setState = (patch: Partial<AppState>) => { state = { ...state, ...patch }; };
   const controller = new AuthController(
     () => state,
-    (patch) => { state = { ...state, ...patch }; },
+    setState,
     applyStatus,
     { api },
   );
-  return { controller, getState: () => state };
+  return { controller, getState: () => state, setState };
 }
 
 async function flushMicrotasks(): Promise<void> {
