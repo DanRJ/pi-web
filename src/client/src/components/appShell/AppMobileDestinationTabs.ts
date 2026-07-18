@@ -5,7 +5,6 @@ import { MOBILE_DESTINATION_ORDER, type MobileDestination } from "../../appShell
 @customElement("app-mobile-destination-tabs")
 export class AppMobileDestinationTabs extends LitElement {
   @property({ attribute: false }) selected: MobileDestination = "chat";
-  @property({ type: Boolean }) toolsAvailable = false;
   @property({ attribute: false }) onSelect?: (destination: MobileDestination) => void;
 
   override render() {
@@ -24,7 +23,6 @@ export class AppMobileDestinationTabs extends LitElement {
 
   private renderDestination(destination: MobileDestination) {
     const selected = this.selected === destination;
-    const disabled = destination === "tools" && !this.toolsAvailable;
     return html`
       <button
         type="button"
@@ -32,7 +30,6 @@ export class AppMobileDestinationTabs extends LitElement {
         aria-current=${selected ? "page" : nothing}
         aria-haspopup=${destination === "settings" ? "dialog" : nothing}
         aria-label=${destinationLabel(destination)}
-        ?disabled=${disabled}
         @click=${() => { this.select(destination); }}
         @keydown=${(event: KeyboardEvent) => { this.onKeyDown(event, destination); }}
       >
@@ -43,7 +40,6 @@ export class AppMobileDestinationTabs extends LitElement {
   }
 
   private select(destination: MobileDestination): void {
-    if (destination === "tools" && !this.toolsAvailable) return;
     this.onSelect?.(destination);
   }
 
@@ -53,7 +49,7 @@ export class AppMobileDestinationTabs extends LitElement {
       ? MOBILE_DESTINATION_ORDER[0]
       : event.key === "End"
         ? MOBILE_DESTINATION_ORDER[MOBILE_DESTINATION_ORDER.length - 1]
-        : direction === 0 ? undefined : nextDestination(destination, direction, this.toolsAvailable);
+        : direction === 0 ? undefined : nextDestination(destination, direction);
     if (target === undefined) return;
     event.preventDefault();
     this.select(target);
@@ -68,17 +64,15 @@ export class AppMobileDestinationTabs extends LitElement {
     .destinations { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); min-height: 3.625rem; }
     button { display: grid; place-content: center; gap: 0.125rem; min-width: 2.75rem; min-height: 2.75rem; border: 0; border-radius: 0; background: transparent; color: var(--pi-muted); padding: 0.25rem; font: 600 0.6875rem/1.1 var(--pi-control-font-family, system-ui, sans-serif); cursor: pointer; }
     button[aria-current="page"] { color: var(--pi-accent); font-weight: 800; }
-    button:disabled { color: var(--pi-muted); cursor: not-allowed; opacity: .55; }
     button:focus-visible { outline: var(--pi-focus-ring-width, 2px) solid var(--pi-accent); outline-offset: calc(-1 * var(--pi-focus-ring-offset, 2px)); }
     svg { width: 1.125rem; height: 1.125rem; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
     @media (forced-colors: active) { button[aria-current="page"] { outline: 2px solid SelectedItem; outline-offset: -2px; } }
   `;
 }
 
-export function nextDestination(destination: MobileDestination, direction: -1 | 1, toolsAvailable: boolean): MobileDestination {
-  const available = MOBILE_DESTINATION_ORDER.filter((candidate) => candidate !== "tools" || toolsAvailable);
-  const index = available.indexOf(destination);
-  return available[(index + direction + available.length) % available.length] ?? "chat";
+export function nextDestination(destination: MobileDestination, direction: -1 | 1): MobileDestination {
+  const index = MOBILE_DESTINATION_ORDER.indexOf(destination);
+  return MOBILE_DESTINATION_ORDER[(index + direction + MOBILE_DESTINATION_ORDER.length) % MOBILE_DESTINATION_ORDER.length] ?? "chat";
 }
 
 function destinationLabel(destination: MobileDestination): string {

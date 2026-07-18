@@ -2,6 +2,9 @@ import { LitElement, html, type TemplateResult } from "lit";
 import { customElement, property, query, state } from "lit/decorators.js";
 import type { Workspace } from "../api";
 import type { QualifiedContributionId, QualifiedWorkspacePanelContribution, WorkspacePanelContext } from "../plugins/types";
+import { isCoreWorkspacePanelId, type CoreWorkspacePanelId } from "../plugins/core/workspacePanelIds";
+import "./WorkspaceToolsWorkbench";
+import type { WorkspaceToolsPresentation } from "./WorkspaceToolsWorkbench";
 import { workspacePanelStyles } from "./shared";
 
 export interface WorkspacePanelEmptyState {
@@ -24,6 +27,8 @@ export class WorkspacePanel extends LitElement {
   @property({ attribute: false }) panels: QualifiedWorkspacePanelContribution[] = [];
   @property({ type: Boolean }) hideToolTabs = false;
   @property({ type: Boolean, reflect: true }) mobileTools = false;
+  /** Explicit app-shell/theme presentation, rather than a CSS-only theme guess. */
+  @property() presentation: "legacy" | `modernist-${WorkspaceToolsPresentation}` = "legacy";
   @property({ attribute: false }) onSelectTool: (tool: QualifiedContributionId) => void = () => undefined;
   @query(".workspace-header-strip") private workspaceHeaderStrip?: HTMLElement | null;
   @state() private workspaceHeaderCanScrollLeft = false;
@@ -65,35 +70,43 @@ export class WorkspacePanel extends LitElement {
     });
     const visiblePanels = this.panels;
     const selectedPanel = selectedWorkspacePanel(visiblePanels, this.tool);
+    const activeCoreId = selectedPanel !== undefined && isCoreWorkspacePanelId(selectedPanel.id) ? selectedPanel.id : undefined;
+    const workbenchPresentation = workspaceToolsPresentationFor(this.presentation);
     return html`
-      ${this.hideToolTabs || visiblePanels.length < 2 ? null : html`
-        <header>
-          <div class=${this.workspaceHeaderFrameClass()}>
-            <div class="workspace-header-strip" @scroll=${this.onWorkspaceHeaderScroll}>
-              <div class="tabs" aria-label="Workspace tools">
-                ${visiblePanels.map((panel) => {
-                  const selected = selectedPanel?.id === panel.id;
-                  const badge = panel.badge?.(context);
-                  const ariaLabel = this.panelTabAriaLabel(panel, badge);
-                  return html`
-                    <button class=${this.panelTabClass(panel, selected)} title=${ariaLabel} aria-label=${ariaLabel} aria-current=${selected ? "page" : "false"} @click=${() => { this.onSelectTool(panel.id); }} @keydown=${(event: KeyboardEvent) => { this.onPanelTabKeyDown(event, panel.id, visiblePanels); }}>
-                      ${this.renderPanelTabContent(panel, badge)}
-                    </button>
-                  `;
-                })}
-              </div>
-            </div>
-          </div>
-        </header>
-      `}
+      ${this.hideToolTabs || visiblePanels.length < 2 ? null : this.renderToolTabs(visiblePanels, selectedPanel, context)}
       ${selectedPanel === undefined ? this.renderEmptyState({
         title: "No workspace tools available",
         body: "No tools are available for this workspace.",
       }) : html`
         <div class="panel-content">
-          ${selectedPanel.render(context)}
+          ${activeCoreId === undefined || workbenchPresentation === undefined
+            ? selectedPanel.render(context)
+            : html`<workspace-tools-workbench .context=${context} .presentation=${workbenchPresentation} .activeCoreId=${activeCoreId} .onSelectCore=${(id: CoreWorkspacePanelId) => { this.onSelectTool(id); }}></workspace-tools-workbench>`}
         </div>
       `}
+    `;
+  }
+
+  private renderToolTabs(visiblePanels: readonly QualifiedWorkspacePanelContribution[], selectedPanel: QualifiedWorkspacePanelContribution | undefined, context: WorkspacePanelContext): TemplateResult {
+    return html`
+      <header>
+        <div class=${this.workspaceHeaderFrameClass()}>
+          <div class="workspace-header-strip" @scroll=${this.onWorkspaceHeaderScroll}>
+            <div class="tabs" aria-label="Workspace tools">
+              ${visiblePanels.map((panel) => {
+                const selected = selectedPanel?.id === panel.id;
+                const badge = panel.badge?.(context);
+                const ariaLabel = this.panelTabAriaLabel(panel, badge);
+                return html`
+                  <button class=${this.panelTabClass(panel, selected)} data-panel-id=${panel.id} title=${ariaLabel} aria-label=${ariaLabel} aria-current=${selected ? "page" : "false"} @click=${() => { this.onSelectTool(panel.id); }} @keydown=${(event: KeyboardEvent) => { this.onPanelTabKeyDown(event, panel.id, visiblePanels); }}>
+                    ${this.renderPanelTabContent(panel, badge)}
+                  </button>
+                `;
+              })}
+            </div>
+          </div>
+        </div>
+      </header>
     `;
   }
 
@@ -175,4 +188,13 @@ export class WorkspacePanel extends LitElement {
   }
 
   static override styles = workspacePanelStyles;
+}
+
+function workspaceToolsPresentationFor(presentation: WorkspacePanel["presentation"]): WorkspaceToolsPresentation | undefined {
+  switch (presentation) {
+    case "modernist-desktop": return "desktop";
+    case "modernist-tablet": return "tablet";
+    case "modernist-mobile": return "mobile";
+    case "legacy": return undefined;
+  }
 }

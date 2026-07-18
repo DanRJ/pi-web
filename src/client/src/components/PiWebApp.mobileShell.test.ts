@@ -27,6 +27,15 @@ describe("PiWebApp mobile shell", () => {
     expect(styles).toContain("app-mobile-destination-tabs { grid-column: 1; grid-row: 2; display: block; min-width: 0; }");
   });
 
+  it("keeps Tools visible in the first mobile grid row while tablet-only non-workspace views hide it", () => {
+    const mobileStyles = mobileShellStyles();
+    expect(mobileStyles).toContain(".shell.mobile-destination-tools > workspace-panel { grid-column: 1; grid-row: 1; display: flex; }");
+    expect(mobileStyles).toContain(".shell.mobile-destination-chat > workspace-panel,");
+    expect(mobileStyles).toContain(".shell.mobile-destination-settings > workspace-panel { display: none; }");
+    expect(mobileStyles).not.toContain(".shell:not(.workspace-view):not(.modernist-tools-expanded) > workspace-panel { display: none; }");
+    expect(tabletShellStyles()).toContain(".shell:not(.workspace-view):not(.modernist-tools-expanded) > workspace-panel { display: none; }");
+  });
+
   it("keeps the selected tool mounted while Chat becomes the authoritative mobile destination", () => {
     const app = createApp();
     setMobileLayout(app);
@@ -49,6 +58,40 @@ describe("PiWebApp mobile shell", () => {
     expect(templateMarkup(rendered)).toContain("<prompt-editor");
     expect(appStyles.cssText).toContain(".shell.mobile-destination-chat main.workspace-view chat-view");
     expect(appStyles.cssText).toContain(".shell.mobile-destination-chat main.workspace-view prompt-editor");
+    expect(mobileShellStyles()).not.toContain(".shell.modernist-tools-expanded main { display: none; }");
+  });
+
+  it("keeps a selected workspace workbench reachable through the Tools destination", () => {
+    const app = createApp();
+    setMobileLayout(app);
+    setState(app, { ...initialAppState(), selectedWorkspace: workspace(), mainView: "chat", workspaceTool: "core:workspace.files" });
+
+    call(app, "selectMobileDestination", "tools");
+
+    expect(Reflect.get(app, "mobileDestination")).toBe("tools");
+    expect(values(app.render())).toContain("shell chat-view mobile-destination-tools");
+    expect(templateMarkup(app.render())).toContain("<workspace-panel");
+  });
+
+  it("keeps the mounted chat surface when every bottom destination follows a Modernist tool", () => {
+    const app = createApp();
+    setMobileLayout(app);
+    setState(app, { ...initialAppState(), selectedSession: session(), selectedWorkspace: workspace(), mainView: "chat", workspaceTool: "core:workspace.files" });
+    Reflect.set(app, "activeThemeId", "themes:modernist-dark");
+
+    call(app, "openWorkspaceTool", "plugin:workspace.review");
+    call(app, "selectMobileDestination", "chat");
+    expect(values(app.render())).toContain("shell workspace-view modernist-tools-expanded mobile-destination-chat");
+    expect(templateMarkup(app.render())).toContain("<chat-view");
+    expect(templateMarkup(app.render())).toContain("<prompt-editor");
+
+    call(app, "selectMobileDestination", "sessions");
+    expect(values(app.render())).toContain("shell workspace-view modernist-tools-expanded mobile-destination-sessions");
+    expect(Reflect.get(app, "state")).toMatchObject({ workspaceTool: "plugin:workspace.review", mainView: "plugin:workspace.review" });
+
+    call(app, "selectMobileDestination", "settings");
+    expect(values(app.render())).toContain("shell workspace-view modernist-tools-expanded mobile-destination-settings");
+    expect(Reflect.get(app, "state")).toMatchObject({ workspaceTool: "plugin:workspace.review", mainView: "plugin:workspace.review" });
   });
 
   it("opens Settings for a tool route and restores Tools after explicit close and URL close", () => {
@@ -178,9 +221,16 @@ class FakeHTMLElement {
 }
 
 function mobileShellStyles(): string {
-  const start = appStyles.cssText.indexOf("@media (max-width: 767px) {");
+  const start = appStyles.cssText.indexOf("@media (max-width: 767px) {\n    .shell {");
   const end = appStyles.cssText.indexOf("\n  }\n  status-bar", start);
   if (start === -1 || end === -1) throw new Error("Mobile shell styles unavailable");
+  return appStyles.cssText.slice(start, end);
+}
+
+function tabletShellStyles(): string {
+  const start = appStyles.cssText.indexOf("@media (min-width: 768px) and (max-width: 1180px) {");
+  const end = appStyles.cssText.indexOf("\n  }\n  @media (max-width: 1180px)", start);
+  if (start === -1 || end === -1) throw new Error("Tablet shell styles unavailable");
   return appStyles.cssText.slice(start, end);
 }
 

@@ -27,13 +27,14 @@ import { RealtimeSocket } from "../sessionSocket";
 import type { PiWebPluginRegistration, PluginMachine, PluginPromptEditor, QualifiedContributionId, QualifiedThemeContribution, QualifiedThemePairContribution, QualifiedWorkspacePanelContribution, PluginRuntimeContext, TerminalCommandRunsInternalRuntime, WorkspaceFiles, WorkspaceHost, WorkspaceLabelContext, WorkspaceLabelItem, WorkspacePanelContext } from "../plugins/types";
 import { CLASSIC_THEME_ID, DEFAULT_THEME_PREFERENCE, applyPiWebTheme, findThemePairForTheme, readStoredThemePreference, resolveThemePreference, toggleThemePreference, writeStoredThemePreference, type ThemePreference, type ThemePreferenceResolution } from "../theme";
 import { corePlugin } from "../plugins/core";
+import { isCoreWorkspacePanelId } from "../plugins/core/workspacePanelIds";
 import { themePackPlugin } from "../plugins/themes";
 import { loadExternalPlugins } from "../plugins/external";
 import { PluginRegistry, installPluginRuntimeScope, installWorkspacePanelScope } from "../plugins/registry";
 import { queryNamespace, readNamespacedString, setNamespacedQueryKey } from "../namespacedQueryArgs";
 import { AppShellController } from "../appShell/appShellController";
 import { BrowserResumeController } from "../appShell/browserResumeController";
-import { mobileDestinationFallback, mobileDestinationFromMainView, type MobileDestination } from "../appShell/mobileDestination";
+import { mobileDestinationFromMainView, type MobileDestination } from "../appShell/mobileDestination";
 import { NavigationSectionsController, type NavigationSection } from "../appShell/navigationState";
 import { PanelCollapseController, mainViewClass } from "../appShell/panelCollapseController";
 import { MODERNIST_NAVIGATION_PANEL_DEFAULT_WIDTH, PanelResizeController, type PanelResizeConstraints, type ResizablePanelSide } from "../appShell/panelResizeController";
@@ -187,6 +188,9 @@ export class PiWebApp extends LitElement {
     () => this.appShell.isMobileNavigationLayout,
   );
   private readonly systemLightThemeMedia = typeof window !== "undefined" && "matchMedia" in window ? window.matchMedia("(prefers-color-scheme: light)") : undefined;
+  // The workbench uses an explicit desktop/tablet input, so observe this
+  // boundary instead of relying on CSS to imply a composition change.
+  private readonly desktopSideBySideMedia = typeof window !== "undefined" && "matchMedia" in window ? window.matchMedia(DESKTOP_SIDE_BY_SIDE_MEDIA_QUERY) : undefined;
   private terminalAutoStartWorkspaceId: string | undefined;
   private piWebStatusTimer: number | undefined;
   private piWebStatusDeferredTimer: number | undefined;
@@ -238,6 +242,7 @@ export class PiWebApp extends LitElement {
   private readonly onSystemLightThemeChange = () => {
     if (this.themePreference.auto) this.applyPreferredTheme(false);
   };
+  private readonly onDesktopSideBySideChange = () => { this.requestUpdate(); this.updateGitPolling(); };
   private get routeRestoreInProgress(): boolean {
     return this.routeRestoreDepth > 0;
   }
@@ -262,6 +267,7 @@ export class PiWebApp extends LitElement {
     this.restoreSettingsRoute();
     window.addEventListener("keydown", this.onKeyDown, GLOBAL_SHORTCUT_LISTENER_OPTIONS);
     this.systemLightThemeMedia?.addEventListener("change", this.onSystemLightThemeChange);
+    this.desktopSideBySideMedia?.addEventListener("change", this.onDesktopSideBySideChange);
     this.applyPreferredTheme(false);
     this.connectRealtime();
     this.piWebStatusTimer = window.setInterval(() => { this.schedulePiWebStatusRefresh(); }, PI_WEB_STATUS_REFRESH_MS);
@@ -277,6 +283,7 @@ export class PiWebApp extends LitElement {
     this.browserResume.disconnect();
     window.removeEventListener("keydown", this.onKeyDown, GLOBAL_SHORTCUT_LISTENER_OPTIONS);
     this.systemLightThemeMedia?.removeEventListener("change", this.onSystemLightThemeChange);
+    this.desktopSideBySideMedia?.removeEventListener("change", this.onDesktopSideBySideChange);
     this.keyboard.reset();
     this.auth.dispose();
     this.sessions.dispose();
@@ -438,7 +445,7 @@ export class PiWebApp extends LitElement {
         selectedTerminalId: routeSurface.selectedTerminalId,
       });
       if (this.appShell.isMobileNavigationLayout) {
-        const destination = mobileDestinationFallback(mobileDestinationFromMainView(restoredMainView ?? route.view ?? this.defaultRouteView()), this.mobileDestinationAvailability());
+        const destination = mobileDestinationFromMainView(restoredMainView ?? route.view ?? this.defaultRouteView());
         if (this.settingsSection === undefined) this.mobileDestination = destination;
         else this.mobileDestinationBeforeSettings = destination;
       }
@@ -449,7 +456,7 @@ export class PiWebApp extends LitElement {
       if (this.routeMatchesCurrentSelection(route)) {
         if (routeSurface.selectedTerminalId !== undefined) this.rememberSelectedTerminal(routeSurface.selectedTerminalId);
         await this.refreshRestoredWorkspaceTool(route.tool, routeSurface.selectedFilePath);
-        this.git.updatePolling();
+        this.updateGitPolling();
         if (updateUrl) this.updateUrl();
         return;
       }
@@ -464,7 +471,7 @@ export class PiWebApp extends LitElement {
       this.setState({ selectedFilePath: routeSurface.selectedFilePath, selectedDiffPath: routeSurface.selectedDiffPath, selectedTerminalId: routeSurface.selectedTerminalId });
       if (routeSurface.selectedTerminalId !== undefined) this.rememberSelectedTerminal(routeSurface.selectedTerminalId);
       await this.refreshRestoredWorkspaceTool(route.tool, routeSurface.selectedFilePath);
-      this.git.updatePolling();
+      this.updateGitPolling();
       if (updateUrl) this.updateUrl();
     } finally {
       this.routeRestoreDepth = Math.max(0, this.routeRestoreDepth - 1);
@@ -630,6 +637,7 @@ export class PiWebApp extends LitElement {
     if (tool === "core:workspace.files") await this.files.refreshFiles();
     if (tool === "core:workspace.files" && selectedFilePath !== undefined) await this.files.restoreFile(selectedFilePath);
     if (tool === "core:workspace.git") await this.git.refreshGit();
+    else if (this.isModernistCoreWorkbenchVisible()) await this.git.refreshGit();
   }
 
   private async withChatScrollTransition(action: () => Promise<void>, shouldComplete: () => boolean = () => true) {
@@ -719,7 +727,7 @@ export class PiWebApp extends LitElement {
     this.setState({ workspaceTool: tool, mainView: tool });
     this.updateUrl();
     this.refreshSelectedWorkspaceTool(tool);
-    this.git.updatePolling();
+    this.updateGitPolling();
   }
 
   private openTerminal(options?: { terminalId?: string | undefined }): void {
@@ -792,7 +800,7 @@ export class PiWebApp extends LitElement {
     }
     this.setState({ mainView: view });
     this.updateUrl();
-    this.git.updatePolling();
+    this.updateGitPolling();
   }
 
   private openDashboard(): void {
@@ -916,39 +924,29 @@ export class PiWebApp extends LitElement {
   }
 
   private selectMobileDestination(destination: MobileDestination): void {
-    const next = mobileDestinationFallback(destination, this.mobileDestinationAvailability());
-    if (this.topLevelPage === "dashboard") this.leaveDashboard(next === "sessions" ? undefined : next);
-    if (next === "settings") {
+    if (this.topLevelPage === "dashboard") this.leaveDashboard(destination === "sessions" ? undefined : destination);
+    if (destination === "settings") {
       this.openSettings();
       return;
     }
-    this.mobileDestination = next;
-  }
-
-  private mobileDestinationAvailability() {
-    return {
-      hasSession: this.state.selectedSession !== undefined,
-      hasTools: this.state.selectedWorkspace !== undefined && this.visibleWorkspacePanels().length > 0,
-    };
+    this.mobileDestination = destination;
   }
 
   private mobileDestinationForCurrentSurface(): MobileDestination {
-    return mobileDestinationFallback(mobileDestinationFromMainView(this.state.mainView), this.mobileDestinationAvailability());
+    return mobileDestinationFromMainView(this.state.mainView);
   }
 
   private ensureMobileDestination(): void {
     if (!this.appShell.isMobileNavigationLayout) return;
     if (this.settingsSection !== undefined) {
-      if (this.mobileDestination !== "settings") this.mobileDestinationBeforeSettings ??= mobileDestinationFallback(this.mobileDestination, this.mobileDestinationAvailability());
+      if (this.mobileDestination !== "settings") this.mobileDestinationBeforeSettings ??= this.mobileDestination;
       this.mobileDestination = "settings";
       return;
     }
     if (this.mobileDestination === "settings") {
-      this.mobileDestination = mobileDestinationFallback(this.mobileDestinationBeforeSettings ?? this.mobileDestinationForCurrentSurface(), this.mobileDestinationAvailability());
+      this.mobileDestination = this.mobileDestinationBeforeSettings ?? this.mobileDestinationForCurrentSurface();
       this.mobileDestinationBeforeSettings = undefined;
-      return;
     }
-    this.mobileDestination = mobileDestinationFallback(this.mobileDestination, this.mobileDestinationAvailability());
   }
 
   private handleMobileNavigationLayoutChange(isMobile: boolean): void {
@@ -968,7 +966,7 @@ export class PiWebApp extends LitElement {
     if (mainView === this.state.mainView) return;
     this.setState({ mainView });
     this.updateUrl({ replace: true });
-    this.git.updatePolling();
+    this.updateGitPolling();
   }
 
   private mainViewForMobileDestination(): AppState["mainView"] {
@@ -1004,11 +1002,11 @@ export class PiWebApp extends LitElement {
     this.settingsSection = section;
     if (this.appShell.isMobileNavigationLayout) {
       if (section !== undefined) {
-        if (this.mobileDestination !== "settings") this.mobileDestinationBeforeSettings = mobileDestinationFallback(this.mobileDestination, this.mobileDestinationAvailability());
+        if (this.mobileDestination !== "settings") this.mobileDestinationBeforeSettings = this.mobileDestination;
         else this.mobileDestinationBeforeSettings ??= this.mobileDestinationForCurrentSurface();
         this.mobileDestination = "settings";
       } else if (wasOpen || this.mobileDestination === "settings") {
-        this.mobileDestination = mobileDestinationFallback(this.mobileDestinationBeforeSettings ?? this.mobileDestinationForCurrentSurface(), this.mobileDestinationAvailability());
+        this.mobileDestination = this.mobileDestinationBeforeSettings ?? this.mobileDestinationForCurrentSurface();
         this.mobileDestinationBeforeSettings = undefined;
       }
     }
@@ -1048,7 +1046,7 @@ export class PiWebApp extends LitElement {
     void this.refreshActiveTerminals(next.selectedWorkspace);
     void this.refreshWorkspaceDeletionRuns();
     this.refreshSelectedWorkspaceTool(next.workspaceTool);
-    this.git.updatePolling();
+    this.updateGitPolling();
   }
 
   private connectRealtime(): void {
@@ -1161,13 +1159,31 @@ export class PiWebApp extends LitElement {
     this.activeTerminalIds.clear();
     this.sessionCleanupDialog = undefined;
     this.setState({ piWebStatus: undefined });
-    this.git.updatePolling();
+    this.updateGitPolling();
     void this.loadPluginsForSelectedMachine();
   }
 
   private refreshSelectedWorkspaceTool(tool: QualifiedContributionId): void {
     if (tool === "core:workspace.files") void this.files.refreshFiles();
     if (tool === "core:workspace.git") void this.git.refreshGit();
+    else if (this.isModernistCoreWorkbenchVisible()) void this.git.refreshGit();
+  }
+
+  /** The Modernist workbench keeps Git status visible beside every core tool. */
+  private updateGitPolling(): void {
+    this.git.updatePolling({ workbenchGitVisible: this.isModernistCoreWorkbenchVisible() });
+  }
+
+  private isModernistWorkbenchExpanded(): boolean {
+    return this.topLevelPage === "workspace"
+      && this.activeThemeId.startsWith("themes:modernist-")
+      && this.state.selectedWorkspace !== undefined
+      && this.state.mainView !== "chat"
+      && this.state.mainView !== "navigation";
+  }
+
+  private isModernistCoreWorkbenchVisible(): boolean {
+    return this.isModernistWorkbenchExpanded() && isCoreWorkspacePanelId(this.state.workspaceTool);
   }
 
   private renderWorkspacePanel() {
@@ -1183,9 +1199,18 @@ export class PiWebApp extends LitElement {
         .tool=${this.state.workspaceTool}
         .panels=${this.visibleWorkspacePanels()}
         .mobileTools=${this.appShell.isMobileNavigationLayout}
+        .presentation=${this.workspaceToolsPresentation()}
         .onSelectTool=${(tool: QualifiedContributionId) => { this.openWorkspaceTool(tool); }}
       ></workspace-panel>
     `;
+  }
+
+  private workspaceToolsPresentation(): "legacy" | "modernist-desktop" | "modernist-tablet" | "modernist-mobile" {
+    // Keep the existing compact sidecar when Chat owns the main surface; the
+    // workbench only replaces the shell while an active workspace tool owns it.
+    if (!this.isModernistWorkbenchExpanded()) return "legacy";
+    if (this.appShell.isMobileNavigationLayout) return "modernist-mobile";
+    return this.isDesktopSideBySideLayout() ? "modernist-desktop" : "modernist-tablet";
   }
 
   private renderNavigationPanelEdgeControl() {
@@ -1212,6 +1237,7 @@ export class PiWebApp extends LitElement {
   }
 
   private renderWorkspacePanelEdgeControl() {
+    if (this.isModernistWorkbenchExpanded()) return null;
     const constraints = this.resizablePanelConstraints("workspace");
     return html`
       <app-panel-edge-control
@@ -1275,8 +1301,7 @@ export class PiWebApp extends LitElement {
   }
 
   private isDesktopSideBySideLayout(): boolean {
-    if (typeof window === "undefined" || !("matchMedia" in window)) return true;
-    return window.matchMedia(DESKTOP_SIDE_BY_SIDE_MEDIA_QUERY).matches;
+    return this.desktopSideBySideMedia?.matches ?? true;
   }
 
   private measuredPanelWidth(side: ResizablePanelSide): number | undefined {
@@ -1700,7 +1725,9 @@ export class PiWebApp extends LitElement {
         gitStale: this.state.gitStale,
         activeTerminalCount: this.state.activeTerminalCount,
         selectedTerminalId: this.state.selectedTerminalId,
-        terminalAutoStart: this.terminalAutoStartWorkspaceId === workspace.id,
+        // A selected terminal is the durable acknowledgement of an auto-start.
+        // This prevents a responsive workbench remount from starting another shell.
+        terminalAutoStart: this.terminalAutoStartWorkspaceId === workspace.id && this.state.selectedTerminalId === undefined,
         workspaceUploadDefaultFolder: workspaceEffectiveUploadFolder(workspace.effectiveConfig, this.workspaceUploadDefaultFolder),
         onRefreshFiles: () => { void this.files.refreshFiles(); },
         onExpandDir: (path: string) => { void this.files.expandDir(path); },
@@ -2123,6 +2150,7 @@ export class PiWebApp extends LitElement {
     if (theme === undefined) return;
     this.activeThemeId = theme.id;
     applyPiWebTheme(theme);
+    this.updateGitPolling();
     if (persist) writeStoredThemePreference(this.themePreference);
   }
 
@@ -2270,7 +2298,6 @@ export class PiWebApp extends LitElement {
     return html`
       <app-mobile-destination-tabs
         .selected=${this.mobileDestination}
-        .toolsAvailable=${this.mobileDestinationAvailability().hasTools}
         .onSelect=${(destination: MobileDestination) => { this.selectMobileDestination(destination); }}
       ></app-mobile-destination-tabs>
     `;
@@ -2338,7 +2365,7 @@ export class PiWebApp extends LitElement {
     if (this.topLevelPage === "dashboard") return html`${this.renderDashboardPage()}${this.renderGlobalOverlays()}`;
     const state = this.state;
     return html`
-      <div class=${`${this.panelCollapse.shellClass(state.mainView)} mobile-destination-${this.mobileDestination}`} style=${this.panelResize.shellStyle({ navigation: this.resizablePanelConstraints("navigation"), workspace: this.resizablePanelConstraints("workspace") })}>
+      <div class=${`${this.panelCollapse.shellClass(state.mainView)}${this.isModernistWorkbenchExpanded() ? " modernist-tools-expanded" : ""} mobile-destination-${this.mobileDestination}`} style=${this.panelResize.shellStyle({ navigation: this.resizablePanelConstraints("navigation"), workspace: this.resizablePanelConstraints("workspace") })}>
         <aside id="navigation-panel">${this.appShell.isMobileNavigationLayout ? null : this.renderNavigationPanel()}</aside>
         ${this.renderNavigationPanelEdgeControl()}
         <main class=${mainViewClass(state.mainView)} tabindex="-1" aria-label="PI WEB workspace">

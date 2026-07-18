@@ -20,6 +20,10 @@ export interface WorkspaceUploadScope {
 
 @customElement("workspace-files-panel")
 export class WorkspaceFilesPanel extends LitElement {
+  /** Split preserves the legacy panel; tree and preview let the workbench compose the same safe UI. */
+  @property() view: "split" | "tree" | "preview" = "split";
+  /** The workbench renders two file surfaces at once on wider layouts, so it elects one status owner. */
+  @property({ type: Boolean }) showUploadStatus = true;
   @property({ attribute: false }) context: WorkspacePanelContext | undefined;
   @query("#workspace-upload-input") private uploadInput?: HTMLInputElement;
   @state() private pendingUpload: PendingWorkspaceUploadReview | undefined;
@@ -39,41 +43,52 @@ export class WorkspaceFilesPanel extends LitElement {
   override render(): TemplateResult {
     const context = this.context;
     if (context === undefined) return html`<p class="muted">Files unavailable.</p>`;
+    const showTree = this.view !== "preview";
     return html`
       <section
-        class=${this.dragActive ? "files-panel dragging" : "files-panel"}
-        @dragenter=${this.handleDragEnter}
-        @dragover=${this.handleDragOver}
-        @dragleave=${this.handleDragLeave}
-        @drop=${this.handleDrop}
+        class=${`${this.dragActive ? "files-panel dragging" : "files-panel"} ${this.view}`}
+        @dragenter=${showTree ? this.handleDragEnter : undefined}
+        @dragover=${showTree ? this.handleDragOver : undefined}
+        @dragleave=${showTree ? this.handleDragLeave : undefined}
+        @drop=${showTree ? this.handleDrop : undefined}
       >
-        <section class="toolbar">
-          <strong>Files</strong>
-          ${context.fileTreeStale ? html`<span class="stale">stale</span>` : null}
-          <div class="toolbar-actions">
-            <button @click=${this.openFilePicker}>Upload</button>
-            <button @click=${context.onRefreshFiles}>Refresh</button>
+        ${showTree ? html`
+          <section class="toolbar">
+            <strong>Files</strong>
+            ${context.fileTreeStale ? html`<span class="stale">stale</span>` : null}
+            <div class="toolbar-actions">
+              <button @click=${this.openFilePicker}>Upload</button>
+              <button @click=${context.onRefreshFiles}>Refresh</button>
+            </div>
+            <input id="workspace-upload-input" class="visually-hidden" type="file" multiple @change=${this.handleFileInputChange} />
+          </section>
+        ` : null}
+        ${this.showUploadStatus ? this.renderUploadProgress(context) : null}
+        ${this.view === "split" ? html`
+          <section class="split">
+            ${this.renderTree(context)}
+            ${this.renderPreview(context)}
+          </section>
+        ` : showTree ? this.renderTree(context) : this.renderPreview(context)}
+        ${showTree ? html`
+          <div class="drop-overlay" aria-hidden=${this.dragActive ? "false" : "true"}>
+            <div>
+              <strong>Drop files to upload</strong>
+              <span>Uploads immediately to the default folder.</span>
+            </div>
           </div>
-          <input id="workspace-upload-input" class="visually-hidden" type="file" multiple @change=${this.handleFileInputChange} />
-        </section>
-        ${this.renderUploadProgress(context)}
-        <section class="split">
-          <div class="list tree">
-            ${context.fileTree.length === 0 ? html`<p class="muted">No files loaded.</p>` : context.fileTree.map((entry) => this.renderTreeEntry(context, entry, 0))}
-          </div>
-          <div class="viewer">
-            ${this.renderFileViewer(context)}
-          </div>
-        </section>
-        <div class="drop-overlay" aria-hidden=${this.dragActive ? "false" : "true"}>
-          <div>
-            <strong>Drop files to upload</strong>
-            <span>Uploads immediately to the default folder.</span>
-          </div>
-        </div>
-        ${this.pendingUpload === undefined ? null : this.renderUploadDialog(context, this.pendingUpload)}
+          ${this.pendingUpload === undefined ? null : this.renderUploadDialog(context, this.pendingUpload)}
+        ` : null}
       </section>
     `;
+  }
+
+  private renderTree(context: WorkspacePanelContext): TemplateResult {
+    return html`<div class="list tree">${context.fileTree.length === 0 ? html`<p class="muted">No files loaded.</p>` : context.fileTree.map((entry) => this.renderTreeEntry(context, entry, 0))}</div>`;
+  }
+
+  private renderPreview(context: WorkspacePanelContext): TemplateResult {
+    return html`<div class="viewer">${this.renderFileViewer(context)}</div>`;
   }
 
   private renderTreeEntry(context: WorkspacePanelContext, entry: FileTreeEntry, depth: number): TemplateResult {
@@ -330,6 +345,9 @@ export class WorkspaceFilesPanel extends LitElement {
     css`
       :host { flex: 1 1 auto; }
       .files-panel { position: relative; flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+      .files-panel.tree > .list, .files-panel.preview > .viewer { flex: 1 1 auto; }
+      .files-panel.tree > .list { border-bottom: 0; }
+      .files-panel.preview > .viewer { overflow: auto; }
       .toolbar-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; }
       .toolbar .toolbar-actions button { margin-left: 0; }
       .visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; border: 0; }

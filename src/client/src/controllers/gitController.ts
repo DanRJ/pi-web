@@ -61,10 +61,10 @@ export class GitController {
     }
   }
 
-  updatePolling(): void {
+  updatePolling(options: { workbenchGitVisible?: boolean } = {}): void {
     this.dispose();
     const state = this.getState();
-    if (state.workspaceTool === "core:workspace.git" || state.mainView === "core:workspace.git") {
+    if (options.workbenchGitVisible === true || state.workspaceTool === "core:workspace.git" || state.mainView === "core:workspace.git") {
       this.pollTimer = window.setInterval(() => { void this.refreshGit(); }, 8000);
     }
   }
