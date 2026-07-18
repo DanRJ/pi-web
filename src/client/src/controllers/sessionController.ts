@@ -11,7 +11,7 @@ import { SessionSocket, type GlobalSessionEvent, type SessionUiEvent } from "../
 import { isArchivableSessionInfo, isTransientNewSessionInfo, sessionPersistenceOptionsForRuntime } from "../sessionPersistence";
 import { isSessionActive } from "../../../shared/activity";
 import { PI_WEB_CAPABILITIES, supportsPiWebCapability } from "../../../shared/capabilities";
-import type { PromptAttachmentDelivery } from "../../../shared/apiTypes";
+import type { PromptAttachmentDelivery, SessionNotificationInboxEvent } from "../../../shared/apiTypes";
 import { InMemorySessionSelectionMemory, markSessionArchived, markSessionsArchived, selectPreferredSession, selectionAfterArchivingSession, selectionAfterArchivingSessions, shouldDeselectAfterArchivedCollapse, type SessionSelectionMemory } from "./sessionSelection";
 import { selectedMachineId, type GetState, type SetState, type UpdateUrl } from "./types";
 import { TrailingRefreshCoordinator } from "./trailingRefreshCoordinator";
@@ -25,10 +25,19 @@ export interface SessionEventSocket {
   close(): void;
 }
 
+export interface SessionNotificationSessionBridge {
+  prepareSelectedSession(session: SessionInfo, machineId: string): void;
+  clearSelectedSession(): void;
+  refreshSelectedSession(session: SessionRef, machineId: string): Promise<void>;
+  applyInboxEvent(machineId: string, event: SessionNotificationInboxEvent): void;
+  shouldFilterLegacyNotification(machineId: string, notificationId: string | undefined): boolean;
+}
+
 export interface SessionControllerDependencies {
   api?: typeof defaultApi;
   socket?: SessionEventSocket;
   transcripts?: ChatTranscriptStore;
+  notifications?: SessionNotificationSessionBridge;
 }
 
 interface BulkSessionMutationResult {
@@ -71,6 +80,7 @@ export class SessionController {
   private readonly socket: SessionEventSocket;
   private readonly api: typeof defaultApi;
   private readonly transcripts: ChatTranscriptStore;
+  private readonly notifications: SessionNotificationSessionBridge | undefined;
   private selectionSeq = 0;
   // Join-time stream watermark for the selected session. `seq` is the
   // `SessionEventHub` sequence captured together with the seeded partial by the
@@ -98,6 +108,7 @@ export class SessionController {
     this.socket = deps.socket ?? new SessionSocket();
     this.api = deps.api ?? defaultApi;
     this.transcripts = deps.transcripts ?? new ChatTranscriptStore();
+    this.notifications = deps.notifications;
   }
 
   applyGlobalEvent(event: GlobalSessionEvent): void {
@@ -116,6 +127,7 @@ export class SessionController {
   clearActiveSession() {
     this.selectionSeq += 1;
     this.socket.close();
+    this.notifications?.clearSelectedSession();
     this.streamWatermark = undefined;
     this.clearPendingUpdates();
     // Note: sendingPrompts is intentionally NOT cleared here. Deselecting a
@@ -168,6 +180,8 @@ export class SessionController {
     this.socket.close();
     this.streamWatermark = undefined;
     this.clearPendingUpdates();
+    const machineId = selectedMachineId(this.getState());
+    this.notifications?.prepareSelectedSession(session, machineId);
     const transcriptKey = this.sessionCacheKey(session.id);
     const cached = this.transcripts.cachedView(transcriptKey);
     this.setState({
@@ -194,7 +208,6 @@ export class SessionController {
         () => { void this.refreshSelectedSession(session.id); },
         selectedMachineId(this.getState()),
       );
-      const machineId = selectedMachineId(this.getState());
       await this.requestSelectedSessionRefresh({ session, machineId, selectionSeq: seq });
       if (!this.isCurrentRefreshTarget({ session, machineId, selectionSeq: seq })) return;
       void this.refreshAvailableThinkingLevels();
@@ -793,6 +806,7 @@ export class SessionController {
         // at seq 1, and un-stamped events fail open), so the core transcript
         // still loads and streams normally.
         this.api.streamSnapshot(target.session, target.machineId).catch((): SessionStreamSnapshot => ({ seq: 0, partial: null })),
+        this.notifications?.refreshSelectedSession(target.session, target.machineId) ?? Promise.resolve(),
       ]);
       if (!this.isCurrentRefreshTarget(target)) return;
       // Seed the in-flight partial assistant message on top of committed history
@@ -892,6 +906,7 @@ export class SessionController {
     this.sessionSelection.rememberSession({ ...session, cwd: this.workspaceSelectionKey(session.cwd) });
     this.selectionSeq += 1;
     this.socket.close();
+    this.notifications?.clearSelectedSession();
     this.streamWatermark = undefined;
     this.clearPendingUpdates();
     const state = this.getState();
@@ -1111,6 +1126,15 @@ export class SessionController {
   }
 
   private applyEvent(event: SessionUiEvent) {
+    // Notification revisions use their own join snapshot. Handle them before the
+    // transcript watermark so a notification event sharing an already-seeded
+    // transcript sequence cannot be lost.
+    if (event.type === "notifications.inbox") {
+      this.notifications?.applyInboxEvent(selectedMachineId(this.getState()), event);
+      return;
+    }
+    if (event.type === "command.output" && this.notifications?.shouldFilterLegacyNotification(selectedMachineId(this.getState()), event.notificationId) === true) return;
+
     // Drop events already reflected in the seeded join snapshot (committed
     // history + partial). Everything past the watermark applies exactly once,
     // so live content streams directly on top of the seeded partial.

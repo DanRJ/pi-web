@@ -1,4 +1,5 @@
 import { realtimeEvents, sessionEvents } from "./api";
+import { parseSessionNotificationInboxEvent, parseSessionNotificationSummaryEvent } from "./api/parsers";
 import type { GlobalSessionEvent, RealtimeEvent, SessionRef, SessionUiEvent } from "../../shared/apiTypes";
 
 export type { GlobalSessionEvent, RealtimeEvent, SessionUiEvent } from "../../shared/apiTypes";
@@ -49,7 +50,7 @@ export class SessionSocket {
       if (this.hasOpened) this.onReconnect?.();
       this.hasOpened = true;
     };
-    socket.onmessage = (message) => void this.handleMessage(message.data);
+    socket.onmessage = (message) => void this.handleMessage(message.data, this.session);
     socket.onerror = () => { socket.close(); };
     socket.onclose = () => {
       if (this.socket === socket) this.socket = undefined;
@@ -65,9 +66,11 @@ export class SessionSocket {
     this.reconnectTimer = window.setTimeout(() => { this.open(); }, delay);
   }
 
-  private async handleMessage(data: MessageEvent["data"]): Promise<void> {
-    const event = await parseSocketEvent(data);
-    if (isSessionUiEvent(event)) this.onEvent?.(event);
+  private async handleMessage(data: MessageEvent["data"], session: SessionRef | undefined): Promise<void> {
+    const event = parseSessionSocketEvent(await parseSocketEvent(data));
+    if (event === undefined) return;
+    if (event.type === "notifications.inbox" && (session?.id !== event.summary.sessionId || session.cwd !== event.summary.cwd)) return;
+    this.onEvent?.(event);
   }
 }
 
@@ -124,24 +127,44 @@ export class RealtimeSocket {
   }
 
   private async handleMessage(data: MessageEvent["data"]): Promise<void> {
-    const event = await parseSocketEvent(data);
-    if (isRealtimeEvent(event)) this.onEvent?.(event);
+    const event = parseRealtimeSocketEvent(await parseSocketEvent(data));
+    if (event !== undefined) this.onEvent?.(event);
   }
 }
 
-function isSessionUiEvent(event: unknown): event is SessionUiEvent {
+export function parseSessionSocketEvent(event: unknown): SessionUiEvent | undefined {
   const type = eventType(event);
-  return ["message.append", "assistant.delta", "assistant.thinking.delta", "tool.start", "tool.update", "tool.end", "shell.start", "shell.chunk", "shell.end", "agent.start", "agent.end", "message.end", "status.update", "activity.update", "command.output", "session.error", "session.name", "session.created", "pi.event"].includes(type);
+  if (type === "notifications.inbox") return safelyParseNotificationEvent(() => parseSessionNotificationInboxEvent(event));
+  return isLegacySessionUiEvent(event) ? event : undefined;
 }
 
-function isGlobalSessionEvent(event: unknown): event is GlobalSessionEvent {
+export function parseRealtimeSocketEvent(event: unknown): RealtimeEvent | undefined {
+  const type = eventType(event);
+  if (type === "notifications.summary") return safelyParseNotificationEvent(() => parseSessionNotificationSummaryEvent(event));
+  if (isLegacyGlobalSessionEvent(event) || isLegacyRealtimeEvent(event)) return event;
+  return undefined;
+}
+
+function isLegacySessionUiEvent(event: unknown): event is SessionUiEvent {
+  return ["message.append", "assistant.delta", "assistant.thinking.delta", "tool.start", "tool.update", "tool.end", "shell.start", "shell.chunk", "shell.end", "agent.start", "agent.end", "message.end", "status.update", "activity.update", "command.output", "session.error", "session.name", "session.created", "pi.event"].includes(eventType(event));
+}
+
+function isLegacyGlobalSessionEvent(event: unknown): event is GlobalSessionEvent {
   const type = eventType(event);
   return type === "status.update" || type === "activity.update" || type === "session.name" || type === "session.created";
 }
 
-function isRealtimeEvent(event: unknown): event is RealtimeEvent {
+function isLegacyRealtimeEvent(event: unknown): event is RealtimeEvent {
   const type = eventType(event);
-  return isGlobalSessionEvent(event) || type === "terminal.created" || type === "terminal.exited" || type === "terminal.closed" || type === "workspace.activity";
+  return type === "terminal.created" || type === "terminal.exited" || type === "terminal.closed" || type === "workspace.activity";
+}
+
+function safelyParseNotificationEvent<T>(parse: () => T): T | undefined {
+  try {
+    return parse();
+  } catch {
+    return undefined;
+  }
 }
 
 function eventType(event: unknown): string {
