@@ -136,6 +136,7 @@ export const appStyles = css`
   }
   @media (max-width: 767px) {
     .shell { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; height: 100%; }
+    .shell.dashboard-page { grid-template-columns: minmax(0, 1fr); }
     aside, .navigation-panel-edge, .workspace-panel-edge { display: none; }
     main { grid-column: 1; grid-row: 1; }
     .shell > workspace-panel { grid-column: 1; grid-row: 1; display: none; min-height: 0; }

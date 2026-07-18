@@ -19,6 +19,14 @@ describe("PiWebApp mobile shell", () => {
     expect(markup.indexOf("<chat-view")).toBeLessThan(markup.indexOf("<app-mobile-destination-tabs"));
   });
 
+  it("defines the dashboard mobile shell as one full-width column with bottom destination tabs", () => {
+    // jsdom does not calculate CSS Grid layout, so assert the mobile rule structure instead.
+    const styles = mobileShellStyles();
+    expect(styles).toContain(".shell.dashboard-page { grid-template-columns: minmax(0, 1fr); }");
+    expect(styles).toContain(".shell.dashboard-page main { grid-column: 1; grid-row: 1; display: flex; }");
+    expect(styles).toContain("app-mobile-destination-tabs { grid-column: 1; grid-row: 2; display: block; min-width: 0; }");
+  });
+
   it("keeps the selected tool mounted while Chat becomes the authoritative mobile destination", () => {
     const app = createApp();
     setMobileLayout(app);
@@ -167,6 +175,13 @@ class FakeHTMLElement {
   matches(selector: string): boolean {
     return selector.includes("button");
   }
+}
+
+function mobileShellStyles(): string {
+  const start = appStyles.cssText.indexOf("@media (max-width: 767px) {");
+  const end = appStyles.cssText.indexOf("\n  }\n  status-bar", start);
+  if (start === -1 || end === -1) throw new Error("Mobile shell styles unavailable");
+  return appStyles.cssText.slice(start, end);
 }
 
 function nestedSettingsButton(): { host: FakeHTMLElement; control: FakeHTMLElement } {
