@@ -33,6 +33,7 @@ import { loadExternalPlugins } from "../plugins/external";
 import { PluginRegistry, installPluginRuntimeScope, installWorkspacePanelScope } from "../plugins/registry";
 import { queryNamespace, readNamespacedString, setNamespacedQueryKey } from "../namespacedQueryArgs";
 import { AppShellController } from "../appShell/appShellController";
+import { initialMobileKeyboardFocusState, updateMobileKeyboardFocus, type VisualViewportSnapshot } from "../appShell/mobileKeyboardFocus";
 import { BrowserResumeController } from "../appShell/browserResumeController";
 import { mobileDestinationFromMainView, type MobileDestination } from "../appShell/mobileDestination";
 import { NavigationSectionsController, type NavigationSection } from "../appShell/navigationState";
@@ -174,6 +175,7 @@ export class PiWebApp extends LitElement {
   private readonly terminalSelection = new SessionStorageTerminalSelectionMemory();
   private readonly appShell = new AppShellController(this, {
     onMobileNavigationLayoutChange: (isMobile) => { this.handleMobileNavigationLayoutChange(isMobile); },
+    onVisualViewportSnapshotChange: (snapshot) => { this.handleVisualViewportSnapshot(snapshot); },
   });
   private readonly browserResume = new BrowserResumeController({
     onResumeSignal: () => { this.handleBrowserResumeSignal(); },
@@ -220,7 +222,10 @@ export class PiWebApp extends LitElement {
   @state() private shortcutConfig: PiWebShortcutConfig = {};
   @state() private workspaceUploadDefaultFolder = effectiveWorkspaceUploadFolder(undefined);
   @state() private mobileDestination: MobileDestination = "chat";
+  @state() private mobileKeyboardFocus = initialMobileKeyboardFocusState;
   private mobileDestinationBeforeSettings: MobileDestination | undefined;
+  private composerFocused = false;
+  private visualViewportSnapshot: VisualViewportSnapshot | undefined;
   private settingsFocusReturnTarget: HTMLElement | undefined;
   private machineDialogMachine: Machine | undefined;
   private readonly onPopState = () => void this.withChatScrollTransition(async () => {
@@ -451,8 +456,10 @@ export class PiWebApp extends LitElement {
       });
       if (this.appShell.isMobileNavigationLayout) {
         const destination = mobileDestinationFromMainView(restoredMainView ?? route.view ?? this.defaultRouteView());
-        if (this.settingsSection === undefined) this.mobileDestination = destination;
-        else this.mobileDestinationBeforeSettings = destination;
+        if (this.settingsSection === undefined) {
+          this.mobileDestination = destination;
+          this.resetKeyboardFocusForDestination();
+        } else this.mobileDestinationBeforeSettings = destination;
       }
       if (route.projectId === undefined || route.projectId === "") {
         if (updateUrl) this.updateUrl();
@@ -728,7 +735,10 @@ export class PiWebApp extends LitElement {
   private openWorkspaceTool(tool: QualifiedContributionId) {
     if (this.topLevelPage === "dashboard") this.leaveDashboard("tools");
     if (tool === "core:workspace.terminal") this.terminalAutoStartWorkspaceId = this.state.selectedWorkspace?.id;
-    if (this.appShell.isMobileNavigationLayout) this.mobileDestination = "tools";
+    if (this.appShell.isMobileNavigationLayout) {
+      this.mobileDestination = "tools";
+      this.resetKeyboardFocusForDestination();
+    }
     this.setState({ workspaceTool: tool, mainView: tool });
     this.updateUrl();
     this.refreshSelectedWorkspaceTool(tool);
@@ -943,6 +953,7 @@ export class PiWebApp extends LitElement {
       writeSettingsSection(undefined);
     }
     this.mobileDestination = destination;
+    this.resetKeyboardFocusForDestination();
   }
 
   private mobileDestinationForCurrentSurface(): MobileDestination {
@@ -954,11 +965,13 @@ export class PiWebApp extends LitElement {
     if (this.settingsSection !== undefined) {
       if (this.mobileDestination !== "settings") this.mobileDestinationBeforeSettings ??= this.mobileDestination;
       this.mobileDestination = "settings";
+      this.resetKeyboardFocusForDestination();
       return;
     }
     if (this.mobileDestination === "settings") {
       this.mobileDestination = this.mobileDestinationBeforeSettings ?? this.mobileDestinationForCurrentSurface();
       this.mobileDestinationBeforeSettings = undefined;
+      this.resetKeyboardFocusForDestination();
     }
   }
 
@@ -967,12 +980,15 @@ export class PiWebApp extends LitElement {
       if (this.settingsSection !== undefined) {
         this.mobileDestinationBeforeSettings = this.mobileDestinationForCurrentSurface();
         this.mobileDestination = "settings";
+        this.resetKeyboardFocusForDestination();
         return;
       }
       this.mobileDestination = this.mobileDestinationForCurrentSurface();
+      this.resetKeyboardFocusForDestination();
       return;
     }
 
+    this.resetKeyboardFocusForDestination();
     // Settings is a URL-backed dialog rather than a desktop main view.
     if (this.settingsSection !== undefined) return;
     const mainView = this.mainViewForMobileDestination();
@@ -1025,6 +1041,7 @@ export class PiWebApp extends LitElement {
         this.mobileDestinationBeforeSettings = undefined;
       }
     }
+    this.resetKeyboardFocusForDestination();
     if (section !== undefined && options.focusDialog === true) {
       void this.updateComplete.then(() => { this.settingsDialog?.focusInitialControl(); });
     }
@@ -1551,7 +1568,10 @@ export class PiWebApp extends LitElement {
     if (dashboardWasVisible) {
       const destination: MobileDestination = nextTarget === "chat" ? "chat" : "sessions";
       this.leaveDashboard(destination);
-      if (this.appShell.isMobileNavigationLayout) this.mobileDestination = destination;
+      if (this.appShell.isMobileNavigationLayout) {
+        this.mobileDestination = destination;
+        this.resetKeyboardFocusForDestination();
+      }
     }
     await this.focusNavigationTarget(nextTarget);
   }
@@ -2294,6 +2314,32 @@ export class PiWebApp extends LitElement {
     this.sendPrompt(text, streamingBehavior, attachments, delivery);
   };
 
+  private readonly handlePromptFocusChange = (focused: boolean): void => {
+    this.composerFocused = focused;
+    this.refreshMobileKeyboardFocus();
+  };
+
+  private handleVisualViewportSnapshot(snapshot: VisualViewportSnapshot | undefined): void {
+    this.visualViewportSnapshot = snapshot;
+    this.refreshMobileKeyboardFocus();
+  }
+
+  private refreshMobileKeyboardFocus(): void {
+    this.mobileKeyboardFocus = updateMobileKeyboardFocus(this.mobileKeyboardFocus, {
+      isMobile: this.appShell.isMobileNavigationLayout,
+      isChatDestination: this.mobileDestination === "chat",
+      composerFocused: this.composerFocused,
+      viewport: this.visualViewportSnapshot,
+    });
+  }
+
+  /** A hidden destination must never leave its CodeMirror input owning an IME. */
+  private resetKeyboardFocusForDestination(): void {
+    if (this.mobileDestination !== "chat") this.promptEditor?.blurInput();
+    if (this.mobileDestination !== "chat" || !this.appShell.isMobileNavigationLayout) this.composerFocused = false;
+    this.refreshMobileKeyboardFocus();
+  }
+
   private readonly handleStopActiveWork = (): void => {
     void this.sessions.stopActiveWork();
   };
@@ -2320,7 +2366,7 @@ export class PiWebApp extends LitElement {
 
   private renderChatView(state: AppState, session: SessionInfo) {
     return html`
-      <chat-view .sessionId=${session.id} .messages=${state.messages} .messageStart=${state.messagePageStart} .messageEnd=${state.messagePageEnd} .messageTotal=${state.messagePageTotal} .hasMore=${state.messagePageStart > 0} .loadingMore=${state.isLoadingEarlierMessages} .isReceivingPartialStream=${state.isReceivingPartialStream} .isSendingPrompt=${state.sendingPrompts[session.id] === true} .isCompacting=${state.status?.isCompacting === true} .pendingMessageCount=${state.status?.pendingMessageCount ?? 0} .clientQueuedMessages=${state.clientQueuedSessionMessages[session.id] ?? []} .extensionUiRequests=${state.extensionUiRequests} .extensionUiResolutions=${state.extensionUiResolutions} .extensionUiNotifications=${state.extensionUiNotifications} .onExtensionUiRespond=${this.handleExtensionUiRespond} .status=${state.status} .activity=${state.activity} .canStop=${this.canStopActiveWork(state.status)} .clearsServerQueue=${this.stopClearsServerQueue(state.status)} .canClearServerQueue=${this.canClearServerQueue()} .onClearServerQueue=${this.handleClearServerQueue} .onLoadMore=${() => this.withChatPrependTransition(() => this.sessions.loadEarlierMessages())}></chat-view>
+      <chat-view .sessionId=${session.id} .messages=${state.messages} .messageStart=${state.messagePageStart} .messageEnd=${state.messagePageEnd} .messageTotal=${state.messagePageTotal} .hasMore=${state.messagePageStart > 0} .loadingMore=${state.isLoadingEarlierMessages} .isReceivingPartialStream=${state.isReceivingPartialStream} .isSendingPrompt=${state.sendingPrompts[session.id] === true} .isCompacting=${state.status?.isCompacting === true} .waitingForUser=${state.extensionUiRequests.length > 0 || state.commandDialog !== undefined} .pendingMessageCount=${state.status?.pendingMessageCount ?? 0} .clientQueuedMessages=${state.clientQueuedSessionMessages[session.id] ?? []} .extensionUiRequests=${state.extensionUiRequests} .extensionUiResolutions=${state.extensionUiResolutions} .extensionUiNotifications=${state.extensionUiNotifications} .onExtensionUiRespond=${this.handleExtensionUiRespond} .status=${state.status} .activity=${state.activity} .canStop=${this.canStopActiveWork(state.status)} .clearsServerQueue=${this.stopClearsServerQueue(state.status)} .canClearServerQueue=${this.canClearServerQueue()} .onClearServerQueue=${this.handleClearServerQueue} .onLoadMore=${() => this.withChatPrependTransition(() => this.sessions.loadEarlierMessages())}></chat-view>
     `;
   }
 
@@ -2353,6 +2399,7 @@ export class PiWebApp extends LitElement {
   private renderMobileDestinationTabs() {
     return html`
       <app-mobile-destination-tabs
+        ?hidden=${this.mobileKeyboardFocus.active}
         .selected=${this.mobileDestination}
         .settingsPresentation=${this.isModernistSettingsDestination() ? "destination" : "dialog"}
         .onSelect=${(destination: MobileDestination) => { this.selectMobileDestination(destination); }}
@@ -2450,7 +2497,7 @@ export class PiWebApp extends LitElement {
     if (this.topLevelPage === "dashboard") return html`${this.renderDashboardPage()}${this.renderGlobalOverlays()}`;
     const state = this.state;
     return html`
-      <div class=${`${this.panelCollapse.shellClass(state.mainView)}${this.isModernistWorkbenchExpanded() ? " modernist-tools-expanded" : ""} mobile-destination-${this.mobileDestination}`} ?data-settings-destination=${this.settingsSection !== undefined && this.isModernistSettingsDestination()} style=${this.panelResize.shellStyle({ navigation: this.resizablePanelConstraints("navigation"), workspace: this.resizablePanelConstraints("workspace") })}>
+      <div class=${`${this.panelCollapse.shellClass(state.mainView)}${this.isModernistWorkbenchExpanded() ? " modernist-tools-expanded" : ""} mobile-destination-${this.mobileDestination}${this.mobileKeyboardFocus.active ? " mobile-keyboard-focus" : ""}`} ?data-settings-destination=${this.settingsSection !== undefined && this.isModernistSettingsDestination()} style=${this.panelResize.shellStyle({ navigation: this.resizablePanelConstraints("navigation"), workspace: this.resizablePanelConstraints("workspace") })}>
         <aside id="navigation-panel">${this.appShell.isMobileNavigationLayout ? null : this.renderNavigationPanel()}</aside>
         ${this.renderNavigationPanelEdgeControl()}
         ${this.settingsSection !== undefined && this.isModernistSettingsDestination() ? this.renderSettings("destination", state) : null}
@@ -2465,13 +2512,15 @@ export class PiWebApp extends LitElement {
               .workspace=${state.selectedWorkspace}
               .status=${state.status}
               .activity=${state.activity}
+              .waitingForUser=${state.extensionUiRequests.length > 0 || state.commandDialog !== undefined}
+              .isSendingPrompt=${state.sendingPrompts[state.selectedSession.id] === true}
               .canStop=${this.canStopActiveWork(state.status)}
               .clearsServerQueue=${this.stopClearsServerQueue(state.status)}
               .onStop=${this.handleStopActiveWork}
               .onToggleTheme=${this.handleToggleThemeAppearance}
             ></app-session-header>
             ${this.renderChatView(state, state.selectedSession)}
-            <prompt-editor .sessionId=${state.selectedSession.id} .cwd=${state.selectedWorkspace?.path} .machineId=${selectedMachineId(state)} .projectId=${state.selectedWorkspace?.projectId} .workspaceId=${state.selectedWorkspace?.id} .workspaceScopedFileSuggestions=${this.supportsWorkspaceFileSuggestions()} .disabled=${state.selectedSession.archived === true} .canSteer=${state.status?.isStreaming === true} .isCompacting=${state.status?.isCompacting === true} .canStop=${this.canStopActiveWork(state.status)} .clearsServerQueue=${this.stopClearsServerQueue(state.status)} .status=${state.status} .availableThinkingLevels=${state.availableThinkingLevels} .sending=${state.sendingPrompts[state.selectedSession.id] === true} .onSend=${this.handleSendPrompt} .onStop=${this.handleStopActiveWork} .onSelectModel=${this.handleSelectModel} .onSelectThinking=${this.handleSelectThinking}></prompt-editor>
+            <prompt-editor .sessionId=${state.selectedSession.id} .cwd=${state.selectedWorkspace?.path} .machineId=${selectedMachineId(state)} .projectId=${state.selectedWorkspace?.projectId} .workspaceId=${state.selectedWorkspace?.id} .workspaceScopedFileSuggestions=${this.supportsWorkspaceFileSuggestions()} .disabled=${state.selectedSession.archived === true} .canSteer=${state.status?.isStreaming === true} .isCompacting=${state.status?.isCompacting === true} .canStop=${this.canStopActiveWork(state.status)} .clearsServerQueue=${this.stopClearsServerQueue(state.status)} .status=${state.status} .availableThinkingLevels=${state.availableThinkingLevels} .sending=${state.sendingPrompts[state.selectedSession.id] === true} .onSend=${this.handleSendPrompt} .onStop=${this.handleStopActiveWork} .onSelectModel=${this.handleSelectModel} .onSelectThinking=${this.handleSelectThinking} .onFocusChange=${this.handlePromptFocusChange}></prompt-editor>
             <status-bar .status=${state.status}></status-bar>
             ${state.commandDialog !== undefined ? html`<command-picker .title=${state.commandDialog.title} .options=${state.commandDialog.options} .onPick=${(value: string) => this.sessions.respondToCommand(state.commandDialog?.requestId ?? "", value)} .onCancel=${() => { this.sessions.cancelCommand(); }}></command-picker>` : null}
             ${state.modelDialog !== undefined ? html`<command-picker title=${state.modelDialog.title} .searchable=${true} .options=${state.modelDialog.options} .selectedValue=${state.modelDialog.selectedValue} .onPick=${(value: string) => { void this.pickModel(value); }} .onCancel=${() => { this.setState({ modelDialog: undefined }); }}></command-picker>` : null}

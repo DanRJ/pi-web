@@ -88,6 +88,9 @@ export const appStyles = css`
   .context-kind { display: none; }
   .context-value { min-width: 0; overflow: visible; text-overflow: clip; white-space: nowrap; }
   app-mobile-main-tabs, app-mobile-destination-tabs { display: none; }
+  /* Keep the tablist mounted for focus restoration, but let semantic hidden
+     outrank every responsive display declaration. */
+  app-mobile-destination-tabs[hidden] { display: none !important; }
   .mobile-tabs-frame { position: relative; display: none; flex: 0 0 auto; min-width: 0; border-bottom: var(--pi-divider-width, 1px) solid var(--pi-border); background: var(--pi-bg); }
   .mobile-tabs-frame::before, .mobile-tabs-frame::after { content: ""; position: absolute; top: 0; bottom: 0; z-index: 2; width: 20px; opacity: 0; pointer-events: none; transition: opacity .15s ease; }
   .mobile-tabs-frame::before { left: 0; background: linear-gradient(90deg, color-mix(in srgb, var(--pi-shadow-strong) 55%, transparent) 0%, transparent 100%); }
@@ -194,6 +197,10 @@ export const appStyles = css`
     .shell.mobile-destination-sessions .mobile-navigation-panel project-list[collapsed],
     .shell.mobile-destination-sessions .mobile-navigation-panel workspace-list[collapsed],
     .shell.mobile-destination-sessions .mobile-navigation-panel session-list[collapsed] { flex: 0 0 auto; min-height: auto; overflow: hidden; }
+    /* Header status remains available; only the duplicate status strip yields
+       space to the normal-flow composer above the keyboard. */
+    .shell.mobile-keyboard-focus status-bar,
+    .shell.mobile-keyboard-focus.mobile-destination-chat main.workspace-view status-bar { display: none; }
   }
   status-bar { flex: 0 0 auto; }
   chat-view { flex: 1 1 auto; min-height: 0; overflow: hidden; }
@@ -348,13 +355,22 @@ export const listStyles = css`
 export const chatStyles = css`
   :host { position: relative; z-index: 0; display: flex; flex-direction: column; min-height: 0; overflow: hidden; color: var(--pi-text); font: var(--pi-transcript-font-size, 0.875rem)/var(--pi-transcript-line-height, 1.45) var(--pi-body-font-family, system-ui, sans-serif); }
   .chat-wrap { position: relative; flex: 1 1 auto; min-height: 0; overflow: hidden; }
-  .chat { height: 100%; min-height: 0; overflow: auto; overflow-anchor: none; padding: var(--pi-chat-padding, 1.625rem 1rem 4rem); box-sizing: border-box; }
+  .chat { height: 100%; min-height: 0; overflow: auto; overflow-anchor: none; padding: var(--pi-chat-padding, 1.625rem 1rem var(--pi-chat-bottom-clearance, 2rem)); box-sizing: border-box; }
+  .chat.has-live-strip { --pi-chat-bottom-clearance: 4.75rem; }
+  .chat.has-jump-to-latest { --pi-chat-bottom-clearance: 5.5rem; }
+  .chat.has-live-strip.has-jump-to-latest { --pi-chat-bottom-clearance: 8.5rem; }
   .scroll-marker { display: block; height: 0; overflow: hidden; pointer-events: none; }
-  .activity-dock { position: absolute; left: 1rem; right: 1rem; bottom: 0.75rem; z-index: 20; display: flex; align-items: center; gap: 0.5rem; min-width: 0; box-sizing: border-box; border: var(--pi-divider-width, 1px) solid var(--pi-border); border-radius: var(--pi-pill-radius, 999px); background: var(--pi-bg-overlay); color: var(--pi-muted); padding: 0.5rem 0.75rem; font-size: 0.8125rem; pointer-events: none; box-shadow: 0 8px 28px var(--pi-shadow); backdrop-filter: blur(6px); }
-  .activity-dock.active { border-color: var(--pi-success-border); color: var(--pi-success); background: var(--pi-success-bg-overlay); }
+  .live-strip { position: absolute; left: 1rem; right: 1rem; bottom: 0.75rem; z-index: 20; display: flex; align-items: center; gap: 0.5rem; min-width: 0; box-sizing: border-box; border: var(--pi-divider-width, 1px) solid var(--pi-border); border-radius: var(--pi-pill-radius, 999px); background: var(--pi-bg-overlay); color: var(--pi-muted); padding: 0.375rem 0.625rem; font-size: 0.75rem; pointer-events: none; box-shadow: 0 8px 28px var(--pi-shadow); backdrop-filter: blur(6px); }
+  .live-strip.active { border-color: var(--pi-success-border); color: var(--pi-success); background: var(--pi-success-bg-overlay); }
+  .live-strip.error { border-color: var(--pi-danger); color: var(--pi-danger); }
+  .chat-wrap.has-jump-to-latest .live-strip { bottom: 4rem; }
   .activity-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; opacity: .45; flex: 0 0 auto; }
-  .activity-dock.active .dot { animation: pulse 1s ease-in-out infinite; opacity: 1; }
+  .dot { width: 0.5rem; height: 0.5rem; border-radius: 50%; background: currentColor; opacity: .45; flex: 0 0 auto; }
+  .live-strip.active .dot { animation: pulse 1s ease-in-out infinite; opacity: 1; }
+  .jump-to-latest { position: absolute; left: 50%; bottom: 0.75rem; z-index: 21; display: inline-flex; min-height: 2.75rem; transform: translateX(-50%); align-items: center; justify-content: center; gap: 0.375rem; border: var(--pi-divider-width, 1px) solid var(--pi-border); border-radius: var(--pi-pill-radius, 999px); background: var(--pi-surface); color: var(--pi-text); padding: 0.5rem 0.75rem; box-shadow: 0 8px 28px var(--pi-shadow); font: 600 0.75rem var(--pi-control-font-family, system-ui, sans-serif); white-space: nowrap; cursor: pointer; }
+  .jump-to-latest:hover { background: var(--pi-surface-hover); }
+  .jump-to-latest:focus-visible { outline: var(--pi-focus-ring-width, 2px) solid var(--pi-accent); outline-offset: var(--pi-focus-ring-offset, 2px); }
+  .jump-to-latest svg { width: 1rem; height: 1rem; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
   .msg { max-width: 100%; min-width: 0; box-sizing: border-box; margin: 0 0 0.875rem; padding: var(--pi-chat-message-padding, 0.75rem); border: var(--pi-divider-width, 1px) solid var(--pi-border); border-radius: var(--pi-chat-card-radius, 0.625rem); background: var(--pi-surface); overflow: visible; }
   .msg.assistant, .msg.tool-image-output { border-color: var(--pi-chat-assistant-border, var(--pi-border)); background: var(--pi-chat-assistant-background, var(--pi-surface)); }
   .msg.user { width: var(--pi-chat-user-max-width, 100%); max-width: 100%; margin-left: auto; border-color: var(--pi-accent-border); background: var(--pi-selection-bg); }
@@ -463,15 +479,15 @@ export const chatStyles = css`
   pre { margin: 6px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; direction: ltr; text-align: left; unicode-bidi: isolate; }
   .shell-output { color: var(--pi-text); font: 0.8125rem ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; line-height: 1.45; direction: ltr; text-align: left; unicode-bidi: isolate; }
   @media (max-width: 30rem) {
-    .chat { padding: 1rem 0.75rem 4rem; }
+    .chat { padding: 1rem 0.75rem var(--pi-chat-bottom-clearance, 2rem); }
     .msg.user { width: 100%; }
     :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .event-detail { display: none; }
-    .activity-dock { left: 0.75rem; right: 0.75rem; }
+    .live-strip { left: 0.75rem; right: 0.75rem; }
   }
   @media (max-width: 47.9375rem) {
     /* Each Modernist transcript surface owns its overflow. The shell itself
        never needs a horizontal scrollbar for a long path, line, or diff. */
-    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .chat { padding: 1rem 0.75rem 4rem; overscroll-behavior: contain; }
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .chat { padding: 1rem 0.75rem var(--pi-chat-bottom-clearance, 2rem); overscroll-behavior: contain; }
     :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .msg,
     :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .group-msg,
     :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .queued-messages,
@@ -482,9 +498,9 @@ export const chatStyles = css`
     :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .subsession-status { justify-self: start; }
     :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .queued-header { gap: 0.5rem; }
     :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .queued-clear-button { min-height: 2.75rem; }
-    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .activity-dock { left: 0.75rem; right: 0.75rem; }
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .live-strip { left: 0.75rem; right: 0.75rem; }
   }
-  @media (prefers-reduced-motion: reduce) { .activity-dock.active .dot, .msg-actions, .msg-meta { animation: none; transition: none; } }
+  @media (prefers-reduced-motion: reduce) { .live-strip.active .dot, .msg-actions, .msg-meta { animation: none; transition: none; } }
   @keyframes pulse { 0%, 100% { transform: scale(.75); opacity: .55; } 50% { transform: scale(1.2); opacity: 1; } }
   @media (prefers-reduced-motion: reduce) { .activity-indicator { animation: none; } }
 `;

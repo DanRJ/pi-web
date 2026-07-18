@@ -19,7 +19,7 @@ Modernist supplies zero-radius controls, two-pixel dividers, Archivo, and a `16.
 
 ## Transcript hierarchy and truthfulness
 
-The chat surface is a scrollable transcript with readable assistant prose, a distinct right-aligned user block, retained history/reconnect controls, and a small activity dock. Code, tables, tool results, paths, and diffs own horizontal scrolling inside their own surfaces; they must not widen the page.
+The chat surface is a scrollable transcript with readable assistant prose, a distinct right-aligned user block, retained history/reconnect controls, and a compact live strip. When the reader is away from the tail, **Jump to latest** returns to the newest message and follows live updates until the reader explicitly scrolls away. Code, tables, tool results, paths, and diffs own horizontal scrolling inside their own surfaces; they must not widen the page.
 
 Technical transcript runs are collapsed native disclosures until opened. Their summaries project only structural event state and explicitly recognized tracked-subsession state. They never invent completion percentages, inferred phases, or progress from opaque tool text. Subsession identifiers and paths wrap or ellipsize at narrow widths rather than forcing the transcript wider.
 
@@ -35,7 +35,7 @@ Extension interaction cards stay in transcript flow and retain request/retry/rem
 
 At `<=767px`, the app uses a safe-area-aware bottom tablist in this fixed order: Chat, Sessions, Tools, Settings. Chat retains the real transcript and composer; Sessions uses the canonical navigation panel; Tools keeps a mounted workspace-panel instance and its accessible tool sub-navigation; Settings uses the existing dialog and restores focus to the prior visible destination. Dashboard and desktop/tablet workspace layouts remain distinct from those destinations.
 
-The shell is one normal grid: header/transcript/composer are above the bottom destination tablist, not fixed independently. At phone widths, header details may collapse but title, status, theme, and Stop remain available. Transcript padding prevents the activity dock from obscuring the final event. Queue lanes, event summaries, metadata, and subsession rows have bounded text behavior, and every transcript/tool/code surface contains its own overflow.
+The shell is one normal grid: header/transcript/composer are above the bottom destination tablist, not fixed independently. At phone widths, header details may collapse but title, status, theme, and Stop remain available. Transcript padding prevents the compact live strip from obscuring the final event. Queue lanes, event summaries, metadata, and subsession rows have bounded text behavior, and every transcript/tool/code surface contains its own overflow.
 
 ### Manual mobile visual check
 
@@ -44,6 +44,8 @@ DOM tests cover control names and native disclosure semantics, but do not preten
 Mobile browsers that support it are asked to resize content for interactive widgets. While connected, the visual-viewport bridge mirrors the visual viewport height and layout-coordinate bottom (`offsetTop + height`) into inherited CSS properties. The shell uses that visible bottom, with `100dvh` fallback, so normal grid content rises with an IME even on iOS viewport panning.
 
 The composer is never fixed or conditionally hidden. The bridge supplies a bounded editor height; CodeMirror itself scrolls while the non-shrinking action row keeps coarse-pointer targets. Safe-area padding is separate from keyboard measurement and is applied only where app display mode requires it. Desktop, standalone PWA, and browsers without `VisualViewport` retain their existing layout, using `innerHeight` as the bridge fallback when available. Reduced-motion preferences disable shell and activity animations rather than changing interaction state.
+
+Keyboard focus mode is deliberately conservative: it is enabled only for a focused Chat composer on a mobile layout when an unzoomed real `VisualViewport` has lost at least `max(150px, 20%)` from a stable, unfocused baseline. iOS `offsetTop` remains a layout-bottom coordinate only and never identifies a keyboard. Pinch zoom, browser toolbar movement, hardware keyboards, absent viewport APIs, and material width changes cannot activate the mode. While active, the mounted destination tablist is semantically hidden and the duplicate status bar yields space; the compact header remains authoritative. Blur, restored height, a destination change, or disconnect clears the mode immediately.
 
 ## Workspace tools
 

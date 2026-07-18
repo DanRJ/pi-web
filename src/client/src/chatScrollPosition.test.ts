@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ChatScrollController, captureScrollPosition, chatScrollStorageKey, findFirstVisibleArticle, findVisibleScrollAnchor, type ChatScrollElement, type ChatScrollScheduler, type ChatScrollStorage, type ChatScrollViewport } from "./chatScrollPosition";
+import { ChatScrollController, captureScrollPosition, chatScrollStorageKey, findFirstVisibleArticle, findVisibleScrollAnchor, shouldShowJumpToLatest, type ChatScrollElement, type ChatScrollScheduler, type ChatScrollStorage, type ChatScrollViewport } from "./chatScrollPosition";
 
 class MemoryScrollStorage implements ChatScrollStorage {
   readonly values = new Map<string, string>();
@@ -135,6 +135,16 @@ describe("ChatScrollController", () => {
     expect(JSON.parse(storage.getItem(key) ?? "{}")).toEqual({ mode: "bottom" });
   });
 
+  it("replaces a saved anchor with explicit bottom intent", () => {
+    const storage = new MemoryScrollStorage();
+    const controller = new ChatScrollController(storage, new ManualScheduler());
+    storage.setItem(chatScrollStorageKey("s1"), JSON.stringify({ mode: "anchor", anchorId: "m:4", offset: 20 }));
+
+    controller.saveBottomPosition("s1");
+
+    expect(controller.readPosition("s1")).toEqual({ mode: "bottom" });
+  });
+
   it("cancels the previous delayed save and passes the latest session id", () => {
     const scheduler = new ManualScheduler();
     const controller = new ChatScrollController(new MemoryScrollStorage(), scheduler);
@@ -149,6 +159,17 @@ describe("ChatScrollController", () => {
 });
 
 describe("chat scroll helpers", () => {
+  it("uses distance and viewport-height hysteresis for Jump to latest", () => {
+    // Show beyond max(160px, 25% of the viewport), then retain the control
+    // through the middle range until the standard 48px near-bottom zone.
+    expect(shouldShowJumpToLatest(160, 400, false)).toBe(false);
+    expect(shouldShowJumpToLatest(161, 400, false)).toBe(true);
+    expect(shouldShowJumpToLatest(200, 1000, false)).toBe(false);
+    expect(shouldShowJumpToLatest(251, 1000, false)).toBe(true);
+    expect(shouldShowJumpToLatest(60, 1000, true)).toBe(true);
+    expect(shouldShowJumpToLatest(48, 1000, true)).toBe(false);
+  });
+
   it("finds the first article intersecting the viewport", () => {
     const scroller = new FakeScroller(0, 1000, 100, 100, 200);
     const first = new FakeArticle(20, 80, "m:0");

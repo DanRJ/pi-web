@@ -41,6 +41,8 @@ export class PromptEditor extends LitElement {
   @property({ attribute: false }) onStop?: () => void;
   @property({ attribute: false }) onSelectModel?: () => void;
   @property({ attribute: false }) onSelectThinking?: () => void;
+  /** Stable focus signal for the mobile shell; CodeMirror owns the actual input. */
+  @property({ attribute: false }) onFocusChange?: (focused: boolean) => void;
   @property({ attribute: false }) availableThinkingLevels: readonly string[] = [];
   @query(".markdown-editor") private editorHost?: HTMLDivElement;
   @query(".attachment-input") private attachmentInput?: HTMLInputElement;
@@ -64,6 +66,7 @@ export class PromptEditor extends LitElement {
   private readonly readOnlyCompartment = new Compartment();
   private readonly mobilePromptEnterMedia = createMobilePromptEnterMedia();
   private explicitShiftKeyActive = false;
+  private composerFocused = false;
 
   protected override willUpdate(changed: PropertyValues<this>) {
     if (!changed.has("sessionId") && !changed.has("machineId")) return;
@@ -99,6 +102,7 @@ export class PromptEditor extends LitElement {
   }
 
   override disconnectedCallback(): void {
+    this.reportFocusChange(false, true);
     this.editor?.destroy();
     this.editor = undefined;
     super.disconnectedCallback();
@@ -129,6 +133,12 @@ export class PromptEditor extends LitElement {
 
   focusInput() {
     this.editor?.focus();
+  }
+
+  /** Remove focus before a mobile destination hides this still-mounted editor. */
+  blurInput(): void {
+    this.editor?.contentDOM.blur();
+    this.reportFocusChange(false);
   }
 
   /** Get the underlying CM6 EditorView, or undefined if not yet mounted. */
@@ -309,7 +319,8 @@ export class PromptEditor extends LitElement {
           EditorView.contentAttributes.of((view) => inputAssistanceContentAttributes(view.state.sliceDoc(0, view.state.selection.main.head))),
           EditorView.domEventHandlers({
             keyup: (event) => this.handleEditorKeyUp(event),
-            blur: () => this.resetEditorModifierState(),
+            focus: () => { this.reportFocusChange(true); },
+            blur: () => { this.reportFocusChange(false); return this.resetEditorModifierState(); },
           }),
           placeholder("Message pi... Use / for commands, @ for tracked files, @ space for all files"),
           this.editableCompartment.of(EditorView.editable.of(!this.disabled)),
@@ -443,6 +454,12 @@ export class PromptEditor extends LitElement {
   private resetEditorModifierState(): boolean {
     this.explicitShiftKeyActive = false;
     return false;
+  }
+
+  private reportFocusChange(focused: boolean, force = false): void {
+    if (!force && this.composerFocused === focused) return;
+    this.composerFocused = focused;
+    this.onFocusChange?.(focused);
   }
 
   private handleEditorEnter(view: EditorView, shiftKey: boolean): boolean {

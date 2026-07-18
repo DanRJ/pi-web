@@ -37,6 +37,37 @@ describe("Calm Cockpit rendered controls", () => {
     expect(stop?.getAttribute("aria-label")).toBe("Stop session work");
   });
 
+  it.each(["themes:classic", "themes:pi-web-dark", "themes:modernist-light", "themes:modernist-dark"])("keeps %s mobile header controls at a 2.75rem touch target", async (theme) => {
+    document.documentElement.dataset["piWebTheme"] = theme;
+    const header = createRegisteredElement("app-session-header", AppSessionHeader);
+    header.session = session("Mobile touch targets");
+    header.canStop = true;
+    document.body.append(header);
+    await header.updateComplete;
+
+    expect(header.shadowRoot?.querySelectorAll(".session-actions button")).toHaveLength(2);
+    expect(AppSessionHeader.styles.cssText).toContain("button { min-width: 2.75rem; min-height: 2.75rem; height: 2.75rem; }");
+  });
+
+  it("keeps a textual header status through waiting and working transitions", async () => {
+    const header = createRegisteredElement("app-session-header", AppSessionHeader);
+    header.session = session("Status transitions");
+    header.status = status({ isStreaming: true });
+    header.waitingForUser = true;
+    document.body.append(header);
+    await header.updateComplete;
+
+    const badge = () => header.shadowRoot?.querySelector<HTMLElement>(".status-badge");
+    expect(badge()?.className).toContain("waiting");
+    expect(badge()?.textContent).toContain("Waiting");
+    expect(badge()?.getAttribute("aria-label")).toBe("Waiting");
+
+    header.waitingForUser = false;
+    await header.updateComplete;
+    expect(badge()?.className).toContain("working");
+    expect(badge()?.textContent).toContain("Working");
+  });
+
   it("renders queue ownership and native event disclosure semantics without fabricating rows", async () => {
     const view = createRegisteredElement("chat-view", ChatView);
     view.sessionId = "session-1";
@@ -130,6 +161,19 @@ describe("Calm Cockpit rendered controls", () => {
     expect(onSend).toHaveBeenCalledWith("follow up", "followUp", undefined, undefined);
   });
 
+  it("reports CodeMirror focus changes and clears mobile focus when blurred or disconnected", async () => {
+    const onFocusChange = vi.fn();
+    const editor = await mountedPromptEditor();
+    editor.onFocusChange = onFocusChange;
+    editor.view?.contentDOM.dispatchEvent(new FocusEvent("focus"));
+    expect(onFocusChange).toHaveBeenCalledWith(true);
+
+    editor.blurInput();
+    expect(onFocusChange).toHaveBeenLastCalledWith(false);
+    editor.remove();
+    expect(onFocusChange).toHaveBeenLastCalledWith(false);
+  });
+
   it("keeps the mounted CodeMirror editor and view through token-only status updates", async () => {
     document.documentElement.dataset["piWebTheme"] = "themes:modernist-dark";
     const editor = await mountedPromptEditor();
@@ -137,11 +181,17 @@ describe("Calm Cockpit rendered controls", () => {
     const view = editor.view;
     expect(cmEditor).toBeTruthy();
     expect(view).toBeTruthy();
+    if (view === undefined) throw new Error("Expected CodeMirror view");
+    view.dispatch({ changes: { from: 0, insert: "keep this draft" } });
+    const completions = [{ kind: "command" as const, replaceFrom: 0, replaceTo: 0, insertText: "/help", detail: "built-in" }];
+    Reflect.set(editor, "completions", completions);
 
     editor.status = status({ model: { provider: "provider", id: "model" }, thinkingLevel: "medium", tokens: { input: 99, output: 101, cacheRead: 0, cacheWrite: 0, total: 200 } });
     await editor.updateComplete;
     expect(editor.shadowRoot?.querySelector(".cm-editor")).toBe(cmEditor);
     expect(editor.view).toBe(view);
+    expect(editor.view?.state.doc.toString()).toBe("keep this draft");
+    expect(Reflect.get(editor, "completions")).toBe(completions);
   });
 
   it("keeps idle, streaming, compacting, sending, disabled, and delivery states truthful", async () => {

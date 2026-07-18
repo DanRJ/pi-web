@@ -12,6 +12,14 @@ afterEach(() => {
 });
 
 describe("PiWebApp queued-message clear wiring", () => {
+  it("passes authoritative command waiting state to ChatView", () => {
+    const app = createApp();
+    const state = stateWithRuntime(undefined);
+    state.commandDialog = { type: "select", requestId: "command-1", title: "Choose", options: [] };
+
+    expect(templateValueAfterMarker(renderChatView(app, state), ".waitingForUser=")).toBe(true);
+  });
+
   it("passes a stable supported-runtime callback through to SessionController", () => {
     const app = createApp();
     const state = stateWithRuntime(runtimeWithCapabilities([PI_WEB_CAPABILITIES.sessionsClearQueue]));

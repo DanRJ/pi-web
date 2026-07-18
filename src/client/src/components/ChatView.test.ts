@@ -122,32 +122,50 @@ describe("chatMessageMetadataLabel", () => {
 });
 
 describe("ChatView session notices", () => {
-  it("renders catching up only from the partial-stream flag", () => {
+  it("keeps Catching up in the live strip instead of a duplicate transcript card", () => {
     const view = new ChatView();
-    view.isCompacting = true;
-    expect(templateStaticMarkup(renderSessionActivity(view))).not.toContain("Catching up");
-
     view.isReceivingPartialStream = true;
-    expect(templateStaticMarkup(renderSessionActivity(view))).toContain("Catching up");
+
+    expect(renderSessionActivity(view)).toBeNull();
+    expect(templateStaticMarkup(renderLiveStrip(view))).toContain("Catching up");
   });
 
-  it("uses actual status activity in the compact activity strip", () => {
-    const view = new ChatView();
-    view.status = queuedStatus([]);
-    view.status = { ...view.status, isBashRunning: true };
-    const dock = renderActivityDock(view);
-    expect(templateStaticMarkup(dock)).toContain('aria-live="polite"');
-    if (dock === null) throw new Error("Expected an activity dock");
-    expect(templateValues(dock)).toContain("bash");
-  });
-
-  it("names a running tool only when the technical transcript marks it running", () => {
+  it("omits the old idle dock and renders only a meaningful live strip", () => {
     const view = new ChatView();
     view.status = { ...queuedStatus([]), isStreaming: false };
-    view.messages = [{ role: "tool", parts: [{ type: "toolExecution", toolName: "read", summary: "file", status: "running" }] }];
-    const dock = renderActivityDock(view);
-    if (dock === null) throw new Error("Expected an activity dock");
-    expect(templateValues(dock)).toContain("read running");
+    expect(renderLiveStrip(view)).toBeNull();
+
+    view.status = { ...view.status, isBashRunning: true };
+    const strip = renderLiveStrip(view);
+    if (strip === null) throw new Error("Expected a live strip");
+    expect(templateValuesDeep(strip)).toContain("live-strip active");
+    expect(templateStaticMarkup(strip)).toContain('aria-live="polite"');
+  });
+
+  it("renders structured running-tool detail without relying on transcript guesses", () => {
+    const view = new ChatView();
+    view.status = { ...queuedStatus([]), isStreaming: false };
+    view.activity = { sessionId: "session-1", phase: "active", label: "running tool", detail: "read", at: "now" };
+    const strip = renderLiveStrip(view);
+    if (strip === null) throw new Error("Expected a live strip");
+    expect(templateValuesDeep(strip)).toContain("Tool running: read");
+  });
+
+  it("makes authoritative waiting suppress stale shell activity", () => {
+    const view = new ChatView();
+    view.waitingForUser = true;
+    view.status = { ...queuedStatus([]), isBashRunning: true };
+    const strip = renderLiveStrip(view);
+    if (strip === null) throw new Error("Expected a live strip");
+
+    expect(templateValuesDeep(strip)).toContain("Waiting");
+    expect(templateValuesDeep(strip)).not.toContain("Shell");
+  });
+
+  it("does not duplicate the compaction transcript card", () => {
+    const view = new ChatView();
+    view.isCompacting = true;
+    expect(renderSessionActivity(view)).toBeNull();
   });
 });
 
@@ -263,9 +281,9 @@ function renderSessionActivity(view: ChatView): TemplateResult | null {
   return isTemplateResult(rendered) ? rendered : null;
 }
 
-function renderActivityDock(view: ChatView): TemplateResult | null {
-  const method: unknown = Reflect.get(view, "renderActivityDock");
-  if (typeof method !== "function") throw new Error("ChatView.renderActivityDock is not callable");
+function renderLiveStrip(view: ChatView): TemplateResult | null {
+  const method: unknown = Reflect.get(view, "renderLiveStrip");
+  if (typeof method !== "function") throw new Error("ChatView.renderLiveStrip is not callable");
   const rendered: unknown = method.call(view);
   return isTemplateResult(rendered) ? rendered : null;
 }

@@ -1,3 +1,5 @@
+import type { VisualViewportSnapshot } from "./mobileKeyboardFocus";
+
 export const VISIBLE_VIEWPORT_HEIGHT_PROPERTY = "--pi-visible-viewport-height";
 export const VISIBLE_VIEWPORT_BOTTOM_PROPERTY = "--pi-visible-viewport-bottom";
 export const MOBILE_EDITOR_MAX_HEIGHT_PROPERTY = "--pi-mobile-editor-max-height";
@@ -12,11 +14,14 @@ export interface VisualViewportEventTarget {
 }
 
 export interface VisualViewportLike extends VisualViewportEventTarget {
+  readonly width: number;
   readonly height: number;
   readonly offsetTop: number;
+  readonly scale: number;
 }
 
 export interface VisualViewportWindow extends VisualViewportEventTarget {
+  readonly innerWidth: number;
   readonly innerHeight: number;
   readonly visualViewport?: VisualViewportLike | null | undefined;
 }
@@ -40,6 +45,7 @@ export interface VisualViewportBridgeEnvironment {
 export interface ViewportBridge {
   connect(): void;
   disconnect(): void;
+  setSnapshotListener(listener: ((snapshot: VisualViewportSnapshot | undefined) => void) | undefined): void;
 }
 
 interface SavedProperty {
@@ -61,8 +67,13 @@ export class VisualViewportBridge implements ViewportBridge {
   private connected = false;
   private savedProperties = new Map<string, SavedProperty>();
   private appliedProperties = new Map<string, string>();
+  private snapshotListener: ((snapshot: VisualViewportSnapshot | undefined) => void) | undefined;
 
   constructor(private readonly environment: VisualViewportBridgeEnvironment = createBrowserVisualViewportBridgeEnvironment()) {}
+
+  setSnapshotListener(listener: ((snapshot: VisualViewportSnapshot | undefined) => void) | undefined): void {
+    this.snapshotListener = listener;
+  }
 
   connect(): void {
     if (this.connected) return;
@@ -84,6 +95,7 @@ export class VisualViewportBridge implements ViewportBridge {
     if (this.frame !== undefined) this.environment.cancelAnimationFrame(this.frame);
     this.frame = undefined;
     this.restoreProperties();
+    this.snapshotListener?.(undefined);
   }
 
   private readonly scheduleUpdate = (): void => {
@@ -95,15 +107,26 @@ export class VisualViewportBridge implements ViewportBridge {
   };
 
   private publishViewport(): void {
+    if (!this.connected) return;
     const documentElement = this.environment.documentElement;
-    if (!this.connected || documentElement === undefined) return;
     const viewport = this.environment.window?.visualViewport;
     const fallbackHeight = positiveDimension(this.environment.window?.innerHeight) ?? 0;
-    const visibleHeight = positiveDimension(viewport?.height) ?? fallbackHeight;
+    const fallbackWidth = positiveDimension(this.environment.window?.innerWidth) ?? 0;
+    const viewportHeight = positiveDimension(viewport?.height);
+    const viewportWidth = positiveDimension(viewport?.width);
+    const visibleHeight = viewportHeight ?? fallbackHeight;
     const offsetTop = nonNegativeDimension(viewport?.offsetTop) ?? 0;
     const visibleBottom = visibleHeight + offsetTop;
     const editorMaxHeight = clamp(Math.round(visibleHeight * MOBILE_EDITOR_MAX_HEIGHT_RATIO), MOBILE_EDITOR_MIN_HEIGHT_PX, MOBILE_EDITOR_MAX_HEIGHT_PX);
 
+    this.snapshotListener?.({
+      hasVisualViewport: viewportHeight !== undefined && viewportWidth !== undefined,
+      width: viewportWidth ?? fallbackWidth,
+      height: visibleHeight,
+      offsetTop,
+      scale: positiveDimension(viewport?.scale) ?? 1,
+    });
+    if (documentElement === undefined) return;
     this.setProperty(documentElement, VISIBLE_VIEWPORT_HEIGHT_PROPERTY, `${String(visibleHeight)}px`);
     this.setProperty(documentElement, VISIBLE_VIEWPORT_BOTTOM_PROPERTY, `${String(visibleBottom)}px`);
     this.setProperty(documentElement, MOBILE_EDITOR_MAX_HEIGHT_PROPERTY, `${String(editorMaxHeight)}px`);

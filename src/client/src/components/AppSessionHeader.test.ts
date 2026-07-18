@@ -1,17 +1,21 @@
 import type { TemplateResult } from "lit";
 import { describe, expect, it, vi } from "vitest";
 import type { SessionInfo, SessionStatus } from "../api";
-import { AppSessionHeader, sessionShellStatus } from "./AppSessionHeader";
+import { AppSessionHeader, sessionStatusPresentation } from "./AppSessionHeader";
 
-describe("sessionShellStatus", () => {
-  it("provides text and an icon state for every status, not color alone", () => {
-    expect(sessionShellStatus(status({ isStreaming: true }), undefined)).toMatchObject({ kind: "running", label: "Running" });
-    expect(sessionShellStatus(status({ pendingMessageCount: 2 }), undefined)).toMatchObject({ kind: "queued", label: "Queued", detail: "2 messages queued" });
-    for (const activeStatus of [{ isStreaming: true }, { isBashRunning: true }, { isCompacting: true }]) {
-      expect(sessionShellStatus(status({ ...activeStatus, pendingMessageCount: 2 }), undefined)).toMatchObject({ kind: "running", label: "Running", detail: "Session is active; 2 messages queued" });
-    }
-    expect(sessionShellStatus(status(), { sessionId: "session-1", phase: "error", label: "Command failed", at: "2026-07-14T00:00:00.000Z" })).toMatchObject({ kind: "error", label: "Error", detail: "Command failed" });
-    expect(sessionShellStatus(status(), undefined)).toMatchObject({ kind: "idle", label: "Idle" });
+describe("sessionStatusPresentation", () => {
+  it("uses the truthful precedence order and never invents a detail", () => {
+    const runningTool = { sessionId: "session-1", phase: "active" as const, label: "running tool", detail: "read", at: "2026-07-14T00:00:00.000Z" };
+    const error = { sessionId: "session-1", phase: "error" as const, label: "Command failed", at: "2026-07-14T00:00:00.000Z" };
+
+    expect(sessionStatusPresentation({ status: status({ isCompacting: true, isBashRunning: true, isStreaming: true }), activity: runningTool, waitingForUser: true, isSendingPrompt: true })).toMatchObject({ kind: "waiting", label: "Waiting", shortLabel: "Wait" });
+    expect(sessionStatusPresentation({ status: status({ isCompacting: true, isBashRunning: true }), activity: runningTool })).toMatchObject({ kind: "compacting", label: "Compacting" });
+    expect(sessionStatusPresentation({ status: status({ isBashRunning: true, isStreaming: true }), activity: runningTool })).toMatchObject({ kind: "shell", label: "Shell", detail: "read" });
+    expect(sessionStatusPresentation({ status: status({ isStreaming: true }), activity: runningTool })).toMatchObject({ kind: "tool", label: "Tool running", detail: "read" });
+    expect(sessionStatusPresentation({ status: status({ pendingMessageCount: 2 }), isSendingPrompt: true })).toMatchObject({ kind: "working", label: "Working" });
+    expect(sessionStatusPresentation({ status: status({ isStreaming: true }), activity: error })).toMatchObject({ kind: "working", label: "Working" });
+    expect(sessionStatusPresentation({ status: status(), activity: error })).toMatchObject({ kind: "error", label: "Error", detail: "Command failed" });
+    expect(sessionStatusPresentation({ status: status() })).toEqual({ kind: "idle", label: "Idle", shortLabel: "Idle" });
   });
 });
 
@@ -61,14 +65,16 @@ describe("AppSessionHeader", () => {
     expect(templateMarkup(header.render())).not.toContain("clear queued server messages");
   });
 
-  it("keeps Stop beside title, status, and theme controls in the compact header", () => {
+  it("keeps a textual compact status and Stop beside title and theme controls", () => {
     const header = new AppSessionHeader();
     header.session = session();
     header.canStop = true;
 
     expect(templateMarkup(header.render())).toContain('class="session-stop-control"');
+    expect(templateMarkup(header.render())).toContain('role="status"');
+    expect(templateMarkup(header.render())).toContain("status-label-short");
     expect(AppSessionHeader.styles.cssText).toContain(".session-detail, .session-stop-control { display: none; }");
-    expect(AppSessionHeader.styles.cssText).toContain("button { min-width: 2.75rem; min-height: 2.75rem; }");
+    expect(AppSessionHeader.styles.cssText).toContain("button { min-width: 2.75rem; min-height: 2.75rem; height: 2.75rem; }");
   });
 
   it("does not duplicate navigation, Actions, or settings controls", () => {

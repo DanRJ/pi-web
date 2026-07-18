@@ -4,7 +4,7 @@ import { AppShellController } from "./appShellController";
 
 describe("AppShellController mobile layout lifecycle", () => {
   it("connects and disconnects the visual viewport bridge with the app shell", () => {
-    const bridge = { connect: vi.fn(), disconnect: vi.fn() };
+    const bridge = { connect: vi.fn(), disconnect: vi.fn(), setSnapshotListener: vi.fn() };
     const host: AppShellControllerHost = { addController: () => undefined, requestUpdate: () => undefined };
     const controller = new AppShellController(host, { pwaDisplayModeMedia: [], visualViewportBridge: bridge });
 
@@ -13,6 +13,7 @@ describe("AppShellController mobile layout lifecycle", () => {
 
     expect(bridge.connect).toHaveBeenCalledOnce();
     expect(bridge.disconnect).toHaveBeenCalledOnce();
+    expect(bridge.setSnapshotListener).toHaveBeenCalledWith(undefined);
   });
 
   it("notifies the app when the media query crosses the mobile breakpoint", () => {
