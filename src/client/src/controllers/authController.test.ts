@@ -191,6 +191,34 @@ describe("AuthController", () => {
     expect(getState().authDialog).toBeUndefined();
   });
 
+  it("best-effort cancels a running flow whose start response arrives after the dialog closes", async () => {
+    const start = deferred<OAuthFlowState>();
+    const provider: AuthProviderOption = { ...authProvider("amazon-bedrock", "api_key"), loginFlow: "interactive" };
+    const cancelCalls: { flowId: string; machineId: string | undefined }[] = [];
+    const { controller, getState } = createController(
+      {
+        selectedMachine: remoteMachine("remote-1"),
+        authDialog: { step: "providers", mode: "login", authType: "api_key", providers: [provider] },
+      },
+      {
+        startInteractiveApiKeyLogin: () => start.promise,
+        cancelOAuthFlow: (flowId, machineId) => {
+          cancelCalls.push({ flowId, machineId });
+          return Promise.reject(new Error("Cancel unavailable"));
+        },
+      },
+    );
+
+    const pendingStart = controller.selectLoginProvider(provider.id, provider.authType);
+    controller.closeDialog();
+    start.resolve(oauthFlow({ flowId: "stale-flow", providerId: provider.id, providerName: provider.name }));
+    await pendingStart;
+
+    expect(cancelCalls).toEqual([{ flowId: "stale-flow", machineId: "remote-1" }]);
+    expect(getState().authDialog).toBeUndefined();
+    expect(getState().error).toBe("");
+  });
+
   it("does not let a stale OAuth response overwrite a newer flow", async () => {
     vi.stubGlobal("window", { setInterval: () => 1, clearInterval: () => undefined });
     const oldPrompt = { requestId: "request-1", message: "Paste callback", kind: "manual" } as const;

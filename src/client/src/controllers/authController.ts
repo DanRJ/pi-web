@@ -205,7 +205,18 @@ export class AuthController {
       const flow = provider.authType === "oauth"
         ? await this.api.startOAuthLogin(provider.id, machineId)
         : await this.api.startInteractiveApiKeyLogin(provider.id, machineId);
-      if (operationGeneration !== this.oauthOperationGeneration) return;
+      if (operationGeneration !== this.oauthOperationGeneration) {
+        // Sessiond has already allocated this flow. Do not orphan its timer,
+        // provider polling, or callback listener when the UI operation is stale.
+        if (flow.status === "running") {
+          try {
+            await this.api.cancelOAuthFlow(flow.flowId, machineId);
+          } catch {
+            // Best-effort cleanup; the obsolete flow must not restore UI state.
+          }
+        }
+        return;
+      }
       this.updateOAuthFlow(flow);
       if (flow.status === "running") this.startPolling(flow.flowId);
     } catch (error) {
