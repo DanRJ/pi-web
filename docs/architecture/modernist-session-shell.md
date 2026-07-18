@@ -45,6 +45,10 @@ Mobile browsers that support it are asked to resize content for interactive widg
 
 The composer is never fixed or conditionally hidden. The bridge supplies a bounded editor height; CodeMirror itself scrolls while the non-shrinking action row keeps coarse-pointer targets. Safe-area padding is separate from keyboard measurement and is applied only where app display mode requires it. Desktop, standalone PWA, and browsers without `VisualViewport` retain their existing layout, using `innerHeight` as the bridge fallback when available. Reduced-motion preferences disable shell and activity animations rather than changing interaction state.
 
+## Workspace tools
+
+The [Modernist workspace tools](modernist-workspace-tools.md) architecture records the desktop, tablet, and mobile workbench composition, stable core panel ids, plugin full-surface boundary, and the controller-owned route, terminal, and Git-polling invariants.
+
 ## Dashboard
 
 The dashboard is a distinct top-level page rather than a workspace tool, panel, or mobile destination. It retains the Modernist structural language: Archivo, zero-radius controls, two-pixel rules, flat light/dark token surfaces, and a responsive three/two/one-column grid. Running, waiting, idle, and error states always include text or an icon in addition to visual treatment; errors use an ink rule and X rather than a red fill. The running spinner respects reduced-motion preferences.

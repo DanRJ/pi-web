@@ -532,6 +532,8 @@ Use `focusPrompt()` on `PluginRuntimeContext` to move focus to the prompt editor
 
 Workspace panels add tools next to built-in workspace tools. They render inside the workspace side panel on desktop and as mobile tabs on smaller screens.
 
+On Modernist, Files, Git, and Terminal may be composed into the host-owned workbench. A non-core plugin panel is always an opaque, full-surface plugin contribution: PI WEB does not split its markup into core panes, infer its state, or replace its callbacks. Keep the panel id stable because the qualified id (`<plugin-id>:<local-contribution-id>`) is the selected-tool and route identity across layouts. Plugin panels remain available in the workspace tool navigation, including the mobile Tools destination.
+
 ```js
 workspacePanels: [
   {

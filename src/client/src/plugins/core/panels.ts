@@ -1,20 +1,21 @@
 import { html, type TemplateResult } from "lit";
-import type { GitDiffResponse, GitStatusResponse } from "../../api";
 import { renderBuiltinTabIcon } from "../../components/tabIcons";
+import { renderWorkspaceGitStatus } from "../../components/WorkspaceGitReview";
 import "../../components/WorkspaceFilesPanel";
 import type { WorkspacePanelContribution, WorkspacePanelContext } from "../types";
+import { CORE_WORKSPACE_PANEL_LOCAL_IDS } from "./workspacePanelIds";
 
 export function createCoreWorkspacePanels(): WorkspacePanelContribution[] {
   return [
     {
-      id: "workspace.files",
+      id: CORE_WORKSPACE_PANEL_LOCAL_IDS.files,
       title: "Files",
       icon: renderBuiltinTabIcon("files"),
       order: 10,
       render: renderFiles,
     },
     {
-      id: "workspace.git",
+      id: CORE_WORKSPACE_PANEL_LOCAL_IDS.git,
       title: "Git",
       icon: renderBuiltinTabIcon("git"),
       order: 20,
@@ -22,7 +23,7 @@ export function createCoreWorkspacePanels(): WorkspacePanelContribution[] {
       render: renderGit,
     },
     {
-      id: "workspace.terminal",
+      id: CORE_WORKSPACE_PANEL_LOCAL_IDS.terminal,
       title: "Terminal",
       icon: renderBuiltinTabIcon("terminal"),
       order: 30,
@@ -42,72 +43,9 @@ function renderTerminal(context: WorkspacePanelContext): TemplateResult {
 }
 
 function renderGit(context: WorkspacePanelContext): TemplateResult {
-  const status = context.gitStatus;
-  return html`
-    <section class="toolbar">
-      <strong>Git</strong>
-      ${context.gitStale ? html`<span class="stale">stale</span>` : null}
-      <button @click=${context.onRefreshGit}>Refresh</button>
-    </section>
-    <section class="split">
-      <div class="list">
-        ${status === undefined ? html`<p class="muted">No status loaded.</p>` : !status.isGitRepo ? html`<p class="muted">Not a git repository.</p>` : html`
-          <p class="summary">${gitSummary(status)}</p>
-          ${status.files.length === 0 ? html`<p class="muted">No changes.</p>` : status.files.map((file) => html`
-            <button class="row ${context.selectedDiffPath === file.path ? "selected" : ""}" @click=${() => { context.onSelectDiff(file.path); }}>
-              <span>${stateLabel(file.index, file.workingTree)}</span>
-              <span>${file.path}</span>
-            </button>
-          `)}
-        `}
-      </div>
-      <div class="viewer">
-        ${renderDiffViewer(context)}
-      </div>
-    </section>
-  `;
-}
-
-function renderDiffViewer(context: WorkspacePanelContext): TemplateResult {
-  if (context.selectedDiffPath === undefined || context.selectedDiffPath === "") return html`<p class="muted">Select a changed file.</p>`;
-  const unstaged = context.selectedDiff;
-  const staged = context.selectedStagedDiff;
-  if (unstaged === undefined || staged === undefined) return html`<p class="muted">Loading diff…</p>`;
-  const diffs = [staged, unstaged].filter((diff) => diff.diff !== "");
-  if (diffs.length === 0) return html`<p class="muted">No staged or unstaged diff.</p>`;
-  return html`
-    <div class=${diffs.length === 1 ? "diffs single" : "diffs"}>
-      ${diffs.map((diff) => renderDiffSection(diff))}
-    </div>
-  `;
-}
-
-function renderDiffSection(diff: GitDiffResponse): TemplateResult {
-  loadUnifiedDiffViewer();
-  return html`
-    <section class="diff-section">
-      <div class="viewer-header"><strong>${diff.path ?? "diff"}</strong><small>${diff.staged ? "staged" : "unstaged"}${diff.truncated ? " · truncated" : ""}</small></div>
-      <unified-diff-viewer .diff=${diff.diff}></unified-diff-viewer>
-    </section>
-  `;
-}
-
-function loadUnifiedDiffViewer(): void {
-  void import("../../components/UnifiedDiffViewer");
+  return renderWorkspaceGitStatus(context);
 }
 
 function loadTerminalPanel(): void {
   void import("../../components/TerminalPanel");
-}
-
-function gitSummary(status: GitStatusResponse): string {
-  const branch = status.branch ?? "detached";
-  const ahead = status.ahead ?? 0;
-  const behind = status.behind ?? 0;
-  return ahead === 0 && behind === 0 ? branch : `${branch} · ↑${String(ahead)} ↓${String(behind)}`;
-}
-
-function stateLabel(index: string, workingTree: string): string {
-  const label = workingTree !== "unmodified" ? workingTree : index;
-  return label.slice(0, 1).toUpperCase();
 }

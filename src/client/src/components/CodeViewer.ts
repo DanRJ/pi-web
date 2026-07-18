@@ -65,6 +65,8 @@ export class CodeViewer extends LitElement {
   static override styles = css`
     :host { display: block; min-height: 0; height: 100%; border-top: var(--pi-code-surface-rule-width, 0px) solid var(--pi-border-muted); background: var(--pi-code-background, var(--pi-bg)); }
     .host { height: 100%; min-height: 0; overflow: auto; }
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) { border-top-width: var(--pi-divider-width, 2px); }
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .host { overscroll-behavior: contain; }
   `;
 }
 

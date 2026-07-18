@@ -741,6 +741,14 @@ export class TerminalPanel extends LitElement {
     .error { flex: 0 0 auto; margin: 0; padding: 8px; color: var(--pi-danger); border-bottom: 1px solid var(--pi-border); background: var(--pi-surface); }
     .muted { margin: 10px; color: var(--pi-muted); }
     .xterm { height: 100%; }
+    /* The terminal remains intentionally inverted in both Modernist variants;
+       only its surrounding chrome adopts the structural rules. */
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .terminal-tabs,
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .terminal-copy-toolbar { border-bottom-width: var(--pi-divider-width, 2px); background: var(--pi-terminal-bg); color: var(--pi-terminal-text); font-family: var(--pi-control-font-family, system-ui, sans-serif); }
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) button { border-radius: 0; }
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .terminal-tabs > button { border-color: color-mix(in srgb, var(--pi-terminal-text) 45%, transparent); background: transparent; color: var(--pi-terminal-text); }
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .terminal-tabs > button.selected { border-color: var(--pi-accent); background: color-mix(in srgb, var(--pi-accent) 24%, transparent); }
+    @media (prefers-reduced-motion: reduce) { * { transition: none; animation: none; } }
   `;
 }
 

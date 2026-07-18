@@ -47,6 +47,8 @@ export class UnifiedDiffViewer extends LitElement {
     .marker { color: var(--pi-dim); }
     .content.add .inline-change { border-radius: var(--pi-diff-inline-radius, 2px); background: color-mix(in srgb, var(--pi-success) 36%, transparent); color: var(--pi-text); }
     .content.remove .inline-change { border-radius: var(--pi-diff-inline-radius, 2px); background: color-mix(in srgb, var(--pi-danger) 36%, transparent); color: var(--pi-unified-diff-remove-color, var(--pi-text)); text-decoration: var(--pi-unified-diff-remove-decoration, none); }
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .scroller { border-top-width: var(--pi-divider-width, 2px); overscroll-behavior: contain; }
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .line-number { border-right-width: var(--pi-divider-width, 2px); }
   `;
 }
 

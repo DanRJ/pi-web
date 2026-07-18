@@ -49,6 +49,28 @@ describe("PiWebApp mobile shell", () => {
     expect(templateMarkup(rendered)).toContain("<prompt-editor");
     expect(appStyles.cssText).toContain(".shell.mobile-destination-chat main.workspace-view chat-view");
     expect(appStyles.cssText).toContain(".shell.mobile-destination-chat main.workspace-view prompt-editor");
+    expect(mobileShellStyles()).not.toContain(".shell.modernist-tools-expanded main { display: none; }");
+  });
+
+  it("keeps the mounted chat surface when every bottom destination follows a Modernist tool", () => {
+    const app = createApp();
+    setMobileLayout(app);
+    setState(app, { ...initialAppState(), selectedSession: session(), selectedWorkspace: workspace(), mainView: "chat", workspaceTool: "core:workspace.files" });
+    Reflect.set(app, "activeThemeId", "themes:modernist-dark");
+
+    call(app, "openWorkspaceTool", "plugin:workspace.review");
+    call(app, "selectMobileDestination", "chat");
+    expect(values(app.render())).toContain("shell workspace-view modernist-tools-expanded mobile-destination-chat");
+    expect(templateMarkup(app.render())).toContain("<chat-view");
+    expect(templateMarkup(app.render())).toContain("<prompt-editor");
+
+    call(app, "selectMobileDestination", "sessions");
+    expect(values(app.render())).toContain("shell workspace-view modernist-tools-expanded mobile-destination-sessions");
+    expect(Reflect.get(app, "state")).toMatchObject({ workspaceTool: "plugin:workspace.review", mainView: "plugin:workspace.review" });
+
+    call(app, "selectMobileDestination", "settings");
+    expect(values(app.render())).toContain("shell workspace-view modernist-tools-expanded mobile-destination-settings");
+    expect(Reflect.get(app, "state")).toMatchObject({ workspaceTool: "plugin:workspace.review", mainView: "plugin:workspace.review" });
   });
 
   it("opens Settings for a tool route and restores Tools after explicit close and URL close", () => {
@@ -178,7 +200,7 @@ class FakeHTMLElement {
 }
 
 function mobileShellStyles(): string {
-  const start = appStyles.cssText.indexOf("@media (max-width: 767px) {");
+  const start = appStyles.cssText.indexOf("@media (max-width: 767px) {\n    .shell {");
   const end = appStyles.cssText.indexOf("\n  }\n  status-bar", start);
   if (start === -1 || end === -1) throw new Error("Mobile shell styles unavailable");
   return appStyles.cssText.slice(start, end);

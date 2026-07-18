@@ -110,11 +110,25 @@ export const appStyles = css`
   .shell.dashboard-page { grid-template-columns: var(--navigation-panel-width) 1px minmax(0, 1fr); }
   .shell.dashboard-page main { grid-column: 3; }
   .dashboard-main session-dashboard { flex: 1 1 auto; min-height: 0; }
+  /* Modernist turns an active workspace tool into the post-navigation workbench.
+     The legacy workspace width/collapse values remain stored; this composition
+     simply does not consume that sidecar track while it is expanded. */
   @media (min-width: 1181px) {
+    .shell.modernist-tools-expanded { grid-template-columns: var(--navigation-panel-width) var(--pi-divider-width, 2px) minmax(0, 1fr); }
+    .shell.modernist-tools-expanded main { display: none; }
+    .shell.modernist-tools-expanded > workspace-panel { grid-column: 3; }
+    .shell.modernist-tools-expanded > .workspace-panel-edge { display: none; }
     .shell.navigation-panel-collapsed { --navigation-panel-width: 0px; }
     .shell.navigation-panel-collapsed > aside { display: none; }
     .shell.workspace-panel-collapsed { --workspace-panel-width: 0px; }
     .shell.workspace-panel-collapsed > workspace-panel { display: none; }
+    .shell.modernist-tools-expanded.workspace-panel-collapsed > workspace-panel { display: flex; }
+  }
+  @media (min-width: 768px) and (max-width: 1180px) {
+    .shell.modernist-tools-expanded { grid-template-rows: minmax(0, 1fr); }
+    .shell.modernist-tools-expanded main { display: none; }
+    .shell.modernist-tools-expanded > workspace-panel { grid-column: 3; grid-row: 1; }
+    .shell.modernist-tools-expanded > .workspace-panel-edge { display: none; }
   }
   @media (max-width: 1180px) {
     .shell { grid-template-columns: var(--navigation-panel-width) 1px minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
@@ -127,8 +141,8 @@ export const appStyles = css`
     .mobile-tabs-frame { display: flex; }
     .shell.workspace-view main { grid-row: 1; min-height: auto; }
     .shell.dashboard-page main { grid-column: 3; grid-row: 1 / 3; }
-    .shell.workspace-view > workspace-panel { grid-column: 3; grid-row: 2; display: flex; border-left: 0; }
-    .shell:not(.workspace-view) > workspace-panel { display: none; }
+    .shell.workspace-view:not(.modernist-tools-expanded) > workspace-panel { grid-column: 3; grid-row: 2; display: flex; border-left: 0; }
+    .shell:not(.workspace-view):not(.modernist-tools-expanded) > workspace-panel { display: none; }
     .workspace-panel-edge { display: none; }
     main.workspace-view chat-view, main.workspace-view prompt-editor, main.workspace-view status-bar,
     main.workspace-view .empty { display: none; }
@@ -207,6 +221,8 @@ export const workspacePanelStyles = css`
   .empty-state p { margin: 0; line-height: 1.45; }
   small, .muted { color: var(--pi-muted); }
   @media (max-width: 1180px) { :host(:not([mobileTools])) header { display: none; } }
+  /* Tablet workbenches need the existing registered-panel switcher; mobile and desktop already have their own visible controls. */
+  @media (min-width: 768px) and (max-width: 1180px) { :host([presentation="modernist-tablet"]) header { display: block; } }
   @media (max-width: 767px) { :host([mobileTools]) .workspace-header-strip { min-height: 2.75rem; padding: 0.25rem 0.5rem; } :host([mobileTools]) button { min-height: 2.75rem; } }
   .workspace-label { min-width: 0; display: inline-flex; align-items: baseline; gap: 5px; max-width: 100%; overflow: hidden; white-space: nowrap; }
   .workspace-label-base, .workspace-label-item, .workspace-label-render { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
@@ -216,7 +232,10 @@ export const workspacePanelStyles = css`
   .toolbar { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; padding: 8px; border-bottom: 1px solid var(--pi-border-muted); }
   .toolbar button { margin-left: auto; }
   .stale { border: 1px solid var(--pi-warning-border); border-radius: var(--pi-pill-radius, 999px); color: var(--pi-warning); padding: 1px 6px; font-size: 12px; }
+  .git-review { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+  .git-review > .split { flex: 1 1 auto; min-height: 0; overflow: hidden; }
   .split { flex: 1 1 auto; min-height: 0; display: grid; grid-template-rows: minmax(160px, 34%) minmax(0, 1fr); }
+  .split.status-only { grid-template-rows: minmax(0, 1fr); }
   .list { min-height: 0; overflow: auto; border-bottom: 1px solid var(--pi-border); padding: 6px; }
   .row { display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 4px; width: 100%; border: 0; border-radius: 5px; background: transparent; text-align: left; padding: 4px 6px 4px calc(6px + var(--depth, 0) * 14px); }
   .row:hover, .row.selected { background: var(--pi-selection-bg); }
@@ -234,6 +253,19 @@ export const workspacePanelStyles = css`
   .image-preview img { display: block; max-width: 100%; max-height: 100%; object-fit: contain; border: 1px solid var(--pi-border-muted); border-radius: 8px; background-color: var(--pi-surface); background-image: linear-gradient(45deg, color-mix(in srgb, var(--pi-border-muted) 45%, transparent) 25%, transparent 25%), linear-gradient(-45deg, color-mix(in srgb, var(--pi-border-muted) 45%, transparent) 25%, transparent 25%), linear-gradient(45deg, transparent 75%, color-mix(in srgb, var(--pi-border-muted) 45%, transparent) 75%), linear-gradient(-45deg, transparent 75%, color-mix(in srgb, var(--pi-border-muted) 45%, transparent) 75%); background-position: 0 0, 0 8px, 8px -8px, -8px 0; background-size: 16px 16px; box-shadow: 0 8px 24px var(--pi-shadow-soft); }
   pre { margin: 0; padding: 10px; overflow: auto; font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
   p { margin: 10px; }
+  :host-context(:root[data-pi-web-theme^="themes:modernist-"]) { font-family: var(--pi-body-font-family, system-ui, sans-serif); }
+  :host-context(:root[data-pi-web-theme^="themes:modernist-"]) header,
+  :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .toolbar,
+  :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .viewer-header,
+  :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .list,
+  :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .diff-section { border-width: var(--pi-divider-width, 2px); }
+  :host-context(:root[data-pi-web-theme^="themes:modernist-"]) button,
+  :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .row,
+  :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .image-preview img { border-radius: 0; }
+  @media (pointer: coarse) {
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) button { min-height: 2.75rem; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { transition: none; animation: none; } }
 `;
 
 export const listStyles = css`
