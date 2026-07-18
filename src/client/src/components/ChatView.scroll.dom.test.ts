@@ -34,6 +34,64 @@ describe("ChatView Jump to latest", () => {
     expect(Reflect.get(view, "showJumpToLatest")).toBe(false);
   });
 
+  it.each(["touch", "pen"] as const)("keeps the focused composer and activates exactly once for a %s Jump to latest", async (pointerType) => {
+    const composer = document.createElement("textarea");
+    let composerFocused = false;
+    const onComposerFocusChange = vi.fn((focused: boolean) => { composerFocused = focused; });
+    composer.addEventListener("focus", () => { onComposerFocusChange(true); });
+    composer.addEventListener("blur", () => { onComposerFocusChange(false); });
+    document.body.append(composer);
+
+    const view = await mountedView();
+    const chat = chatViewport(view, 300, 1000, 400);
+    const scrollTo = vi.fn();
+    Object.defineProperty(chat, "scrollTo", { configurable: true, value: scrollTo });
+    vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: false })));
+    refreshJump(view);
+    await view.updateComplete;
+
+    composer.focus();
+    expect(composerFocused).toBe(true);
+    const button = view.shadowRoot?.querySelector<HTMLButtonElement>(".jump-to-latest");
+    if (button === null || button === undefined) throw new Error("Expected Jump to latest button");
+    const pointerDown = pointerEvent("pointerdown", pointerType);
+
+    expect(button.dispatchEvent(pointerDown)).toBe(false);
+    expect(pointerDown.defaultPrevented).toBe(true);
+    expect(composerFocused).toBe(true);
+    expect(onComposerFocusChange).toHaveBeenCalledOnce();
+    expect(onComposerFocusChange).toHaveBeenLastCalledWith(true);
+    expect(document.activeElement).toBe(composer);
+
+    button.dispatchEvent(pointerEvent("pointerup", pointerType));
+    button.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, composed: true }));
+    expect(scrollTo).toHaveBeenCalledOnce();
+  });
+
+  it("retains native mouse and keyboard button focus and activation semantics", async () => {
+    const view = await mountedView();
+    const chat = chatViewport(view, 300, 1000, 400);
+    const scrollTo = vi.fn();
+    Object.defineProperty(chat, "scrollTo", { configurable: true, value: scrollTo });
+    vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: false })));
+    refreshJump(view);
+    await view.updateComplete;
+
+    const button = view.shadowRoot?.querySelector<HTMLButtonElement>(".jump-to-latest");
+    if (button === null || button === undefined) throw new Error("Expected Jump to latest button");
+    const mouseDown = pointerEvent("pointerdown", "mouse");
+    expect(button.dispatchEvent(mouseDown)).toBe(true);
+    expect(mouseDown.defaultPrevented).toBe(false);
+    button.focus();
+    expect(view.shadowRoot?.activeElement).toBe(button);
+
+    const keyboardDown = new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true, composed: true });
+    expect(button.dispatchEvent(keyboardDown)).toBe(true);
+    expect(keyboardDown.defaultPrevented).toBe(false);
+    button.click();
+    expect(scrollTo).toHaveBeenCalledOnce();
+  });
+
   it("uses an immediate non-animated scroll when reduced motion is requested", async () => {
     const view = await mountedView();
     const chat = chatViewport(view, 300, 1000, 400);
@@ -224,6 +282,12 @@ function refreshJump(view: ChatView): void {
   const refresh: unknown = Reflect.get(view, "refreshJumpToLatest");
   if (typeof refresh !== "function") throw new Error("Expected jump visibility helper");
   refresh.call(view);
+}
+
+function pointerEvent(type: string, pointerType: "mouse" | "pen" | "touch"): Event {
+  const event = new Event(type, { bubbles: true, cancelable: true, composed: true });
+  Object.defineProperty(event, "pointerType", { value: pointerType });
+  return event;
 }
 
 function nextFrame(): Promise<void> {

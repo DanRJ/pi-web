@@ -329,7 +329,7 @@ export class ChatView extends LitElement {
   private renderJumpToLatest() {
     if (!this.showJumpToLatest) return null;
     return html`
-      <button type="button" class="jump-to-latest" aria-label="Jump to latest message" title="Jump to latest message" @click=${this.jumpToLatest}>
+      <button type="button" class="jump-to-latest" aria-label="Jump to latest message" title="Jump to latest message" @pointerdown=${this.preserveComposerFocusOnJumpPointerDown} @click=${this.jumpToLatest}>
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v13m0 0-5-5m5 5 5-5M5 20h14"></path></svg><span>Latest</span>
       </button>
     `;
@@ -749,6 +749,16 @@ export class ChatView extends LitElement {
     }
     this.showJumpToLatest = shouldShowJumpToLatest(distanceFromScrollBottom(chat), chat.clientHeight, this.showJumpToLatest);
   }
+
+  /**
+   * On mobile, a button pointer-down normally takes focus from the composer
+   * before its click. That collapses the IME and can remove this overlay before
+   * the browser dispatches the click. Keep native mouse and keyboard focus
+   * behavior intact; prevented touch/pen pointer-down still produces one click.
+   */
+  private readonly preserveComposerFocusOnJumpPointerDown = (event: PointerEvent): void => {
+    if (event.pointerType === "touch" || event.pointerType === "pen") event.preventDefault();
+  };
 
   private jumpToLatest = (): void => {
     const chat = this.chat;
