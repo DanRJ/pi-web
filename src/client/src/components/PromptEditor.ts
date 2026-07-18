@@ -115,18 +115,14 @@ export class PromptEditor extends LitElement {
         <div class="editor-wrap">
           <div class=${`markdown-editor${this.disabled ? " markdown-editor-disabled" : ""}`} aria-label="Message pi" aria-disabled=${this.disabled ? "true" : "false"}></div>
           <input class="attachment-input" type="file" multiple hidden @change=${(event: Event) => { void this.handleFileInput(event); }} />
-          <button class="editor-attach icon-button" ?disabled=${busy} title="Attach files" aria-label="Attach files" @click=${() => { this.attachmentInput?.click(); }}>${renderAttachIcon()}</button>
+          ${this.renderAttachButton("legacy", busy)}
           ${shellMode ? html`<div class="mode-hint">Shell command${shellInputMode.excludeFromContext ? " · excluded from context" : ""}</div>` : null}
           ${this.isCompacting && !shellMode ? html`<div class="mode-hint">Compacting history · message will be queued</div>` : null}
           ${this.renderAttachments()}
           <autocomplete-menu .items=${this.completions} .selectedIndex=${this.selectedIndex} .onPick=${(item: CompletionItem) => { this.pick(item); }}></autocomplete-menu>
         </div>
-        <div class="actions">
-          ${this.renderCompactStatus()}
-          <button class="icon-button send-button" ?disabled=${busy} title=${queuesInput ? "Queue until the current activity finishes" : "Send message"} aria-label=${queuesInput ? "Queue message" : "Send message"} @click=${() => { this.send("followUp"); }}>${queuesInput ? renderQueueIcon() : renderSendIcon()}</button>
-          ${this.canSteer && !this.isCompacting ? html`<button class="icon-button steer-button" ?disabled=${busy} title="Steer the current response before the next model call" aria-label="Steer current response" @click=${() => { this.send("steer"); }}>${renderSteerIcon()}</button>` : null}
-          <button class="icon-button stop-button" ?disabled=${this.disabled || !this.canStop} title=${this.canStop ? (stopClearsServerQueue ? "Stop current work and clear queued server messages" : "Stop current work") : "Nothing running"} aria-label=${stopClearsServerQueue ? "Stop current work and clear queued server messages" : "Stop current work"} @click=${() => this.onStop?.()}>${renderStopIcon()}</button>
-        </div>
+        ${this.renderLegacyActions(busy, queuesInput, stopClearsServerQueue)}
+        ${this.renderModernistActions(busy, queuesInput, stopClearsServerQueue)}
       </footer>
     `;
   }
@@ -140,17 +136,68 @@ export class PromptEditor extends LitElement {
     return this.editor;
   }
 
-  private renderCompactStatus() {
+  /** Classic and PI WEB retain their original composer structure and action order. */
+  private renderLegacyActions(busy: boolean, queuesInput: boolean, stopClearsServerQueue: boolean) {
+    return html`
+      <div class="composer-template legacy-composer actions legacy-actions">
+        ${this.renderCompactStatus("legacy")}
+        ${this.renderSendButton("legacy", busy, queuesInput)}
+        ${this.renderSteerButton("legacy", busy)}
+        ${this.renderStopButton("legacy", stopClearsServerQueue)}
+      </div>
+    `;
+  }
+
+  /** Modernist alone groups context and execution controls around the primary action. */
+  private renderModernistActions(busy: boolean, queuesInput: boolean, stopClearsServerQueue: boolean) {
+    return html`
+      <div class="composer-template modernist-composer actions modernist-actions">
+        <div class="action-context">
+          ${this.renderAttachButton("modernist", busy)}
+          ${this.renderCompactStatus("modernist")}
+        </div>
+        <div class="action-execution">
+          ${this.renderSteerButton("modernist", busy)}
+          ${this.renderStopButton("modernist", stopClearsServerQueue)}
+          ${this.renderSendButton("modernist", busy, queuesInput)}
+        </div>
+      </div>
+    `;
+  }
+
+  private renderAttachButton(template: "legacy" | "modernist", busy: boolean) {
+    const modernist = template === "modernist";
+    return html`<button type="button" class=${`${template}-composer editor-attach icon-button${modernist ? " action-button" : ""}`} ?disabled=${busy} title="Attach files" aria-label="Attach files" @click=${() => { this.attachmentInput?.click(); }}>${renderAttachIcon()}${modernist ? html`<span class="action-label" aria-hidden="true">Attach</span>` : null}</button>`;
+  }
+
+  private renderCompactStatus(template: "legacy" | "modernist") {
     const status = this.status;
     if (status === undefined) return null;
+    const modernist = template === "modernist";
     const model = status.model?.id ?? "no model";
     const provider = status.model?.provider !== undefined && status.model.provider !== "" ? `${status.model.provider}/` : "";
     return html`
       <div class="compact-status" aria-label="Session status">
-        <button class="select-model" title="Select model" @click=${() => this.onSelectModel?.()}>${provider}${model}</button>
-        <button class="select-thinking icon-button" title=${`Thinking level: ${thinkingLevelLabel(status.thinkingLevel)}`} aria-label=${`Thinking level: ${thinkingLevelLabel(status.thinkingLevel)}`} @click=${() => this.onSelectThinking?.()}>${renderThinkingGauge(thinkingGauge(status.thinkingLevel, this.availableThinkingLevels))}</button>
+        <button type="button" class=${`select-model${modernist ? " action-button" : ""}`} title="Select model" @click=${() => this.onSelectModel?.()}>${modernist ? html`<span class="action-label" aria-hidden="true">Model</span><span class="model-value">${provider}${model}</span>` : `${provider}${model}`}</button>
+        <button type="button" class=${`select-thinking icon-button${modernist ? " action-button" : ""}`} title=${`Thinking level: ${thinkingLevelLabel(status.thinkingLevel)}`} aria-label=${`Thinking level: ${thinkingLevelLabel(status.thinkingLevel)}`} @click=${() => this.onSelectThinking?.()}>${renderThinkingGauge(thinkingGauge(status.thinkingLevel, this.availableThinkingLevels))}${modernist ? html`<span class="action-label" aria-hidden="true">Thinking</span>` : null}</button>
       </div>
     `;
+  }
+
+  private renderSendButton(template: "legacy" | "modernist", busy: boolean, queuesInput: boolean) {
+    const modernist = template === "modernist";
+    return html`<button type="button" class=${`icon-button send-button${modernist ? " action-button" : ""}`} ?disabled=${busy} title=${queuesInput ? "Queue until the current activity finishes" : "Send message"} aria-label=${queuesInput ? "Queue message" : "Send message"} @click=${() => { this.send("followUp"); }}>${queuesInput ? renderQueueIcon() : renderSendIcon()}${modernist ? html`<span class="action-label" aria-hidden="true">${queuesInput ? "Queue" : "Send"}</span>` : null}</button>`;
+  }
+
+  private renderSteerButton(template: "legacy" | "modernist", busy: boolean) {
+    if (!this.canSteer || this.isCompacting) return null;
+    const modernist = template === "modernist";
+    return html`<button type="button" class=${`icon-button steer-button${modernist ? " action-button" : ""}`} ?disabled=${busy} title="Steer the current response before the next model call" aria-label="Steer current response" @click=${() => { this.send("steer"); }}>${renderSteerIcon()}${modernist ? html`<span class="action-label" aria-hidden="true">Steer</span>` : null}</button>`;
+  }
+
+  private renderStopButton(template: "legacy" | "modernist", stopClearsServerQueue: boolean) {
+    const modernist = template === "modernist";
+    return html`<button type="button" class=${`icon-button stop-button${modernist ? " action-button" : ""}`} ?disabled=${this.disabled || !this.canStop} title=${this.canStop ? (stopClearsServerQueue ? "Stop current work and clear queued server messages" : "Stop current work") : "Nothing running"} aria-label=${stopClearsServerQueue ? "Stop current work and clear queued server messages" : "Stop current work"} @click=${() => this.onStop?.()}>${renderStopIcon()}${modernist ? html`<span class="action-label" aria-hidden="true">Stop</span>` : null}</button>`;
   }
 
   private renderAttachments() {

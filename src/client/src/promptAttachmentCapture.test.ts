@@ -110,7 +110,7 @@ describe("PromptEditor attachment wiring", () => {
       expect(templateContainsValue(editor.render(), "Remove shot.png")).toBe(true);
       expect(templateContainsValue(editor.render(), READ_FAILURE_MESSAGE)).toBe(true);
 
-      const send = findTemplateEventHandlerAfterMarker<Event>(editor.render(), "send-button");
+      const send = findTemplateClickHandlerAfterAccessibleName<Event>(editor.render(), "Send message");
       send(new Event("click"));
 
       expect(onSend).toHaveBeenCalledTimes(1);
@@ -138,7 +138,7 @@ describe("PromptEditor attachment wiring", () => {
     expect(templateContainsValue(editor.render(), "Remove report.pdf")).toBe(false);
     expect(templateContainsValue(editor.render(), "Remove shot.png")).toBe(true);
 
-    const send = findTemplateEventHandlerAfterMarker<Event>(editor.render(), "send-button");
+    const send = findTemplateClickHandlerAfterAccessibleName<Event>(editor.render(), "Send message");
     send(new Event("click"));
 
     expect(onSend).toHaveBeenCalledTimes(1);
@@ -231,6 +231,39 @@ function findOptionalTemplateEventHandlerAfterMarkerInValue<E extends Event>(val
     return undefined;
   }
   if (isTemplateResult(value)) return findOptionalTemplateEventHandlerAfterMarker<E>(value, marker);
+  return undefined;
+}
+
+// The accessible name and adjacent @click binding keep this narrow extraction tied to the rendered control contract.
+function findTemplateClickHandlerAfterAccessibleName<E extends Event>(template: TemplateResult, accessibleName: string): TemplateEventHandler<E> {
+  const handler = findOptionalTemplateClickHandlerAfterAccessibleName<E>(template, accessibleName);
+  if (handler === undefined) throw new Error(`Expected click handler for accessible name ${accessibleName}`);
+  return handler;
+}
+
+function findOptionalTemplateClickHandlerAfterAccessibleName<E extends Event>(template: TemplateResult, accessibleName: string): TemplateEventHandler<E> | undefined {
+  const strings = templateStrings(template);
+  const values = templateValues(template);
+  for (let index = 0; index < values.length; index += 1) {
+    if (strings[index]?.includes("aria-label=") === true && values[index] === accessibleName) {
+      const handler = values[index + 1];
+      if (strings[index + 1]?.includes("@click=") === true && isTemplateEventHandler<E>(handler)) return handler;
+    }
+    const nestedHandler = findOptionalTemplateClickHandlerAfterAccessibleNameInValue<E>(values[index], accessibleName);
+    if (nestedHandler !== undefined) return nestedHandler;
+  }
+  return undefined;
+}
+
+function findOptionalTemplateClickHandlerAfterAccessibleNameInValue<E extends Event>(value: unknown, accessibleName: string): TemplateEventHandler<E> | undefined {
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const nestedHandler = findOptionalTemplateClickHandlerAfterAccessibleNameInValue<E>(item, accessibleName);
+      if (nestedHandler !== undefined) return nestedHandler;
+    }
+    return undefined;
+  }
+  if (isTemplateResult(value)) return findOptionalTemplateClickHandlerAfterAccessibleName<E>(value, accessibleName);
   return undefined;
 }
 

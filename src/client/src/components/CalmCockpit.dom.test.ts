@@ -68,35 +68,136 @@ describe("Calm Cockpit rendered controls", () => {
     expect(disclosure.querySelector(".group-body")).toBeTruthy();
   });
 
-  it("renders prompt actions with accessible labels", async () => {
+  it.each(["themes:modernist-light", "themes:modernist-dark"])("renders the %s grouped composer in visible DOM order", async (theme) => {
+    document.documentElement.dataset["piWebTheme"] = theme;
+    const editor = await mountedPromptEditor();
+    const modernist = editor.shadowRoot?.querySelector<HTMLElement>(".modernist-actions");
+    const legacyActions = editor.shadowRoot?.querySelector<HTMLElement>(".legacy-actions");
+    const legacyAttach = editor.shadowRoot?.querySelector<HTMLElement>(".editor-wrap > .legacy-composer.editor-attach");
+    if (modernist === null || modernist === undefined || legacyActions === null || legacyActions === undefined || legacyAttach === null || legacyAttach === undefined) throw new Error("Expected both scoped composer templates");
+
+    expect(modernist.classList.contains("modernist-composer")).toBe(true);
+    expect(legacyActions.classList.contains("legacy-composer")).toBe(true);
+    expect(legacyAttach.classList.contains("legacy-composer")).toBe(true);
+    expect(Array.from(modernist.querySelectorAll<HTMLButtonElement>(".action-context button")).map((button) => button.getAttribute("aria-label") ?? button.title)).toEqual([
+      "Attach files", "Select model", "Thinking level: medium",
+    ]);
+    expect(Array.from(modernist.querySelectorAll<HTMLButtonElement>(".action-execution button")).map((button) => button.getAttribute("aria-label"))).toEqual([
+      "Steer current response", "Stop current work and clear queued server messages", "Queue message",
+    ]);
+    expect(modernist.querySelector(".action-execution button:last-child")?.classList.contains("send-button")).toBe(true);
+  });
+
+  it.each(["themes:classic", "themes:pi-web-dark"])("preserves the %s legacy composer attachment and action order", async (theme) => {
+    document.documentElement.dataset["piWebTheme"] = theme;
+    const editor = await mountedPromptEditor();
+    const legacyActions = editor.shadowRoot?.querySelector<HTMLElement>(".legacy-actions");
+    const modernist = editor.shadowRoot?.querySelector<HTMLElement>(".modernist-actions");
+    const attach = editor.shadowRoot?.querySelector<HTMLButtonElement>(".editor-wrap > .legacy-composer.editor-attach");
+    if (legacyActions === null || legacyActions === undefined || modernist === null || modernist === undefined || attach === null || attach === undefined) throw new Error("Expected both scoped composer templates");
+
+    expect(legacyActions.classList.contains("legacy-composer")).toBe(true);
+    expect(modernist.classList.contains("modernist-composer")).toBe(true);
+    expect(attach.closest(".editor-wrap")).toBeTruthy();
+    expect(attach.closest(".legacy-actions")).toBeNull();
+    expect(Array.from(legacyActions.children).map((child) => child.className)).toEqual([
+      "compact-status", "icon-button send-button", "icon-button steer-button", "icon-button stop-button",
+    ]);
+  });
+
+  it("wires one visible Modernist control set to the existing callbacks", async () => {
+    document.documentElement.dataset["piWebTheme"] = "themes:modernist-light";
     const onStop = vi.fn();
-    Object.defineProperty(window, "matchMedia", {
-      configurable: true,
-      value: () => ({ matches: false, addListener: () => undefined, removeListener: () => undefined, addEventListener: () => undefined, removeEventListener: () => undefined }),
-    });
+    const onSend = vi.fn();
+    const onSelectModel = vi.fn();
+    const onSelectThinking = vi.fn();
+    const editor = await mountedPromptEditor({ onStop, onSend, onSelectModel, onSelectThinking });
+    const modernist = editor.shadowRoot?.querySelector<HTMLElement>(".modernist-actions");
+    const fileInput = editor.shadowRoot?.querySelector<HTMLInputElement>(".attachment-input");
+    if (modernist === null || modernist === undefined || fileInput === null || fileInput === undefined) throw new Error("Expected Modernist controls and attachment input");
+
+    const clickFileInput = vi.spyOn(fileInput, "click");
+    modernist.querySelector<HTMLButtonElement>(".editor-attach")?.click();
+    modernist.querySelector<HTMLButtonElement>(".select-model")?.click();
+    modernist.querySelector<HTMLButtonElement>(".select-thinking")?.click();
+    modernist.querySelector<HTMLButtonElement>(".stop-button")?.click();
+    Reflect.set(editor, "draft", "follow up");
+    modernist.querySelector<HTMLButtonElement>(".send-button")?.click();
+    expect(clickFileInput).toHaveBeenCalledOnce();
+    expect(onSelectModel).toHaveBeenCalledOnce();
+    expect(onSelectThinking).toHaveBeenCalledOnce();
+    expect(onStop).toHaveBeenCalledOnce();
+    expect(onSend).toHaveBeenCalledWith("follow up", "followUp", undefined, undefined);
+  });
+
+  it("keeps the mounted CodeMirror editor and view through token-only status updates", async () => {
+    document.documentElement.dataset["piWebTheme"] = "themes:modernist-dark";
+    const editor = await mountedPromptEditor();
+    const cmEditor = editor.shadowRoot?.querySelector(".cm-editor");
+    const view = editor.view;
+    expect(cmEditor).toBeTruthy();
+    expect(view).toBeTruthy();
+
+    editor.status = status({ model: { provider: "provider", id: "model" }, thinkingLevel: "medium", tokens: { input: 99, output: 101, cacheRead: 0, cacheWrite: 0, total: 200 } });
+    await editor.updateComplete;
+    expect(editor.shadowRoot?.querySelector(".cm-editor")).toBe(cmEditor);
+    expect(editor.view).toBe(view);
+  });
+
+  it("keeps idle, streaming, compacting, sending, disabled, and delivery states truthful", async () => {
+    document.documentElement.dataset["piWebTheme"] = "themes:modernist-light";
     const editor = createRegisteredElement("prompt-editor", PromptEditor);
-    editor.status = status({ model: { provider: "provider", id: "model" }, thinkingLevel: "medium" });
-    editor.canSteer = true;
-    editor.canStop = true;
-    editor.clearsServerQueue = true;
-    editor.onStop = onStop;
+    editor.status = status({ model: { provider: "provider", id: "a-model-name-that-can-yield" }, thinkingLevel: "medium" });
     document.body.append(editor);
     await editor.updateComplete;
 
-    expect(editor).toBeInstanceOf(PromptEditor);
-    expect(editor.shadowRoot).toBeTruthy();
-    const attach = editor.shadowRoot?.querySelector<HTMLButtonElement>(".editor-attach");
-    const send = editor.shadowRoot?.querySelector<HTMLButtonElement>(".send-button");
-    const steer = editor.shadowRoot?.querySelector<HTMLButtonElement>(".steer-button");
-    const stop = editor.shadowRoot?.querySelector<HTMLButtonElement>(".stop-button");
-    expect(attach?.getAttribute("aria-label")).toBe("Attach files");
-    expect(send?.getAttribute("aria-label")).toBe("Queue message");
-    expect(steer?.getAttribute("aria-label")).toBe("Steer current response");
-    expect(stop?.getAttribute("aria-label")).toBe("Stop current work and clear queued server messages");
-    stop?.click();
-    expect(onStop).toHaveBeenCalledOnce();
+    const actionLabels = () => Array.from(editor.shadowRoot?.querySelectorAll<HTMLButtonElement>(".modernist-actions .action-execution button") ?? []).map((button) => button.getAttribute("aria-label"));
+    expect(actionLabels()).toEqual(["Stop current work", "Send message"]);
+    expect(editor.shadowRoot?.querySelector(".steer-button")).toBeNull();
+
+    editor.canSteer = true;
+    editor.canStop = true;
+    await editor.updateComplete;
+    expect(actionLabels()).toEqual(["Steer current response", "Stop current work", "Queue message"]);
+
+    editor.isCompacting = true;
+    await editor.updateComplete;
+    expect(editor.shadowRoot?.querySelector(".steer-button")).toBeNull();
+    expect(editor.shadowRoot?.textContent).toContain("Compacting history · message will be queued");
+
+    editor.sending = true;
+    await editor.updateComplete;
+    expect(editor.shadowRoot?.querySelector<HTMLButtonElement>(".editor-attach")?.disabled).toBe(true);
+    expect(editor.shadowRoot?.querySelector<HTMLButtonElement>(".send-button")?.disabled).toBe(true);
+
+    editor.sending = false;
+    editor.disabled = true;
+    await editor.updateComplete;
+    expect(editor.shadowRoot?.querySelector(".markdown-editor")?.getAttribute("aria-disabled")).toBe("true");
+    expect(editor.shadowRoot?.querySelector<HTMLButtonElement>(".send-button")?.disabled).toBe(true);
+
+    Reflect.set(editor, "attachments", [{ id: "attachment-1", kind: "image", name: "shot.png", mimeType: "image/png", data: "UE5H", size: 3 }]);
+    await editor.updateComplete;
+    expect(editor.shadowRoot?.querySelector(".attachment-delivery select")).toBeTruthy();
+    expect(editor.shadowRoot?.querySelector(".attachments")?.textContent).toContain("Attach to message");
   });
 });
+
+async function mountedPromptEditor(callbacks: Pick<PromptEditor, "onStop" | "onSend" | "onSelectModel" | "onSelectThinking"> = {}): Promise<PromptEditor> {
+  Object.defineProperty(window, "matchMedia", {
+    configurable: true,
+    value: () => ({ matches: false, addListener: () => undefined, removeListener: () => undefined, addEventListener: () => undefined, removeEventListener: () => undefined }),
+  });
+  const editor = createRegisteredElement("prompt-editor", PromptEditor);
+  editor.status = status({ model: { provider: "provider", id: "model" }, thinkingLevel: "medium" });
+  editor.canSteer = true;
+  editor.canStop = true;
+  editor.clearsServerQueue = true;
+  Object.assign(editor, callbacks);
+  document.body.append(editor);
+  await editor.updateComplete;
+  return editor;
+}
 
 function registerElement(name: string, element: CustomElementConstructor): void {
   if (customElements.get(name) === undefined) customElements.define(name, element);
