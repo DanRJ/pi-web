@@ -295,17 +295,22 @@ export class AuthController {
   }
 
   private async refreshStatus(machineId = selectedMachineId(this.getState())): Promise<void> {
-    const session = this.session();
+    const session = this.selectedSessionForMachine(machineId);
     if (session === undefined) return;
     try {
-      this.applyStatus(await this.api.status(session, machineId));
+      const status = await this.api.status(session, machineId);
+      const current = this.selectedSessionForMachine(machineId);
+      if (current?.id !== session.id || current.cwd !== session.cwd) return;
+      this.applyStatus(status);
     } catch {
       // Status refresh is opportunistic after login completes.
     }
   }
 
-  private session() {
-    const session = this.getState().selectedSession;
+  private selectedSessionForMachine(machineId: string) {
+    const state = this.getState();
+    if (selectedMachineId(state) !== machineId) return undefined;
+    const session = state.selectedSession;
     if (session === undefined || session.archived === true) return undefined;
     return session;
   }

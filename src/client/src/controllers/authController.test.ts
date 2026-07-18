@@ -121,11 +121,7 @@ describe("AuthController", () => {
     const statusCalls: { session: Parameters<typeof defaultApi.status>[0]; machineId: string | undefined }[] = [];
     const appliedStatuses: SessionStatus[] = [];
     const { controller, getState } = createController(
-      {
-        selectedMachine: remoteMachine("remote-2"),
-        selectedSession: session,
-        authDialog: { step: "oauth", flow, machineId: "remote-1", inputValue: "https://callback" },
-      },
+      { selectedSession: session, authDialog: { step: "oauth", flow, machineId: "local", inputValue: "https://callback" } },
       {
         respondOAuthFlow: (flowId, requestId, value, machineId) => {
           respondCalls.push({ flowId, requestId, value, machineId });
@@ -142,10 +138,73 @@ describe("AuthController", () => {
     await controller.respondOAuth();
     await flushMicrotasks();
 
-    expect(respondCalls).toEqual([{ flowId: "flow-1", requestId: "request-1", value: "https://callback", machineId: "remote-1" }]);
+    expect(respondCalls).toEqual([{ flowId: "flow-1", requestId: "request-1", value: "https://callback", machineId: "local" }]);
     expect(getState().authDialog).toBeUndefined();
-    expect(statusCalls).toEqual([{ session, machineId: "remote-1" }]);
+    expect(statusCalls).toEqual([{ session, machineId: "local" }]);
     expect(appliedStatuses).toEqual([refreshedStatus]);
+  });
+
+  it("does not refresh a session from another selected machine when a flow completes", async () => {
+    const flow = oauthFlow({ prompt: { requestId: "request-1", message: "Enter secret", kind: "prompt", promptType: "secret" } });
+    const respondMachines: (string | undefined)[] = [];
+    const statusMachines: (string | undefined)[] = [];
+    const appliedStatuses: SessionStatus[] = [];
+    const { controller } = createController(
+      {
+        selectedMachine: remoteMachine("remote-2"),
+        selectedSession: sessionInfo("session-2"),
+        authDialog: { step: "oauth", flow, machineId: "remote-1", inputValue: "secret-value" },
+      },
+      {
+        respondOAuthFlow: (_flowId, _requestId, _value, machineId) => {
+          respondMachines.push(machineId);
+          return Promise.resolve(oauthFlow({ status: "complete" }));
+        },
+        status: (_session, machineId) => {
+          statusMachines.push(machineId);
+          return Promise.resolve(sessionStatus("session-2"));
+        },
+      },
+      (status) => { appliedStatuses.push(status); },
+    );
+
+    await controller.respondOAuth();
+    await flushMicrotasks();
+
+    expect(respondMachines).toEqual(["remote-1"]);
+    expect(statusMachines).toEqual([]);
+    expect(appliedStatuses).toEqual([]);
+  });
+
+  it("does not apply an auth status refresh after the selected session changes", async () => {
+    const flow = oauthFlow({ prompt: { requestId: "request-1", message: "Enter secret", kind: "prompt", promptType: "secret" } });
+    const originalSession = sessionInfo("session-1");
+    const statusResponse = deferred<SessionStatus>();
+    const statusCalls: { session: Parameters<typeof defaultApi.status>[0]; machineId: string | undefined }[] = [];
+    const appliedStatuses: SessionStatus[] = [];
+    const { controller, setState } = createController(
+      {
+        selectedMachine: remoteMachine("remote-1"),
+        selectedSession: originalSession,
+        authDialog: { step: "oauth", flow, machineId: "remote-1", inputValue: "secret-value" },
+      },
+      {
+        respondOAuthFlow: () => Promise.resolve(oauthFlow({ status: "complete" })),
+        status: (session, machineId) => {
+          statusCalls.push({ session, machineId });
+          return statusResponse.promise;
+        },
+      },
+      (status) => { appliedStatuses.push(status); },
+    );
+
+    await controller.respondOAuth();
+    setState({ selectedMachine: remoteMachine("remote-2"), selectedSession: sessionInfo("session-2") });
+    statusResponse.resolve(sessionStatus(originalSession.id));
+    await flushMicrotasks();
+
+    expect(statusCalls).toEqual([{ session: originalSession, machineId: "remote-1" }]);
+    expect(appliedStatuses).toEqual([]);
   });
 
   it("leaves the OAuth dialog ready to retry if responding fails", async () => {
