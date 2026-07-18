@@ -23,8 +23,28 @@ describe("chatQueuedMessageSections", () => {
         heading: "Queued messages",
         detail: "1 pending",
         messages: [{ kind: "steer", text: "server queued" }],
+        lanes: [{ heading: "Steering", kind: "steer", messages: [{ kind: "steer", text: "server queued" }] }],
       },
     ]);
+  });
+});
+
+describe("ChatView queue truthfulness", () => {
+  it("keeps each server queue lane in supplied order and reports a count mismatch without inventing rows", () => {
+    const sections = chatQueuedMessageSections(
+      [],
+      [{ kind: "followUp", text: "follow-up one" }, { kind: "steer", text: "steer one" }, { kind: "followUp", text: "follow-up two" }],
+      4,
+    );
+    expect(sections[0]).toMatchObject({ detail: "3 listed; status says 4 pending" });
+    expect(sections[0]?.lanes).toEqual([
+      { heading: "Steering", kind: "steer", messages: [{ kind: "steer", text: "steer one" }] },
+      { heading: "Follow-ups", kind: "followUp", messages: [{ kind: "followUp", text: "follow-up one" }, { kind: "followUp", text: "follow-up two" }] },
+    ]);
+
+    expect(chatQueuedMessageSections([], [], 2)).toEqual([{
+      source: "server", heading: "Queued messages", detail: "0 listed; status says 2 pending", messages: [], lanes: [],
+    }]);
   });
 });
 
@@ -43,6 +63,7 @@ describe("ChatView queued-message clear action", () => {
 
     expect(markup).toContain('type="button"');
     expect(markup).toContain('title="Clear queued messages without stopping active work"');
+    expect(markup).toContain('aria-label="Clear queued server messages without stopping active work"');
     expect(markup).toContain(">Clear queue</button>");
     templateEventHandler(rendered, "Clear queue")(new Event("click"));
     expect(onClearServerQueue).toHaveBeenCalledOnce();
@@ -66,6 +87,25 @@ describe("ChatView queued-message clear action", () => {
 
     expect(templateStaticMarkup(renderQueuedMessages(view))).not.toContain("Clear queue");
   });
+
+  it("renders server queue lanes with lane-local ordinals and only promises Stop clearing when it is enabled", () => {
+    const view = new ChatView();
+    view.status = queuedStatus([
+      { kind: "followUp", text: "follow-up one" },
+      { kind: "steer", text: "steer one" },
+      { kind: "followUp", text: "follow-up two" },
+    ]);
+
+    const rendered = renderQueuedMessages(view);
+    expect(templateValuesDeep(rendered)).toEqual(expect.arrayContaining(["Steering", "Follow-ups", "Steer", "Follow-up", "1", "2"]));
+    expect(templateStaticMarkup(rendered)).not.toContain("Stop clears this queue");
+
+    view.canStop = true;
+    expect(templateStaticMarkup(renderQueuedMessages(view))).not.toContain("Stop clears this queue.");
+
+    view.clearsServerQueue = true;
+    expect(templateStaticMarkup(renderQueuedMessages(view))).toContain("Stop clears this queue.");
+  });
 });
 
 describe("chatMessageMetadataLabel", () => {
@@ -78,6 +118,36 @@ describe("chatMessageMetadataLabel", () => {
       parts: [],
       meta: { timestamp, model: { provider: "provider", id: "model" } },
     })).toBe(`${formattedTimestamp} · provider/model`);
+  });
+});
+
+describe("ChatView session notices", () => {
+  it("renders catching up only from the partial-stream flag", () => {
+    const view = new ChatView();
+    view.isCompacting = true;
+    expect(templateStaticMarkup(renderSessionActivity(view))).not.toContain("Catching up");
+
+    view.isReceivingPartialStream = true;
+    expect(templateStaticMarkup(renderSessionActivity(view))).toContain("Catching up");
+  });
+
+  it("uses actual status activity in the compact activity strip", () => {
+    const view = new ChatView();
+    view.status = queuedStatus([]);
+    view.status = { ...view.status, isBashRunning: true };
+    const dock = renderActivityDock(view);
+    expect(templateStaticMarkup(dock)).toContain('aria-live="polite"');
+    if (dock === null) throw new Error("Expected an activity dock");
+    expect(templateValues(dock)).toContain("bash");
+  });
+
+  it("names a running tool only when the technical transcript marks it running", () => {
+    const view = new ChatView();
+    view.status = { ...queuedStatus([]), isStreaming: false };
+    view.messages = [{ role: "tool", parts: [{ type: "toolExecution", toolName: "read", summary: "file", status: "running" }] }];
+    const dock = renderActivityDock(view);
+    if (dock === null) throw new Error("Expected an activity dock");
+    expect(templateValues(dock)).toContain("read running");
   });
 });
 
@@ -152,6 +222,21 @@ describe("ChatView technical-event groups", () => {
     expect(templateValues(live)).toContain("msg event-group live");
     expect(templateValues(live)).toContain("live events");
   });
+
+  it("renders an event summary and strict tracked-subsession row without a fabricated percentage", () => {
+    const view = new ChatView();
+    view.sessionId = "session-1";
+    const tracked: ChatLine[] = [{ role: "tool", parts: [{
+      type: "toolExecution", toolName: "list_subsessions", summary: "children", status: "running",
+      details: { subsessions: [{ sessionId: "child-1", cwd: "/repo", status: "working" }], progress: { completed: 1, total: 2 } },
+    }] }];
+
+    const rendered = renderMessageGroup(view, tracked, 0, 0, true);
+    expect(templateStaticMarkup(rendered)).toContain('class="event-summary"');
+    expect(templateStaticMarkup(rendered)).toContain('class="subsession-row"');
+    expect(templateValuesDeep(rendered)).toEqual(expect.arrayContaining(["1 event running", "working", "child-1", "/repo"]));
+    expect(templateStaticMarkup(rendered)).not.toContain("event-progress");
+  });
 });
 
 interface GroupBodyRenderCall {
@@ -169,6 +254,20 @@ function renderQueuedMessages(view: ChatView): TemplateResult {
   const method: unknown = Reflect.get(view, "renderQueuedMessages");
   if (!isRenderQueuedMessages(method)) throw new Error("ChatView.renderQueuedMessages is not callable");
   return method.call(view);
+}
+
+function renderSessionActivity(view: ChatView): TemplateResult | null {
+  const method: unknown = Reflect.get(view, "renderSessionActivity");
+  if (typeof method !== "function") throw new Error("ChatView.renderSessionActivity is not callable");
+  const rendered: unknown = method.call(view);
+  return isTemplateResult(rendered) ? rendered : null;
+}
+
+function renderActivityDock(view: ChatView): TemplateResult | null {
+  const method: unknown = Reflect.get(view, "renderActivityDock");
+  if (typeof method !== "function") throw new Error("ChatView.renderActivityDock is not callable");
+  const rendered: unknown = method.call(view);
+  return isTemplateResult(rendered) ? rendered : null;
 }
 
 function renderMessage(view: ChatView, message: ChatLine, index: number): TemplateResult {
@@ -261,7 +360,8 @@ function dispatchDetailsToggle(handler: TemplateEventHandler, open: boolean): vo
   }
 }
 
-function templateStaticMarkup(template: TemplateResult): string {
+function templateStaticMarkup(template: TemplateResult | null): string {
+  if (template === null) return "";
   const chunks: string[] = [];
   visit(template);
   return chunks.join("");
@@ -294,6 +394,24 @@ function templateValuesAfterMarker(template: TemplateResult, marker: string): un
       if (strings[index]?.includes(marker) === true) matches.push(values[index]);
       visit(values[index]);
     }
+  }
+}
+
+function templateValuesDeep(template: TemplateResult): unknown[] {
+  const values: unknown[] = [];
+  visit(template);
+  return values;
+
+  function visit(value: unknown): void {
+    if (Array.isArray(value)) {
+      for (const item of value) visit(item);
+      return;
+    }
+    if (!isTemplateResult(value)) {
+      values.push(value);
+      return;
+    }
+    for (const nested of templateValues(value)) visit(nested);
   }
 }
 

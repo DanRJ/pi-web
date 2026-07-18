@@ -30,6 +30,8 @@ export class AppSessionHeader extends LitElement {
   @property({ attribute: false }) status?: SessionStatus;
   @property({ attribute: false }) activity?: SessionActivity;
   @property({ type: Boolean }) canStop = false;
+  /** Abort only clears the server-owned queue when the parent confirms it. */
+  @property({ type: Boolean }) clearsServerQueue = false;
   @property({ attribute: false }) onStop?: () => void;
   @property({ attribute: false }) onToggleTheme?: () => void;
 
@@ -50,7 +52,10 @@ export class AppSessionHeader extends LitElement {
           <span class=${`status-badge ${shellStatus.kind}`} role="status" title=${shellStatus.detail} aria-label=${`${shellStatus.label}: ${shellStatus.detail}`}>
             ${statusIcon(shellStatus.kind)}<span>${shellStatus.label}</span>
           </span>
-          ${this.canStop ? html`<button type="button" class="session-stop-control" aria-label="Stop session work" @click=${() => { this.onStop?.(); }}>Stop</button>` : null}
+          ${this.canStop ? (this.clearsServerQueue
+            ? html`<button type="button" class="session-stop-control" aria-label="Stop session work and clear queued server messages" title="Stop work and clear queued server messages" @click=${() => { this.onStop?.(); }}>Stop</button>`
+            : html`<button type="button" class="session-stop-control" aria-label="Stop session work" title="Stop session work" @click=${() => { this.onStop?.(); }}>Stop</button>`)
+            : null}
           <button type="button" class="theme-control" aria-label="Toggle light and dark theme" title="Toggle light and dark theme" @click=${() => { this.onToggleTheme?.(); }}>${themeIcon()}</button>
         </div>
       </header>
@@ -79,8 +84,16 @@ export class AppSessionHeader extends LitElement {
     @media (max-width: 767px) {
       header { padding: var(--pi-space-2, 0.5rem) var(--pi-space-3, 0.75rem); }
       .session-detail, .session-stop-control { display: none; }
+      /* Modernist's compact header keeps the real stop control reachable above
+         the destination tabs without changing legacy theme density. */
+      :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .session-stop-control { display: inline-grid; min-width: auto; }
+      :host-context(:root[data-pi-web-theme^="themes:modernist-"]) button { min-width: 2.75rem; min-height: 2.75rem; }
     }
-    @media (max-width: 430px) { .session-actions { gap: 0.25rem; } .status-badge { padding-inline: 0.375rem; } }
+    @media (max-width: 430px) {
+      .session-actions { gap: 0.25rem; }
+      .status-badge { padding-inline: 0.375rem; }
+      :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .session-context { flex: 1 1 0; }
+    }
   `;
 }
 

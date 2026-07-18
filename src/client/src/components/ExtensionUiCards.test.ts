@@ -38,6 +38,11 @@ describe("ExtensionUiCards", () => {
     expect(onRespond).toHaveBeenCalledWith({ id: "input-1", cancelled: true } satisfies ExtensionUiResponse);
   });
 
+  it("keeps visible focus treatment and coarse-pointer targets without changing reconciliation", () => {
+    expect(ExtensionUiCards.styles.cssText).toContain("button:focus-visible, textarea:focus-visible");
+    expect(ExtensionUiCards.styles.cssText).toContain("button { min-height: 2.75rem; }");
+  });
+
   it("re-enables after a retryable submission failure and removes stale cards", async () => {
     const cards = new ExtensionUiCards();
     const onRespond = vi.fn()

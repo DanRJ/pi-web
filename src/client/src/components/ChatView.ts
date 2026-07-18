@@ -2,6 +2,7 @@ import { LitElement, html } from "lit";
 import { customElement, property, query, state } from "lit/decorators.js";
 import { repeat } from "lit/directives/repeat.js";
 import { ChatDisclosureController } from "../chatDisclosure";
+import { presentChatEvents, type ChatEventPresentation, type ChatEventChild } from "../chatEventPresentation";
 import { groupChatMessages, summarizeChatGroup, type ChatGroup } from "../chatGroups";
 import { writeClipboardText } from "../clipboard";
 import { capturePrependScrollAnchor, PREPEND_RESTORE_SETTLE_FRAMES, restorePrependScrollAnchor, type PrependScrollAnchor } from "../chatScrollAnchoring";
@@ -40,18 +41,42 @@ function clampNumber(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
+export interface QueuedMessageLane {
+  heading: "Steering" | "Follow-ups";
+  kind: QueuedSessionMessage["kind"];
+  messages: QueuedSessionMessage[];
+}
+
 export interface QueuedMessageSection {
   source: "client" | "server";
   heading: string;
   detail: string;
   messages: QueuedSessionMessage[];
+  lanes?: QueuedMessageLane[];
 }
 
-export function chatQueuedMessageSections(clientQueued: QueuedSessionMessage[], serverQueued: QueuedSessionMessage[]): QueuedMessageSection[] {
+export function chatQueuedMessageSections(clientQueued: QueuedSessionMessage[], serverQueued: QueuedSessionMessage[], pendingMessageCount = serverQueued.length): QueuedMessageSection[] {
+  const serverDetail = pendingMessageCount === serverQueued.length
+    ? `${String(serverQueued.length)} pending`
+    : `${String(serverQueued.length)} listed; status says ${String(pendingMessageCount)} pending`;
   return [
     clientQueued.length === 0 ? undefined : { source: "client", heading: "Queued until session starts", detail: "Will send once the backend session is ready", messages: clientQueued },
-    serverQueued.length === 0 ? undefined : { source: "server", heading: "Queued messages", detail: `${String(serverQueued.length)} pending`, messages: serverQueued },
+    serverQueued.length === 0 && pendingMessageCount === 0 ? undefined : {
+      source: "server",
+      heading: "Queued messages",
+      detail: serverDetail,
+      messages: serverQueued,
+      lanes: queuedMessageLanes(serverQueued),
+    },
   ].filter((section): section is QueuedMessageSection => section !== undefined);
+}
+
+function queuedMessageLanes(messages: QueuedSessionMessage[]): QueuedMessageLane[] {
+  const lanes: QueuedMessageLane[] = [
+    { heading: "Steering", kind: "steer", messages: messages.filter((message) => message.kind === "steer") },
+    { heading: "Follow-ups", kind: "followUp", messages: messages.filter((message) => message.kind === "followUp") },
+  ];
+  return lanes.filter((lane) => lane.messages.length > 0);
 }
 
 export function chatMessageMetadataLabel(message: ChatLine): string {
@@ -96,6 +121,9 @@ export class ChatView extends LitElement {
   @property({ attribute: false }) onExtensionUiRespond?: (response: ExtensionUiResponse) => Promise<ExtensionUiSubmitResult> | ExtensionUiSubmitResult;
   @property({ attribute: false }) status?: SessionStatus;
   @property({ attribute: false }) activity?: SessionActivity;
+  @property({ type: Boolean }) canStop = false;
+  /** The server's pending count confirms that Stop clears a server queue. */
+  @property({ type: Boolean }) clearsServerQueue = false;
   @property({ type: Boolean }) canClearServerQueue = false;
   @property({ attribute: false }) onClearServerQueue?: () => void;
   @property({ attribute: false }) onLoadMore?: () => void;
@@ -264,40 +292,56 @@ export class ChatView extends LitElement {
     }
     const state = this.activityState();
     if (state === undefined) return null;
-    const active = state !== "idle" || this.activity?.phase === "active";
+    const runningTool = this.runningToolActivity();
+    const active = state !== "idle" || this.activity?.phase === "active" || runningTool !== undefined;
     return html`
       <div class=${active ? "activity-dock active" : "activity-dock"} aria-live="polite">
         <span class="dot"></span>
-        <span class="activity-text">${this.activityText(state)}</span>
+        <span class="activity-text">${runningTool ?? this.activityText(state)}</span>
       </div>
     `;
   }
 
   private renderQueuedMessages() {
     const serverQueued = this.status?.queuedMessages ?? [];
-    return html`${chatQueuedMessageSections(this.clientQueuedMessages, serverQueued).map((section) => this.renderQueuedMessageList(section))}`;
+    return html`${chatQueuedMessageSections(this.clientQueuedMessages, serverQueued, this.status?.pendingMessageCount ?? 0).map((section) => this.renderQueuedMessageList(section))}`;
   }
 
   private renderQueuedMessageList(section: QueuedMessageSection) {
     const canClear = section.source === "server" && this.canClearServerQueue && this.onClearServerQueue !== undefined;
     return html`
-      <aside class="queued-messages" aria-live="polite">
+      <aside class="queued-messages" aria-label=${section.heading} aria-live="polite">
         <div class="queued-header">
           <div class="queued-heading">
             <strong>${section.heading}</strong>
             <small>${section.detail}</small>
           </div>
           ${canClear ? html`
-            <button type="button" class="queued-clear-button" title="Clear queued messages without stopping active work" @click=${this.handleClearServerQueue}>Clear queue</button>
+            <button type="button" class="queued-clear-button" title="Clear queued messages without stopping active work" aria-label="Clear queued server messages without stopping active work" @click=${this.handleClearServerQueue}>Clear queue</button>
           ` : null}
         </div>
-        ${section.messages.map((message, index) => html`
-          <div class="queued-message">
-            <span class="queued-kind">${message.kind === "steer" ? "Steer" : "Follow-up"} ${String(index + 1)}</span>
-            <formatted-text .text=${message.text}></formatted-text>
-          </div>
-        `)}
+        ${section.source === "server" ? section.lanes?.map((lane) => this.renderQueuedMessageLane(lane)) : section.messages.map((message, index) => this.renderQueuedMessage(message, index + 1))}
+        ${section.source === "server" && section.messages.length === 0 ? html`<small class="queued-unlisted">The runtime has not supplied message text for this queue.</small>` : null}
+        ${section.source === "server" && this.canStop && this.clearsServerQueue ? html`<small class="queued-stop-note">Stop clears this queue.</small>` : null}
       </aside>
+    `;
+  }
+
+  private renderQueuedMessageLane(lane: QueuedMessageLane) {
+    return html`
+      <section class="queued-lane" aria-label=${lane.heading}>
+        <strong class="queued-lane-heading">${lane.heading}</strong>
+        ${lane.messages.map((message, index) => this.renderQueuedMessage(message, index + 1))}
+      </section>
+    `;
+  }
+
+  private renderQueuedMessage(message: QueuedSessionMessage, ordinal: number) {
+    return html`
+      <div class="queued-message">
+        <span class="queued-kind">${message.kind === "steer" ? "Steer" : "Follow-up"} ${String(ordinal)}</span>
+        <formatted-text .text=${message.text}></formatted-text>
+      </div>
     `;
   }
 
@@ -325,6 +369,13 @@ export class ChatView extends LitElement {
   private currentPartialStreamNoticeBody(): string {
     this.partialStreamNoticeBody ??= randomPartialStreamNoticeBody();
     return this.partialStreamNoticeBody;
+  }
+
+  private runningToolActivity(): string | undefined {
+    const technicalGroup = [...this.groupedMessages()].reverse().find((group) => group.kind === "group");
+    if (technicalGroup?.kind !== "group") return undefined;
+    const runningTool = presentChatEvents(technicalGroup.messages).rows.find((row) => row.status === "running");
+    return runningTool === undefined ? undefined : `${runningTool.label} running`;
   }
 
   private activityState(): string | undefined {
@@ -419,21 +470,26 @@ export class ChatView extends LitElement {
   private renderMessageGroup(messages: ChatLine[], startIndex: number, endIndex: number, defaultOpen: boolean) {
     const disclosureKey = this.groupDisclosureKey(startIndex, endIndex, defaultOpen);
     const open = this.disclosures.isOpen(disclosureKey, defaultOpen);
+    const presentation = presentChatEvents(messages);
+    const live = defaultOpen && (presentation.status === "running" || presentation.status === "pending");
     return html`
       ${this.renderScrollMarker(this.groupScrollMarkerId(endIndex))}
-      <details class=${defaultOpen ? "msg event-group live" : "msg event-group"} data-index=${startIndex} data-scroll-anchor-id=${this.groupAnchorKey(startIndex)} ?open=${open} @toggle=${(event: Event) => { this.onGroupToggle(disclosureKey, event, defaultOpen); }}>
+      <details class=${live ? "msg event-group live" : "msg event-group"} data-event-status=${presentation.status} data-index=${startIndex} data-scroll-anchor-id=${this.groupAnchorKey(startIndex)} ?open=${open} @toggle=${(event: Event) => { this.onGroupToggle(disclosureKey, event, defaultOpen); }}>
         <summary>
-          <b class="label">${defaultOpen ? "live events" : "events"}</b>
-          <span>${summarizeChatGroup(messages)}</span>
+          <span class="event-icon" aria-hidden="true">${presentation.icon}</span>
+          <b class="label">${live ? "live events" : "events"}</b>
+          <span class="event-summary">${presentation.text}</span>
+          <span class="event-detail">${summarizeChatGroup(messages)}</span>
         </summary>
-        ${open ? this.renderMessageGroupBody(messages, startIndex) : null}
+        ${open ? this.renderMessageGroupBody(messages, startIndex, presentation) : null}
       </details>
     `;
   }
 
-  private renderMessageGroupBody(messages: ChatLine[], startIndex: number) {
+  private renderMessageGroupBody(messages: ChatLine[], startIndex: number, presentation?: ChatEventPresentation) {
     return html`
       <div class="group-body">
+        ${this.renderTrackedSubsessionChildren(presentation)}
         ${messages.map((message, offset) => {
           const toolOnly = this.isToolExecutionOnlyMessage(message);
           return html`
@@ -445,6 +501,16 @@ export class ChatView extends LitElement {
         })}
       </div>
     `;
+  }
+
+  private renderTrackedSubsessionChildren(presentation: ChatEventPresentation | undefined) {
+    const children = presentation?.rows.flatMap((row) => row.children ?? []) ?? [];
+    if (children.length === 0) return null;
+    return html`<div class="subsession-rows" aria-label="Tracked subsessions">${children.map((child) => this.renderTrackedSubsessionChild(child))}</div>`;
+  }
+
+  private renderTrackedSubsessionChild(child: ChatEventChild) {
+    return html`<div class="subsession-row"><span class="subsession-status">${child.status}</span><span>${child.sessionId}</span><small>${child.cwd}</small></div>`;
   }
 
   private renderScrollMarker(markerId: string) {
