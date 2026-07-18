@@ -244,6 +244,17 @@ describe("Pi package API", () => {
 });
 
 describe("session API compatibility", () => {
+  it("renames an encoded session with cwd, clear null, and captured remote revision", async () => {
+    const fetchMock = stubJsonFetch({ sessionId: "s /?" });
+
+    await expect(sessionsApi.rename({ id: "s /?", cwd: "/repo with spaces" }, null, "remote a", "2026-07-01T00:00:00.000Z")).resolves.toEqual({ sessionId: "s /?" });
+
+    expect(fetchCall(fetchMock, 0)[0]).toBe("https://pi.example.test/api/machines/remote%20a/sessions/s%20%2F%3F/name");
+    expect(fetchCall(fetchMock, 0)[1]).toMatchObject({ method: "PUT" });
+    expect(JSON.parse(requestBody(fetchCall(fetchMock, 0)[1]))).toEqual({ cwd: "/repo with spaces", name: null });
+    expect(new Headers(fetchCall(fetchMock, 0)[1]?.headers).get(MACHINE_REVISION_HEADER)).toBe("2026-07-01T00:00:00.000Z");
+  });
+
   it("posts session cleanup preview and execute requests through the selected machine", async () => {
     const preview = { generatedAt: "2026-06-25T12:00:00.000Z", thresholds: { archiveIdleDays: 7 }, projects: [{ cwd: "/repo", archiveCount: 2, deleteCount: 0 }], totals: { archiveCount: 2, deleteCount: 0 } };
     const executed = { ...preview, archivedSessionIds: ["s1", "s2"], deletedSessionIds: [] };

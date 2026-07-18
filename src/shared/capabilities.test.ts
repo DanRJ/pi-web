@@ -40,6 +40,20 @@ describe("PI WEB capabilities", () => {
     })).toContain(summary);
   });
 
+  it("requires web and session daemon support for session renaming", () => {
+    const rename = PI_WEB_CAPABILITIES.sessionsRename;
+    expect(WEB_RUNTIME_CAPABILITIES).toContain(rename);
+    expect(SESSIOND_RUNTIME_CAPABILITIES).toContain(rename);
+    expect(effectivePiWebCapabilities({
+      web: { available: true, capabilities: [rename] },
+      sessiond: { available: false, capabilities: [rename] },
+    })).not.toContain(rename);
+    expect(effectivePiWebCapabilities({
+      web: { available: true, capabilities: [rename] },
+      sessiond: { available: true, capabilities: [rename] },
+    })).toContain(rename);
+  });
+
   it("requires web and session daemon support for server-side queue clearing", () => {
     const clearQueue = PI_WEB_CAPABILITIES.sessionsClearQueue;
     expect(WEB_RUNTIME_CAPABILITIES).toContain(clearQueue);

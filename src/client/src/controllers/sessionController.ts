@@ -1137,7 +1137,8 @@ export class SessionController {
     if (!status.isStreaming) this.finishStreamCatchup(status.sessionId);
   }
 
-  private applySessionName(sessionId: string, name: string | undefined) {
+  /** Applies POST and realtime name changes through one idempotent state path. */
+  applySessionName(sessionId: string, name?: string): void {
     const rename = (session: SessionInfo) => {
       if (session.id !== sessionId) return session;
       const next = { ...session };

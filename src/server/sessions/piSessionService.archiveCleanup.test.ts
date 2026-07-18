@@ -73,6 +73,47 @@ describe("PiSessionService archive and cleanup", () => {
     await service.dispose();
   });
 
+  it("serializes restore and delete so a waiting delete cannot remove a restored session", async () => {
+    let archived = true;
+    let restoreStarted: (() => void) | undefined;
+    const restoreEntered = new Promise<void>((resolve) => { restoreStarted = resolve; });
+    let releaseRestore: (() => void) | undefined;
+    const restoreGate = new Promise<void>((resolve) => { releaseRestore = resolve; });
+    const deleted: string[] = [];
+    const record = { sessionId: "archived", cwd: "/workspace", archivedAt: "now", archivePath: "/archive/archived.jsonl", originalPath: "/sessions/archived.jsonl" };
+    const service = new PiSessionService(new CapturingSessionEventHub(), {
+      agentDir: TEST_AGENT_DIR,
+      archiveStore: {
+        list: () => Promise.resolve(archived ? [record] : []),
+        get: () => Promise.resolve(archived ? record : undefined),
+        archive: () => { throw new Error("not used"); },
+        restore: async () => {
+          restoreStarted?.();
+          await restoreGate;
+          archived = false;
+        },
+        isArchived: () => Promise.resolve(archived),
+        deleteArchived: (sessionId) => {
+          deleted.push(sessionId);
+          return Promise.resolve();
+        },
+      },
+      sessionManager: sessionGateway([]),
+      heartbeatIntervalMs: 60_000,
+    });
+    try {
+      const restore = service.restore(sessionRef("archived"));
+      await restoreEntered;
+      const remove = service.deleteArchived(sessionRef("archived"));
+      releaseRestore?.();
+      await expect(restore).resolves.toBeUndefined();
+      await expect(remove).rejects.toThrow("Archived session not found");
+      expect(deleted).toEqual([]);
+    } finally {
+      await service.dispose();
+    }
+  });
+
   it("bulk archives inactive sessions by cwd without opening runtimes", async () => {
     const recordsByCwd = new Map([
       ["/one", [sessionRecord("a", "/one"), sessionRecord("b", "/one")]],
@@ -327,6 +368,83 @@ describe("PiSessionService archive and cleanup", () => {
     expect(result.deletedSessionIds).toEqual(["legacy-a", "legacy-b"]);
 
     await service.dispose();
+  });
+
+  it("lets restore win a deferred legacy bulk delete without recreating an archive path", async () => {
+    let archived = true;
+    let releaseRestore: (() => void) | undefined;
+    const restoreGate = new Promise<void>((resolve) => { releaseRestore = resolve; });
+    let signalRestore: (() => void) | undefined;
+    const restoreStarted = new Promise<void>((resolve) => { signalRestore = resolve; });
+    const legacy = { sessionId: "legacy", cwd: "/workspace", archivedAt: "now" };
+    const archiveMany = vi.fn();
+    const deleteArchivedMany = vi.fn();
+    const service = new PiSessionService(new CapturingSessionEventHub(), {
+      agentDir: TEST_AGENT_DIR,
+      archiveStore: {
+        list: () => Promise.resolve(archived ? [legacy] : []),
+        get: () => Promise.resolve(archived ? legacy : undefined),
+        archive: () => Promise.reject(new Error("not used")),
+        archiveMany,
+        restore: async () => { signalRestore?.(); await restoreGate; archived = false; },
+        isArchived: () => Promise.resolve(archived),
+        deleteArchived: () => Promise.reject(new Error("not used")),
+        deleteArchivedMany,
+      },
+      sessionManager: { create: () => fakeSessionManager(), list: () => Promise.resolve([sessionRecord("legacy")]), open: () => fakeSessionManager() },
+      heartbeatIntervalMs: 60_000,
+    });
+    try {
+      const restore = service.restore(sessionRef("legacy"));
+      await restoreStarted;
+      const deleting = service.deleteArchivedMany([sessionRef("legacy")]);
+      releaseRestore?.();
+      await restore;
+      await expect(deleting).resolves.toMatchObject({ deletedSessionIds: [], failures: [{ sessionId: "legacy", error: "Archived session not found" }] });
+      expect(archiveMany).not.toHaveBeenCalled();
+      expect(deleteArchivedMany).not.toHaveBeenCalled();
+    } finally {
+      await service.dispose();
+    }
+  });
+
+  it("lets restore win a deferred legacy cleanup delete without recreating an archive path", async () => {
+    let archived = true;
+    let releaseRestore: (() => void) | undefined;
+    const restoreGate = new Promise<void>((resolve) => { releaseRestore = resolve; });
+    let signalRestore: (() => void) | undefined;
+    const restoreStarted = new Promise<void>((resolve) => { signalRestore = resolve; });
+    const legacy = { sessionId: "legacy", cwd: "/workspace", archivedAt: "2026-01-01T00:00:00.000Z" };
+    const archiveMany = vi.fn();
+    const deleteArchivedMany = vi.fn();
+    const service = new PiSessionService(new CapturingSessionEventHub(), {
+      agentDir: TEST_AGENT_DIR,
+      now: () => new Date("2026-06-25T00:00:00.000Z"),
+      archiveStore: {
+        list: () => Promise.resolve(archived ? [legacy] : []),
+        get: () => Promise.resolve(archived ? legacy : undefined),
+        archive: () => Promise.reject(new Error("not used")),
+        archiveMany,
+        restore: async () => { signalRestore?.(); await restoreGate; archived = false; },
+        isArchived: () => Promise.resolve(archived),
+        deleteArchived: () => Promise.reject(new Error("not used")),
+        deleteArchivedMany,
+      },
+      sessionManager: { create: () => fakeSessionManager(), list: () => Promise.resolve([sessionRecord("legacy")]), listAll: () => Promise.resolve([]), open: () => fakeSessionManager() },
+      heartbeatIntervalMs: 60_000,
+    });
+    try {
+      const restore = service.restore(sessionRef("legacy"));
+      await restoreStarted;
+      const cleanup = service.cleanup({ thresholds: { deleteArchivedDays: 30 } });
+      releaseRestore?.();
+      await restore;
+      await expect(cleanup).resolves.toMatchObject({ deletedSessionIds: [] });
+      expect(archiveMany).not.toHaveBeenCalled();
+      expect(deleteArchivedMany).not.toHaveBeenCalled();
+    } finally {
+      await service.dispose();
+    }
   });
 
   it("skips busy active sessions during cleanup execution", async () => {

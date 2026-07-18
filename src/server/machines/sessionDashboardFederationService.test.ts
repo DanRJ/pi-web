@@ -35,6 +35,16 @@ describe("SessionDashboardFederationService", () => {
     expect(requestJson).toHaveBeenCalledWith("GET", "/api/session-summaries", undefined, { timeoutMs: 5000 });
   });
 
+  it("exposes effective capabilities on available outcomes", async () => {
+    const runtime = supported("remote");
+    const service = new SessionDashboardFederationService({
+      local: { summary: () => Promise.resolve({ sessions: [] }) },
+      machines: { list: () => Promise.resolve([remote]), runtime: () => Promise.resolve(runtime), remoteClient: () => Promise.resolve({ requestJson: vi.fn().mockResolvedValue({ statusCode: 200, headers: {}, body: { sessions: [] } }), request: vi.fn(), connectWebSocket: vi.fn() }) },
+    });
+    await expect(service.summary()).resolves.toMatchObject({ machines: [{ outcome: "available", capabilities: [PI_WEB_CAPABILITIES.sessionsSummarySnapshot] }] });
+
+  });
+
   it("returns a partial response when local runtime hangs", async () => {
     vi.useFakeTimers();
     try {

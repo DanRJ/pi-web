@@ -1,8 +1,9 @@
-import { describe, expect, it } from "vitest";
+import type { TemplateResult } from "lit";
+import { describe, expect, it, vi } from "vitest";
 import type { SessionInfo, SessionStatus } from "../api";
 import { markCachedNewSessionInfo } from "../cachedNewSessions";
 import { isArchivableSessionInfo, isTransientNewSessionInfo } from "../sessionPersistence";
-import { sessionRowActivityKind, sessionRowsForCurrentTree } from "./SessionList";
+import { SessionList, sessionRowActivityKind, sessionRowsForCurrentTree } from "./SessionList";
 
 describe("sessionRowActivityKind", () => {
   const idle = sessionStatus("s");
@@ -60,6 +61,31 @@ describe("session action eligibility", () => {
   });
 });
 
+describe("SessionList Rename menu", () => {
+  it("enables rename for current sessions, disables archived sessions, and explains unsupported runtimes", () => {
+    const list = new SessionList();
+    const onRename = vi.fn();
+    list.onRename = onRename;
+    list.canRename = true;
+
+    const enabled = renderSessionMenu(list, session("current"));
+    const enabledValues = templateValuesDeep(enabled);
+    const titleIndex = enabledValues.findIndex((value) => value === "Rename session");
+    const rename = enabledValues[titleIndex + 2];
+    if (!isRenameCallback(rename)) throw new Error("Rename callback unavailable");
+    class TestHTMLElement { readonly testElement = true; }
+    vi.stubGlobal("HTMLElement", TestHTMLElement);
+    rename({ currentTarget: new HTMLElement() });
+    expect(onRename).toHaveBeenCalledWith(session("current"), expect.anything());
+    vi.unstubAllGlobals();
+
+    expect(templateMarkup(renderSessionMenu(list, { ...session("archived"), archived: true }))).toContain("Restore this session before renaming.");
+
+    list.canRename = false;
+    expect(templateValuesDeep(renderSessionMenu(list, session("unsupported")))).toContain(list.renameUnavailableMessage);
+  });
+});
+
 describe("sessionRowsForCurrentTree", () => {
   it("keeps archived ancestors visible while they have unarchived descendants", () => {
     const parent = { ...session("parent"), archived: true, archivedAt: "2026-06-09T00:00:00.000Z" };
@@ -88,6 +114,55 @@ describe("sessionRowsForCurrentTree", () => {
     ]);
   });
 });
+
+function renderSessionMenu(list: SessionList, value: SessionInfo): TemplateResult {
+  Reflect.set(list, "openMenuSessionId", value.id);
+  const renderer: unknown = Reflect.get(list, "renderSession");
+  if (typeof renderer !== "function") throw new Error("Session row renderer unavailable");
+  const rendered: unknown = renderer.call(list, { session: value, depth: 0, hasMissingParent: false }, 0, "current");
+  if (!isTemplate(rendered)) throw new Error("Session row template unavailable");
+  return rendered;
+}
+
+function templateMarkup(template: TemplateResult): string {
+  return `${templateStrings(template).join("")}${templateValues(template).map((value) => Array.isArray(value) ? value.map((item) => isTemplate(item) ? templateMarkup(item) : "").join("") : isTemplate(value) ? templateMarkup(value) : "").join("")}`;
+}
+
+function templateValuesDeep(template: TemplateResult): unknown[] {
+  const result: unknown[] = [];
+  const visit = (value: unknown): void => {
+    if (isTemplate(value)) {
+      for (const nested of templateValues(value)) visit(nested);
+      return;
+    }
+    if (Array.isArray(value)) {
+      for (const nested of value) visit(nested);
+      return;
+    }
+    result.push(value);
+  };
+  for (const value of templateValues(template)) visit(value);
+  return result;
+}
+
+function templateStrings(template: TemplateResult): readonly string[] {
+  const strings: unknown = Reflect.get(template, "strings");
+  if (!Array.isArray(strings)) throw new Error("Template strings unavailable");
+  return strings.every((item) => typeof item === "string") ? strings : [];
+}
+
+function templateValues(template: TemplateResult): readonly unknown[] {
+  const values: unknown = Reflect.get(template, "values");
+  if (!Array.isArray(values)) throw new Error("Template values unavailable");
+  return values;
+}
+
+function isRenameCallback(value: unknown): value is (event: unknown) => void {
+  return typeof value === "function";
+}
+
+function isTemplate(value: unknown): value is TemplateResult {  return typeof value === "object" && value !== null && Array.isArray(Reflect.get(value, "strings"));
+}
 
 function rowSummaries(rows: ReturnType<typeof sessionRowsForCurrentTree>) {
   return rows.map((row) => ({ id: row.session.id, depth: row.depth, hasMissingParent: row.hasMissingParent }));

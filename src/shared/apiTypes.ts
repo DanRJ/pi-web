@@ -11,6 +11,7 @@ export const PI_WEB_CAPABILITIES = {
   sessionsClearQueue: "sessions.clearQueue",
   sessionsPersistedState: "sessions.persistedState",
   sessionsSummarySnapshot: "sessions.summarySnapshot",
+  sessionsRename: "sessions.rename",
   promptAttachments: "prompt.attachments",
   workspaceFileSuggestions: "workspace.fileSuggestions",
   piPackagesManage: "piPackages.manage",
@@ -39,6 +40,19 @@ export interface MachineHealth {
   web?: PiWebComponentStatus;
   sessiond?: PiWebComponentStatus;
   error?: string;
+}
+
+export interface SessionRenameRequest {
+  /** Workspace context used to resolve the session through a trusted listing. */
+  cwd: string;
+  /** null or a blank value clears the display name. */
+  name: string | null;
+}
+
+export interface SessionRenameResponse {
+  sessionId: string;
+  /** Omitted when the display name was cleared. */
+  name?: string;
 }
 
 export interface MachineRuntime {

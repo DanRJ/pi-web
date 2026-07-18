@@ -4,6 +4,19 @@ import { SessionController } from "./sessionController";
 import { defaultApi, deferred, EmitSocket, emptyPage, FakeSocket, oldSession, replacementSession, runPendingAnimationFrames, status, workspace, type AppState, type SessionActivity, type SessionInfo } from "./sessionController.testSupport";
 
 describe("SessionController live events", () => {
+  it("idempotently applies and clears names for list and selected session", () => {
+    let state: AppState = { ...initialAppState(), selectedSession: oldSession, sessions: [oldSession] };
+    const controller = new SessionController(() => state, (patch) => { state = { ...state, ...patch }; }, () => undefined, undefined, { socket: new FakeSocket() });
+
+    controller.applySessionName(oldSession.id, "Release work");
+    controller.applySessionName(oldSession.id, "Release work");
+    expect(state.selectedSession?.name).toBe("Release work");
+    expect(state.sessions[0]?.name).toBe("Release work");
+    controller.applySessionName(oldSession.id);
+    expect(state.selectedSession?.name).toBeUndefined();
+    expect(state.sessions[0]?.name).toBeUndefined();
+  });
+
   it("coalesces rapid status updates into a single state write per frame", () => {
     const setStateCalls: Partial<AppState>[] = [];
     let state: AppState = { ...initialAppState(), selectedSession: oldSession, sessions: [oldSession] };

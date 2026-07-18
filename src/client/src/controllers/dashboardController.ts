@@ -106,12 +106,21 @@ export class DashboardController {
     this.runtimeSnapshots.clear();
   }
 
+  /** Applies a durable name mutation exactly like a realtime event, including refresh replay. */
+  applySessionName(machineId: string, sessionId: string, name?: string): void {
+    this.applyDashboardMutation(machineId, name === undefined ? { type: "session.name", sessionId } : { type: "session.name", sessionId, name });
+  }
+
   applyRealtimeEvent(machineId: string, event: RealtimeEvent): void {
     if (event.type === "session.created") {
       this.scheduleRefresh();
       return;
     }
     if (!isDashboardMutationEvent(event)) return;
+    this.applyDashboardMutation(machineId, event);
+  }
+
+  private applyDashboardMutation(machineId: string, event: DashboardMutationEvent): void {
     this.recordRealtimeMutation(machineId, event);
     const state = this.getState();
     if (state.dashboard === undefined) return;

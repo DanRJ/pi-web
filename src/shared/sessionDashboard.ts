@@ -1,4 +1,4 @@
-import type { Machine, Project, SessionActivity, SessionStatus, Workspace } from "./apiTypes.js";
+import type { Machine, PiWebCapability, Project, SessionActivity, SessionStatus, Workspace } from "./apiTypes.js";
 import { isSessionActive } from "./activity.js";
 
 /** Runtime state reported by sessiond without opening a session runtime. */
@@ -108,7 +108,8 @@ export interface LocalSessionDashboardResponse {
 }
 
 export type SessionDashboardMachineOutcome =
-  | { machine: Machine; outcome: "available"; sessions: LocalSessionDashboardSessionSummary[] }
+  /** Effective capabilities at dashboard-read time; omitted by older machines. */
+  | { machine: Machine; outcome: "available"; sessions: LocalSessionDashboardSessionSummary[]; capabilities?: PiWebCapability[] }
   | { machine: Machine; outcome: "unsupported"; error?: string }
   | { machine: Machine; outcome: "offline"; error?: string }
   | { machine: Machine; outcome: "error"; error: string };

@@ -36,9 +36,11 @@ export class SessionList extends LitElement implements KeyboardNavigableSection 
   @property({ type: Boolean }) canDeleteArchived = false;
   @property({ type: Boolean }) canReload = false;
   @property({ type: Boolean }) canCleanup = false;
+  @property({ type: Boolean }) canRename = false;
   @property({ type: Boolean }) authoritativeSessionPersistence = false;
   @property({ type: String }) archivedDeleteUnavailableMessage = "Update and restart Pi-Web on this machine to delete archived sessions.";
   @property({ type: String }) cleanupUnavailableMessage = "Update and restart Pi-Web on this machine to clean up sessions.";
+  @property({ type: String }) renameUnavailableMessage = "Update and restart Pi-Web on this machine to rename sessions.";
   @property({ type: Boolean, reflect: true }) collapsible = false;
   @property({ type: Boolean, reflect: true }) collapsed = false;
   @property({ attribute: false }) onSelect?: (session: SessionInfo) => void;
@@ -58,6 +60,7 @@ export class SessionList extends LitElement implements KeyboardNavigableSection 
   @property({ attribute: false }) onDetachParent?: (session: SessionInfo) => void;
   @property({ attribute: false }) onReload?: (session: SessionInfo) => void;
   @property({ attribute: false }) onCleanup?: () => void;
+  @property({ attribute: false }) onRename?: (session: SessionInfo, opener: HTMLElement) => void;
 
   @state() private openMenuSessionId: string | undefined;
   @state() private menuStyle = "";
@@ -259,10 +262,16 @@ export class SessionList extends LitElement implements KeyboardNavigableSection 
             <div class="action-menu-panel" style=${this.menuStyle}>
               ${session.archived === true
                 ? html`
+                  <button disabled title="Restore this session before renaming.">Rename</button>
+                  <small class="capability-hint">Restore this session before renaming.</small>
                   <button title="Restore session" @click=${() => { this.openMenuSessionId = undefined; this.onRestore?.(session); }}>Restore</button>
                   <button class="danger" title=${this.canDeleteArchived ? "Permanently delete archived session" : this.archivedDeleteUnavailableMessage} ?disabled=${!this.canDeleteArchived} @click=${() => { this.openMenuSessionId = undefined; this.confirmDeleteArchived(session); }}>Delete archived session</button>
                 `
-                : canDeleteTransient
+                : html`
+                    <button title=${this.canRename ? "Rename session" : this.renameUnavailableMessage} ?disabled=${!this.canRename} @click=${(event: MouseEvent) => { if (event.currentTarget instanceof HTMLElement) this.onRename?.(session, event.currentTarget); }}>Rename</button>
+                    ${this.canRename ? null : html`<small class="capability-hint">${this.renameUnavailableMessage}</small>`}
+                  `}
+                  ${canDeleteTransient
                   ? html`<button title="Delete transient new session" @click=${() => { this.openMenuSessionId = undefined; this.onDelete?.(session); }}>Delete</button>`
                   : html`
                     ${canArchive ? html`

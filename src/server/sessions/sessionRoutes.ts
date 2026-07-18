@@ -1,10 +1,12 @@
 import type { FastifyInstance } from "fastify";
-import type { SessionBulkMutationRequest, SessionBulkMutationRef, SessionCleanupRequest } from "../../shared/apiTypes.js";
+import type { SessionBulkMutationRequest, SessionBulkMutationRef, SessionCleanupRequest, SessionRenameRequest } from "../../shared/apiTypes.js";
+import { normalizeSessionName } from "../../shared/sessionName.js";
 import type { ExtensionUiResponse } from "../../shared/extensionUi.js";
 import { projectBrowserMessageResponse } from "../browserMessageProjection.js";
 import { normalizeRequestCwd } from "../workingDirectory.js";
 import type { SessionEventHub } from "../realtime/sessionEventHub.js";
 import type { SessionRouteLookup, SessionRouteService } from "./sessionService.js";
+import { SessionRenameArchivedError, SessionRenameNotFoundError } from "./piSessionService.js";
 import { normalizeSessionCleanupRequest } from "./sessionCleanup.js";
 
 type SessionLookup = SessionRouteLookup;
@@ -198,6 +200,24 @@ export function registerSessionRoutes(app: FastifyInstance, sessions: SessionRou
       return await sessions.clearQueue(sessionLookupFromBody(request.params.sessionId, optionalRecord(request.body)));
     } catch (error) {
       return reply.code(mutationErrorStatus(error)).send({ error: errorMessage(error) });
+    }
+  });
+
+  app.put<{ Params: { sessionId: string }; Body: Partial<SessionRenameRequest> | undefined }>(`${prefix}/sessions/:sessionId/name`, async (request, reply) => {
+    let cwd: string;
+    let name: string | undefined;
+    try {
+      const body = requireRecord(request.body);
+      if (!("name" in body)) throw new Error("name field is required");
+      cwd = normalizeRequestCwd(requireString(body, "cwd"));
+      name = normalizeSessionName(body["name"]);
+    } catch (error) {
+      return reply.code(400).send({ error: errorMessage(error) });
+    }
+    try {
+      return await sessions.rename({ id: request.params.sessionId, cwd }, name);
+    } catch (error) {
+      return reply.code(renameErrorStatus(error)).send({ error: errorMessage(error) });
     }
   });
 
@@ -407,6 +427,14 @@ function errorMessage(error: unknown): string {
 
 function mutationErrorStatus(error: unknown): 400 | 404 {
   return isSessionNotFoundError(error) ? 404 : 400;
+}
+
+function renameErrorStatus(error: unknown): 404 | 409 | 500 {
+  if (error instanceof SessionRenameArchivedError) return 409;
+  if (error instanceof SessionRenameNotFoundError) return 404;
+  // Validation is handled before dispatch. A service/FS failure is operational
+  // and must not be misreported as a bad client request.
+  return 500;
 }
 
 function isSessionNotFoundError(error: unknown): boolean {

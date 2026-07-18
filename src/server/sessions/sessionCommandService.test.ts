@@ -85,6 +85,18 @@ describe("SessionCommandService", () => {
     expect(events.publish).toHaveBeenCalledWith("s1", { type: "session.name", sessionId: "s1", name: "Useful name" });
   });
 
+  it("normalizes names to the HTTP limit and clears whitespace-only names", async () => {
+    const active = activeSession();
+    const events = eventPublisher();
+    const service = new SessionCommandService(() => getActive(active), vi.fn(), events);
+
+    await expect(service.run("s1", `/name ${"x".repeat(120)}`)).resolves.toMatchObject({ type: "done", message: `Session named: ${"x".repeat(120)}` });
+    await expect(service.run("s1", "/name   \t ")).resolves.toMatchObject({ type: "done", message: "Session name cleared", session: { id: "s1" } });
+    expect(active.runtime.session.setSessionName).toHaveBeenLastCalledWith("");
+    expect(events.publish).toHaveBeenLastCalledWith("s1", { type: "session.name", sessionId: "s1" });
+    await expect(service.run("s1", `/name ${"x".repeat(121)}`)).rejects.toThrow("name must be at most 120 characters");
+  });
+
   it("formats session stats", async () => {
     const active = activeSession();
     const service = new SessionCommandService(() => getActive(active), vi.fn(), eventPublisher());

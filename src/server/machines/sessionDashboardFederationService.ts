@@ -1,4 +1,5 @@
 import { PI_WEB_CAPABILITIES, supportsPiWebCapability } from "../../shared/capabilities.js";
+import type { PiWebCapability } from "../../shared/apiTypes.js";
 import type { FederatedSessionDashboardResponse, LocalSessionDashboardResponse, SessionDashboardMachineOutcome } from "../../shared/sessionDashboard.js";
 import { parseLocalSessionDashboardResponse } from "./sessionDashboardParsing.js";
 import type { MachineClient } from "./machineClient.js";
@@ -43,7 +44,7 @@ export class SessionDashboardFederationService {
     if (!supportsPiWebCapability(runtime, PI_WEB_CAPABILITIES.sessionsSummarySnapshot)) return { machine, outcome: "unsupported", error: "Machine does not support session summaries" };
     const client = await this.deps.machines.remoteClient(machine.id);
     if (client === undefined) return { machine, outcome: "error", error: "Machine client was unavailable" };
-    return remoteSummary(machine, client);
+    return remoteSummary(machine, client, runtime.capabilities);
   }
 
   private async localSummary(machine: Awaited<ReturnType<MachineService["list"]>>[number]): Promise<SessionDashboardMachineOutcome> {
@@ -59,20 +60,20 @@ export class SessionDashboardFederationService {
 
     try {
       const summary = await withBoundedTimeout(() => this.deps.local.summary(), this.deps.localTimeoutMs ?? SESSION_DASHBOARD_LOCAL_TIMEOUT_MS, "Local machine session summary");
-      return { machine, outcome: "available", sessions: summary.sessions };
+      return { machine, outcome: "available", sessions: summary.sessions, ...(runtime.capabilities === undefined ? {} : { capabilities: runtime.capabilities }) };
     } catch (error) {
       return localFailure(machine, error);
     }
   }
 }
 
-async function remoteSummary(machine: Awaited<ReturnType<MachineService["list"]>>[number], client: MachineClient): Promise<SessionDashboardMachineOutcome> {
+async function remoteSummary(machine: Awaited<ReturnType<MachineService["list"]>>[number], client: MachineClient, capabilities: PiWebCapability[] | undefined): Promise<SessionDashboardMachineOutcome> {
   try {
     const response = await client.requestJson("GET", "/api/session-summaries", undefined, { timeoutMs: SESSION_DASHBOARD_REMOTE_TIMEOUT_MS });
     if (response.statusCode < 200 || response.statusCode >= 300) return { machine, outcome: "error", error: `Machine summary request returned HTTP ${String(response.statusCode)}` };
     const summary = parseLocalSessionDashboardResponse(response.body);
     if (summary === undefined) return { machine, outcome: "error", error: "Machine summary response was invalid" };
-    return { machine, outcome: "available", sessions: summary.sessions };
+    return { machine, outcome: "available", sessions: summary.sessions, ...(capabilities === undefined ? {} : { capabilities }) };
   } catch (error) {
     const message = errorMessage(error);
     return { machine, outcome: message.toLowerCase().includes("timeout") ? "offline" : "error", error: message };
