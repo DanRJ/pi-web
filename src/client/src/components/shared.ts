@@ -129,6 +129,7 @@ export const appStyles = css`
     .shell.modernist-tools-expanded main { display: none; }
     .shell.modernist-tools-expanded > workspace-panel { grid-column: 3; grid-row: 1; }
     .shell.modernist-tools-expanded > .workspace-panel-edge { display: none; }
+    .shell:not(.workspace-view):not(.modernist-tools-expanded) > workspace-panel { display: none; }
   }
   @media (max-width: 1180px) {
     .shell { grid-template-columns: var(--navigation-panel-width) 1px minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
@@ -142,7 +143,6 @@ export const appStyles = css`
     .shell.workspace-view main { grid-row: 1; min-height: auto; }
     .shell.dashboard-page main { grid-column: 3; grid-row: 1 / 3; }
     .shell.workspace-view:not(.modernist-tools-expanded) > workspace-panel { grid-column: 3; grid-row: 2; display: flex; border-left: 0; }
-    .shell:not(.workspace-view):not(.modernist-tools-expanded) > workspace-panel { display: none; }
     .workspace-panel-edge { display: none; }
     main.workspace-view chat-view, main.workspace-view prompt-editor, main.workspace-view status-bar,
     main.workspace-view .empty { display: none; }
@@ -159,7 +159,7 @@ export const appStyles = css`
     .shell.mobile-destination-sessions > workspace-panel,
     .shell.mobile-destination-settings > workspace-panel { display: none; }
     .shell.mobile-destination-tools > main { display: none; }
-    .shell.mobile-destination-tools > workspace-panel { display: flex; }
+    .shell.mobile-destination-tools > workspace-panel { grid-column: 1; grid-row: 1; display: flex; }
     /* Chat is an independent mobile destination: keep its transcript and composer visible after selecting a workspace tool. */
     .shell.mobile-destination-chat main.workspace-view chat-view { display: flex; }
     .shell.mobile-destination-chat main.workspace-view prompt-editor,

@@ -27,6 +27,15 @@ describe("PiWebApp mobile shell", () => {
     expect(styles).toContain("app-mobile-destination-tabs { grid-column: 1; grid-row: 2; display: block; min-width: 0; }");
   });
 
+  it("keeps Tools visible in the first mobile grid row while tablet-only non-workspace views hide it", () => {
+    const mobileStyles = mobileShellStyles();
+    expect(mobileStyles).toContain(".shell.mobile-destination-tools > workspace-panel { grid-column: 1; grid-row: 1; display: flex; }");
+    expect(mobileStyles).toContain(".shell.mobile-destination-chat > workspace-panel,");
+    expect(mobileStyles).toContain(".shell.mobile-destination-settings > workspace-panel { display: none; }");
+    expect(mobileStyles).not.toContain(".shell:not(.workspace-view):not(.modernist-tools-expanded) > workspace-panel { display: none; }");
+    expect(tabletShellStyles()).toContain(".shell:not(.workspace-view):not(.modernist-tools-expanded) > workspace-panel { display: none; }");
+  });
+
   it("keeps the selected tool mounted while Chat becomes the authoritative mobile destination", () => {
     const app = createApp();
     setMobileLayout(app);
@@ -215,6 +224,13 @@ function mobileShellStyles(): string {
   const start = appStyles.cssText.indexOf("@media (max-width: 767px) {\n    .shell {");
   const end = appStyles.cssText.indexOf("\n  }\n  status-bar", start);
   if (start === -1 || end === -1) throw new Error("Mobile shell styles unavailable");
+  return appStyles.cssText.slice(start, end);
+}
+
+function tabletShellStyles(): string {
+  const start = appStyles.cssText.indexOf("@media (min-width: 768px) and (max-width: 1180px) {");
+  const end = appStyles.cssText.indexOf("\n  }\n  @media (max-width: 1180px)", start);
+  if (start === -1 || end === -1) throw new Error("Tablet shell styles unavailable");
   return appStyles.cssText.slice(start, end);
 }
 

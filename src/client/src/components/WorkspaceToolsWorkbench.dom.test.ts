@@ -207,6 +207,16 @@ describe("workspace tools workbench rendered boundaries", () => {
 });
 
 describe("workspace-panel modernist boundary", () => {
+  it("renders the no-workspace Tools empty state as a status", async () => {
+    const panel = createRegisteredElement("workspace-panel", WorkspacePanel);
+    document.body.append(panel);
+    await panel.updateComplete;
+
+    const emptyState = panel.shadowRoot?.querySelector<HTMLElement>(".empty-state[role=status]");
+    expect(emptyState?.querySelector("h2")?.textContent).toBe("Select a workspace");
+    expect(emptyState?.textContent).toContain("Choose a workspace to inspect files, Git, or terminals.");
+  });
+
   it("keeps one tablet selector for registered core and plugin panels in registry order", async () => {
     const onSelectTool = vi.fn();
     const panels: QualifiedWorkspacePanelContribution[] = [
