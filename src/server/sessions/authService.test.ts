@@ -11,6 +11,7 @@ import { OAuthLoginFlowService } from "./oauthLoginFlowService.js";
 const tempDirs: string[] = [];
 
 afterEach(async () => {
+  vi.unstubAllEnvs();
   await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
 });
 
@@ -98,14 +99,22 @@ describe("AuthService", () => {
     auth.dispose();
   });
 
-  it("rejects Cloudflare multi-field setup without storing the secret as provider metadata", async () => {
-    const { auth, credentials, changes } = await createAuthService();
+  it("keeps existing file-backed credentials unchanged when legacy Cloudflare setup cannot finish", async () => {
+    const seed = {
+      "cloudflare-ai-gateway": {
+        type: "api_key" as const,
+        key: "existing-secret",
+        env: { CLOUDFLARE_ACCOUNT_ID: "existing-account", CLOUDFLARE_GATEWAY_ID: "existing-gateway" },
+      },
+    };
+    const { auth, authPath, changes } = await createFileBackedAuthService(seed);
+    const before = await readFile(authPath, "utf8");
 
-    await expect(auth.saveApiKey("cloudflare-ai-gateway", "cf-secret")).rejects.toThrow(
+    await expect(auth.saveApiKey("cloudflare-ai-gateway", "new-secret")).rejects.toThrow(
       "Cloudflare AI Gateway requires interactive setup; use Pi's generic /login flow",
     );
 
-    await expect(credentials.read("cloudflare-ai-gateway")).resolves.toBeUndefined();
+    await expect(readFile(authPath, "utf8")).resolves.toBe(before);
     expect(changes).toEqual([]);
     auth.dispose();
   });
@@ -113,15 +122,110 @@ describe("AuthService", () => {
   it.each([
     { providerId: "amazon-bedrock", providerName: "Amazon Bedrock" },
     { providerId: "google-vertex", providerName: "Google Vertex AI" },
-  ])("rejects $providerName select-first setup without storing the secret", async ({ providerId, providerName }) => {
-    const { auth, credentials, changes } = await createAuthService();
+  ])("keeps an empty file-backed store unchanged when legacy $providerName setup starts with a selection", async ({ providerId, providerName }) => {
+    const { auth, authPath, changes } = await createFileBackedAuthService({});
+    const before = await readFile(authPath, "utf8");
 
     await expect(auth.saveApiKey(providerId, "submitted-secret")).rejects.toThrow(
       `${providerName} requires interactive setup; use Pi's generic /login flow`,
     );
 
-    await expect(credentials.read(providerId)).resolves.toBeUndefined();
+    await expect(readFile(authPath, "utf8")).resolves.toBe(before);
     expect(changes).toEqual([]);
+    auth.dispose();
+  });
+
+  it("executes Cloudflare multi-field API-key setup through the interactive flow", async () => {
+    const { auth, credentials, changes } = await createAuthService();
+
+    const state = await auth.startApiKeyLogin("cloudflare-ai-gateway");
+    expect(state.prompt).toMatchObject({ message: "Enter Cloudflare API key", promptType: "secret" });
+    if (state.prompt === undefined) throw new Error("Expected Cloudflare key prompt");
+    auth.respondToOAuthFlow(state.flowId, state.prompt.requestId, "cf-secret");
+
+    await vi.waitFor(() => {
+      expect(auth.oauthFlow(state.flowId).prompt).toMatchObject({ message: "Enter Cloudflare account ID", promptType: "text" });
+    });
+    const accountPrompt = auth.oauthFlow(state.flowId).prompt;
+    if (accountPrompt === undefined) throw new Error("Expected Cloudflare account prompt");
+    auth.respondToOAuthFlow(state.flowId, accountPrompt.requestId, "account-1");
+
+    await vi.waitFor(() => {
+      expect(auth.oauthFlow(state.flowId).prompt).toMatchObject({ message: "Enter Cloudflare AI Gateway ID", promptType: "text" });
+    });
+    const gatewayPrompt = auth.oauthFlow(state.flowId).prompt;
+    if (gatewayPrompt === undefined) throw new Error("Expected Cloudflare gateway prompt");
+    auth.respondToOAuthFlow(state.flowId, gatewayPrompt.requestId, "gateway-1");
+
+    await vi.waitFor(() => { expect(auth.oauthFlow(state.flowId).status).toBe("complete"); });
+    await expect(credentials.read("cloudflare-ai-gateway")).resolves.toEqual({
+      type: "api_key",
+      key: "cf-secret",
+      env: { CLOUDFLARE_ACCOUNT_ID: "account-1", CLOUDFLARE_GATEWAY_ID: "gateway-1" },
+    });
+    expect(changes).toEqual([{}]);
+    auth.dispose();
+  });
+
+  it.each([
+    { providerId: "amazon-bedrock", selection: "bearer-token", secretPrompt: "Enter Amazon Bedrock bearer token" },
+    { providerId: "google-vertex", selection: "api-key", secretPrompt: "Enter Google Cloud API key" },
+  ])("executes $providerId select-first API-key setup through the interactive flow", async ({ providerId, selection, secretPrompt }) => {
+    const { auth, credentials, changes } = await createAuthService();
+
+    const state = await auth.startApiKeyLogin(providerId);
+    expect(state.select).toBeDefined();
+    if (state.select === undefined) throw new Error("Expected auth method selection");
+    auth.respondToOAuthFlow(state.flowId, state.select.requestId, selection);
+
+    await vi.waitFor(() => {
+      expect(auth.oauthFlow(state.flowId).prompt).toMatchObject({ message: secretPrompt, promptType: "secret" });
+    });
+    const prompt = auth.oauthFlow(state.flowId).prompt;
+    if (prompt === undefined) throw new Error("Expected provider secret prompt");
+    auth.respondToOAuthFlow(state.flowId, prompt.requestId, "provider-secret");
+
+    await vi.waitFor(() => { expect(auth.oauthFlow(state.flowId).status).toBe("complete"); });
+    await expect(credentials.read(providerId)).resolves.toEqual({ type: "api_key", key: "provider-secret" });
+    expect(changes).toEqual([{}]);
+    auth.dispose();
+  });
+
+  it("reports a key-only legacy Cloudflare credential as unconfigured", async () => {
+    vi.stubEnv("CLOUDFLARE_ACCOUNT_ID", "");
+    vi.stubEnv("CLOUDFLARE_GATEWAY_ID", "");
+    const { auth } = await createFileBackedAuthService({
+      "cloudflare-ai-gateway": { type: "api_key", key: "legacy-secret" },
+    });
+
+    const response = await auth.authProviders("login", "api_key");
+
+    expect(response.providers).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: "cloudflare-ai-gateway",
+        loginFlow: "interactive",
+        status: { configured: false },
+      }),
+    ]));
+    auth.dispose();
+  });
+
+  it("reports a stored Cloudflare key as configured when ambient fields complete it", async () => {
+    vi.stubEnv("CLOUDFLARE_ACCOUNT_ID", "ambient-account");
+    vi.stubEnv("CLOUDFLARE_GATEWAY_ID", "ambient-gateway");
+    const { auth } = await createFileBackedAuthService({
+      "cloudflare-ai-gateway": { type: "api_key", key: "legacy-secret" },
+    });
+
+    const response = await auth.authProviders("login", "api_key");
+
+    expect(response.providers).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: "cloudflare-ai-gateway",
+        loginFlow: "interactive",
+        status: { configured: true, source: "stored" },
+      }),
+    ]));
     auth.dispose();
   });
 
@@ -370,6 +474,17 @@ async function createAuthService(seed: Record<string, Credential> = {}, logger?:
   const changes: AuthChange[] = [];
   auth.subscribe((change) => { changes.push(change); });
   return { auth, runtime, credentials, changes };
+}
+
+async function createFileBackedAuthService(seed: Record<string, Credential>) {
+  const agentDir = await tempAgentDir();
+  const authPath = join(agentDir, "auth.json");
+  await writeFile(authPath, JSON.stringify(seed, null, 2));
+  const runtime = await createModelRuntimeForAgentDir(agentDir, false);
+  const auth = await AuthService.create({ runtime });
+  const changes: AuthChange[] = [];
+  auth.subscribe((change) => { changes.push(change); });
+  return { auth, runtime, authPath, changes };
 }
 
 function mockLoginPromptsBeforePersistence(

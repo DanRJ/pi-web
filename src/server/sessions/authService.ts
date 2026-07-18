@@ -105,12 +105,24 @@ export class AuthService {
     return { accepted: true };
   }
 
+  async startApiKeyLogin(providerId: string): Promise<OAuthFlowState> {
+    const provider = await this.requireApiKeyLoginProvider(providerId);
+    return this.authFlows.start({
+      providerId,
+      providerName: provider.name,
+      runtime: this.runtime,
+      authType: "api_key",
+      onComplete: () => this.emit({}, { operation: "login", providerId, authType: "api_key" }),
+    });
+  }
+
   async startOAuthLogin(providerId: string): Promise<OAuthFlowState> {
     const provider = await this.requireOAuthLoginProvider(providerId);
     return this.authFlows.start({
       providerId,
       providerName: provider.name,
       runtime: this.runtime,
+      authType: "oauth",
       onComplete: () => this.emit({}, { operation: "login", providerId, authType: "oauth" }),
     });
   }

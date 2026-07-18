@@ -42,7 +42,7 @@ export class AuthDialog extends LitElement {
   private dialogTitle(state: AuthDialogState): string {
     switch (state.step) {
       case "method": return "Configure provider authentication";
-      case "providers": return state.authType === undefined ? "Select provider authentication" : state.authType === "oauth" ? "Select subscription provider" : "Select API key provider";
+      case "providers": return state.authType === undefined ? "Select provider authentication" : state.authType === "oauth" ? "Select subscription provider" : "Select credential provider";
       case "apiKey": return `API key for ${state.provider.name}`;
       case "oauth": return `Login to ${state.flow.providerName}`;
       case "logout": return "Remove stored provider authentication";
@@ -54,7 +54,7 @@ export class AuthDialog extends LitElement {
       case "method": return html`
         <div class="options">
           <button @click=${() => { this.onChooseMethod?.("oauth"); }}><span>Use a subscription</span><small>ChatGPT Plus/Pro, Claude Pro/Max, or GitHub Copilot</small></button>
-          <button @click=${() => { this.onChooseMethod?.("api_key"); }}><span>Use an API key</span><small>Store an API key in the active Pi-compatible profile's auth.json</small></button>
+          <button @click=${() => { this.onChooseMethod?.("api_key"); }}><span>Use provider credentials</span><small>Configure an API key or provider-specific credentials in the active Pi-compatible profile's auth.json</small></button>
         </div>
       `;
       case "providers": return html`<div class="options">${state.providers.length === 0 ? html`<div class="empty">No providers available.</div>` : state.providers.map((provider) => this.renderProviderButton(provider))}</div>`;
@@ -183,7 +183,7 @@ export function oauthPromptInputType(promptType: NonNullable<OAuthFlowState["pro
 }
 
 function authTypeLabel(authType: "oauth" | "api_key"): string {
-  return authType === "oauth" ? "subscription" : "API key";
+  return authType === "oauth" ? "subscription" : "credentials";
 }
 
 function focusKey(state: AuthDialogState | undefined): string | undefined {

@@ -23,6 +23,7 @@ export interface AuthProviderRuntime {
   getProviders(): readonly AuthProviderInfo[];
   listCredentials(): Promise<readonly AuthProviderCredentialInfo[]>;
   getProviderAuthStatus(providerId: string): AuthProviderStatus;
+  hasConfiguredAuth(providerId: string): boolean;
 }
 
 export function getLoginProviderOptions(runtime: AuthProviderRuntime, authType?: AuthType): AuthProviderOption[] {
@@ -35,7 +36,7 @@ export function getLoginProviderOptions(runtime: AuthProviderRuntime, authType?:
       id: provider.id,
       name: provider.name,
       authType: "oauth",
-      status: runtime.getProviderAuthStatus(provider.id),
+      status: truthfulProviderStatus(runtime, provider.id),
     });
   }
 
@@ -45,7 +46,8 @@ export function getLoginProviderOptions(runtime: AuthProviderRuntime, authType?:
       id: provider.id,
       name: provider.name,
       authType: "api_key",
-      status: runtime.getProviderAuthStatus(provider.id),
+      status: truthfulProviderStatus(runtime, provider.id),
+      loginFlow: "interactive",
     });
   }
 
@@ -60,10 +62,17 @@ export async function getLogoutProviderOptions(runtime: AuthProviderRuntime): Pr
       id: credential.providerId,
       name: providerNames.get(credential.providerId) ?? credential.providerId,
       authType: credential.type,
-      status: runtime.getProviderAuthStatus(credential.providerId),
+      status: truthfulProviderStatus(runtime, credential.providerId),
     });
   }
   return filterAndSort(options);
+}
+
+function truthfulProviderStatus(runtime: AuthProviderRuntime, providerId: string): AuthProviderStatus {
+  const reported = runtime.getProviderAuthStatus(providerId);
+  // ModelRuntime reports any stored entry as configured before checking whether
+  // the provider can resolve all required credential and ambient fields.
+  return reported.configured && !runtime.hasConfiguredAuth(providerId) ? { configured: false } : reported;
 }
 
 function filterAndSort(options: AuthProviderOption[], authType?: AuthType): AuthProviderOption[] {

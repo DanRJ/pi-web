@@ -18,6 +18,16 @@ export function registerAuthRoutes(app: FastifyInstance, auth: AuthService, pref
     }
   });
 
+  // Additive endpoint for newer browsers; the one-secret route remains for
+  // rolling compatibility with older browser bundles.
+  app.post<{ Body: { providerId: string } }>(`${prefix}/auth/api-key/interactive`, async (request, reply) => {
+    try {
+      return await auth.startApiKeyLogin(request.body.providerId);
+    } catch (error) {
+      return reply.code(400).send({ error: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
   app.post<{ Body: { providerId: string } }>(`${prefix}/auth/logout`, async (request, reply) => {
     try {
       return await auth.logoutProvider(request.body.providerId);

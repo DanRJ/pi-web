@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import type { AuthEvent, AuthInteraction, AuthPrompt } from "@earendil-works/pi-ai";
+import type { AuthEvent, AuthInteraction, AuthPrompt, AuthType } from "@earendil-works/pi-ai";
 import type { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import type { CommandOption, OAuthFlowState } from "../../shared/apiTypes.js";
 
@@ -42,6 +42,10 @@ const DEFAULT_TERMINAL_TTL_MS = 5 * 60 * 1000;
 const DEFAULT_RUNNING_TTL_MS = 30 * 60 * 1000;
 const noopLogger: OAuthLoginFlowLogger = { error() { /* no-op */ } };
 
+/**
+ * AuthInteraction transport shared by OAuth and provider-driven API-key login.
+ * The historical class and wire names remain for rolling browser/sessiond compatibility.
+ */
 export class OAuthLoginFlowService {
   private readonly flows = new Map<string, OAuthFlowRecord>();
   private readonly terminalTtlMs: number;
@@ -60,6 +64,8 @@ export class OAuthLoginFlowService {
     providerId: string;
     providerName: string;
     runtime: OAuthLoginRuntime;
+    /** Defaults to OAuth so established callers retain their existing behavior. */
+    authType?: AuthType;
     onComplete?: () => void | Promise<void>;
   }): OAuthFlowState {
     const flowId = crypto.randomUUID();
@@ -88,7 +94,7 @@ export class OAuthLoginFlowService {
       notify: (event) => { this.handleEvent(record, event); },
     };
 
-    void options.runtime.login(options.providerId, "oauth", interaction).then(
+    void options.runtime.login(options.providerId, options.authType ?? "oauth", interaction).then(
       () => this.reconcileCommittedLogin(record, options.onComplete),
       (error: unknown) => {
         if (!this.isCurrent(record)) return;
@@ -103,18 +109,18 @@ export class OAuthLoginFlowService {
 
   get(flowId: string): OAuthFlowState {
     const record = this.flows.get(flowId);
-    if (record === undefined) throw new Error("OAuth login flow not found");
+    if (record === undefined) throw new Error("Login flow not found");
     return cloneState(record.state);
   }
 
   respond(flowId: string, requestId: string, value: string): OAuthFlowState {
     const record = this.flows.get(flowId);
-    if (record === undefined) throw new Error("OAuth login flow not found");
+    if (record === undefined) throw new Error("Login flow not found");
     if (record.state.status !== "running") return cloneState(record.state);
     const pending = record.pending;
-    if (pending?.requestId !== requestId) throw new Error("OAuth login request expired");
+    if (pending?.requestId !== requestId) throw new Error("Login request expired");
     if (!pending.allowEmpty && value.trim() === "") throw new Error("A value is required");
-    if (pending.allowedValues !== undefined && !pending.allowedValues.has(value)) throw new Error("Invalid OAuth selection");
+    if (pending.allowedValues !== undefined && !pending.allowedValues.has(value)) throw new Error("Invalid login selection");
     this.clearPending(record);
     this.updateState(record, withoutInteraction(record.state));
     pending.resolve(value);
@@ -123,7 +129,7 @@ export class OAuthLoginFlowService {
 
   cancel(flowId: string): OAuthFlowState {
     const record = this.flows.get(flowId);
-    if (record === undefined) throw new Error("OAuth login flow not found");
+    if (record === undefined) throw new Error("Login flow not found");
     if (record.state.status === "running") {
       record.abort.abort();
       const pending = this.clearPending(record);
@@ -287,7 +293,7 @@ export class OAuthLoginFlowService {
     } catch (error) {
       this.logErrorNoThrow(
         { err: error, flowId: record.flowId, providerId: record.state.providerId },
-        "OAuth login completion callback failed",
+        "login completion callback failed",
       );
     }
     if (!this.isCurrent(record)) return;
@@ -352,8 +358,8 @@ export class OAuthLoginFlowService {
     if (!this.isCurrentRunning(record)) return;
     record.abort.abort();
     const pending = this.clearPending(record);
-    this.markTerminal(record, { ...withoutInteraction(record.state), status: "error", error: "OAuth login flow expired" });
-    pending?.reject(new Error("OAuth login flow expired"));
+    this.markTerminal(record, { ...withoutInteraction(record.state), status: "error", error: "Login flow expired" });
+    pending?.reject(new Error("Login flow expired"));
   }
 
   private setTimer(record: OAuthFlowRecord, delayMs: number, callback: () => void): void {

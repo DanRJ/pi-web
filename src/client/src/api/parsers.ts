@@ -369,7 +369,15 @@ function parseAuthProviderStatus(value: unknown): AuthProviderStatus {
 
 function parseAuthProviderOption(value: unknown): AuthProviderOption {
   const record = requireRecord(value);
-  return { id: requireString(record, "id"), name: requireString(record, "name"), authType: parseAuthType(record["authType"]), status: parseAuthProviderStatus(record["status"]) };
+  const loginFlow = record["loginFlow"];
+  if (loginFlow !== undefined && loginFlow !== "interactive") throw new Error("Invalid auth provider login flow");
+  return {
+    id: requireString(record, "id"),
+    name: requireString(record, "name"),
+    authType: parseAuthType(record["authType"]),
+    status: parseAuthProviderStatus(record["status"]),
+    ...(loginFlow === undefined ? {} : { loginFlow }),
+  };
 }
 
 export function parseAuthProvidersResponse(value: unknown): AuthProvidersResponse {

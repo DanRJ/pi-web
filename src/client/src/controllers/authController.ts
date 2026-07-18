@@ -61,7 +61,7 @@ export class AuthController {
     if (dialog?.step !== "providers") return;
     const provider = dialog.providers.find((candidate) => candidate.id === providerId && (authType === undefined || candidate.authType === authType));
     if (provider === undefined) return;
-    if (provider.authType === "oauth") await this.startOAuth(provider);
+    if (provider.authType === "oauth" || provider.loginFlow === "interactive") await this.startLoginFlow(provider);
     else this.setState({ authDialog: { step: "apiKey", provider, value: "" } });
   }
 
@@ -189,19 +189,22 @@ export class AuthController {
       }
       const provider = exact[0];
       if (provider === undefined) return;
-      if (provider.authType === "oauth") await this.startOAuth(provider);
+      if (provider.authType === "oauth" || provider.loginFlow === "interactive") await this.startLoginFlow(provider);
       else this.setState({ authDialog: { step: "apiKey", provider, value: "" } });
     } catch (error) {
       this.setState({ error: String(error) });
     }
   }
 
-  private async startOAuth(provider: AuthProviderOption): Promise<void> {
+  private async startLoginFlow(provider: AuthProviderOption): Promise<void> {
     if (this.rejectRemoteOAuth("login", provider)) return;
     const operationGeneration = ++this.oauthOperationGeneration;
     this.stopPolling();
     try {
-      const flow = await this.api.startOAuthLogin(provider.id, selectedMachineId(this.getState()));
+      const machineId = selectedMachineId(this.getState());
+      const flow = provider.authType === "oauth"
+        ? await this.api.startOAuthLogin(provider.id, machineId)
+        : await this.api.startInteractiveApiKeyLogin(provider.id, machineId);
       if (operationGeneration !== this.oauthOperationGeneration) return;
       this.updateOAuthFlow(flow);
       if (flow.status === "running") this.startPolling(flow.flowId);

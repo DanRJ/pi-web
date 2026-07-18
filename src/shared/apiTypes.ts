@@ -373,6 +373,8 @@ export interface AuthProviderOption {
   name: string;
   authType: AuthType;
   status: AuthProviderStatus;
+  /** Additive hint: use the generic AuthInteraction transport instead of the legacy one-secret form. */
+  loginFlow?: "interactive";
 }
 
 export interface AuthProvidersResponse {

@@ -31,6 +31,34 @@ describe("AuthController", () => {
     expect(getState().authDialog).toMatchObject({ step: "apiKey", provider: { id: "anthropic", authType: "api_key" } });
   });
 
+  it("starts provider-driven API-key interactions instead of opening the legacy one-secret form", async () => {
+    vi.stubGlobal("window", { setInterval: () => 1, clearInterval: () => undefined });
+    const provider: AuthProviderOption = { ...authProvider("amazon-bedrock", "api_key"), loginFlow: "interactive" };
+    const calls: { providerId: string; machineId: string | undefined }[] = [];
+    const { controller, getState } = createController(
+      { authDialog: { step: "providers", mode: "login", authType: "api_key", providers: [provider] } },
+      {
+        startInteractiveApiKeyLogin: (providerId, machineId) => {
+          calls.push({ providerId, machineId });
+          return Promise.resolve(oauthFlow({ providerId, providerName: "Amazon Bedrock", select: { requestId: "request-1", message: "Choose method", options: [] } }));
+        },
+      },
+    );
+
+    try {
+      await controller.selectLoginProvider(provider.id, "api_key");
+
+      expect(calls).toEqual([{ providerId: "amazon-bedrock", machineId: "local" }]);
+      expect(getState().authDialog).toMatchObject({
+        step: "oauth",
+        flow: { providerId: "amazon-bedrock", select: { requestId: "request-1" } },
+      });
+    } finally {
+      controller.dispose();
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("keeps OAuth prompt input and submit state across poll refreshes for the same request", async () => {
     const flow = oauthFlow({ prompt: { requestId: "request-1", message: "Paste callback", kind: "manual" } });
     const { controller, getState } = createController(

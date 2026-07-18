@@ -1,4 +1,4 @@
-import type { AuthInteraction } from "@earendil-works/pi-ai";
+import type { AuthInteraction, AuthType } from "@earendil-works/pi-ai";
 import type { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { OAuthLoginFlowService } from "./oauthLoginFlowService.js";
@@ -41,6 +41,30 @@ describe("OAuthLoginFlowService", () => {
     service.dispose();
   });
 
+  it("runs API-key login through the same AuthInteraction transport", async () => {
+    const authTypes: AuthType[] = [];
+    let key: string | undefined;
+    const service = new OAuthLoginFlowService();
+    const state = service.start({
+      providerId: "test-provider",
+      providerName: "Test Provider",
+      runtime: fakeRuntime(async (_providerId, interaction) => {
+        key = await interaction.prompt({ type: "secret", message: "Enter API key" });
+      }, authTypes),
+      authType: "api_key",
+    });
+
+    const prompt = state.prompt;
+    if (prompt === undefined) throw new Error("Expected API-key prompt");
+    service.respond(state.flowId, prompt.requestId, "sk-test");
+    await flushAsyncLogin();
+
+    expect(authTypes).toEqual(["api_key"]);
+    expect(key).toBe("sk-test");
+    expect(service.get(state.flowId).status).toBe("complete");
+    service.dispose();
+  });
+
   it("awaits async completion propagation before marking the flow complete", async () => {
     const completion = deferred<undefined>();
     const service = new OAuthLoginFlowService();
@@ -79,7 +103,7 @@ describe("OAuthLoginFlowService", () => {
     expect(onComplete).toHaveBeenCalledOnce();
     expect(error).toHaveBeenCalledWith(
       { err: completionFailure, flowId: state.flowId, providerId: "test-provider" },
-      "OAuth login completion callback failed",
+      "login completion callback failed",
     );
     service.dispose();
   });
@@ -227,7 +251,7 @@ describe("OAuthLoginFlowService", () => {
 
     const select = state.select;
     if (select === undefined) throw new Error("Expected select prompt");
-    expect(() => { service.respond(state.flowId, select.requestId, "personal"); }).toThrow("Invalid OAuth selection");
+    expect(() => { service.respond(state.flowId, select.requestId, "personal"); }).toThrow("Invalid login selection");
     expect(service.get(state.flowId).select).toEqual(select);
     service.dispose();
   });
@@ -338,7 +362,7 @@ describe("OAuthLoginFlowService", () => {
     service.dispose();
 
     await expect(promptRejected.promise).resolves.toMatchObject({ message: "Login cancelled" });
-    expect(() => { service.get(state.flowId); }).toThrow("OAuth login flow not found");
+    expect(() => { service.get(state.flowId); }).toThrow("Login flow not found");
   });
 
   it("rejects stale or duplicate responses", () => {
@@ -355,7 +379,7 @@ describe("OAuthLoginFlowService", () => {
     if (prompt === undefined) throw new Error("Expected prompt");
 
     service.respond(state.flowId, prompt.requestId, "abc123");
-    expect(() => { service.respond(state.flowId, prompt.requestId, "abc123"); }).toThrow("OAuth login request expired");
+    expect(() => { service.respond(state.flowId, prompt.requestId, "abc123"); }).toThrow("Login request expired");
     service.dispose();
   });
 
@@ -378,19 +402,24 @@ describe("OAuthLoginFlowService", () => {
 
     await vi.advanceTimersByTimeAsync(1000);
 
-    expect(service.get(state.flowId)).toMatchObject({ status: "error", error: "OAuth login flow expired" });
-    await expect(promptRejected.promise).resolves.toMatchObject({ message: "OAuth login flow expired" });
+    expect(service.get(state.flowId)).toMatchObject({ status: "error", error: "Login flow expired" });
+    await expect(promptRejected.promise).resolves.toMatchObject({ message: "Login flow expired" });
 
     await vi.advanceTimersByTimeAsync(1000);
 
-    expect(() => { service.get(state.flowId); }).toThrow("OAuth login flow not found");
+    expect(() => { service.get(state.flowId); }).toThrow("Login flow not found");
     service.dispose();
   });
 });
 
-function fakeRuntime(login: LoginHandler): Pick<ModelRuntime, "login"> {
+function fakeRuntime(login: LoginHandler, authTypes?: AuthType[]): Pick<ModelRuntime, "login"> {
   return {
-    login: (providerId, _type, interaction) => login(providerId, interaction).then(() => ({ type: "oauth", refresh: "r", access: "a", expires: 0 })),
+    login: (providerId, type, interaction) => {
+      authTypes?.push(type);
+      return login(providerId, interaction).then(() => type === "api_key"
+        ? { type: "api_key", key: "test" }
+        : { type: "oauth", refresh: "r", access: "a", expires: 0 });
+    },
   };
 }
 
