@@ -13,14 +13,22 @@ export class SessionSocket {
   private shouldReconnect = false;
   private hasOpened = false;
   private onReconnect: (() => void) | undefined;
+  private onInitialOpen: (() => void) | undefined;
   private machineId = "local";
 
-  connect(session: SessionRef, onEvent: (event: SessionUiEvent) => void, onReconnect?: () => void, machineId = "local"): void {
+  connect(
+    session: SessionRef,
+    onEvent: (event: SessionUiEvent) => void,
+    onReconnect?: () => void,
+    machineId = "local",
+    onInitialOpen?: () => void,
+  ): void {
     this.close();
     this.machineId = machineId;
     this.session = session;
     this.onEvent = onEvent;
     this.onReconnect = onReconnect;
+    this.onInitialOpen = onInitialOpen;
     this.shouldReconnect = true;
     this.open();
   }
@@ -37,23 +45,29 @@ export class SessionSocket {
     this.session = undefined;
     this.onEvent = undefined;
     this.onReconnect = undefined;
+    this.onInitialOpen = undefined;
     this.hasOpened = false;
     this.machineId = "local";
   }
 
   private open(): void {
-    if (this.session === undefined || this.session.id === "" || this.session.cwd === "" || !this.shouldReconnect) return;
-    const socket = sessionEvents(this.session, this.machineId);
+    const session = this.session;
+    if (session === undefined || session.id === "" || session.cwd === "" || !this.shouldReconnect) return;
+    const socket = sessionEvents(session, this.machineId);
     this.socket = socket;
     socket.onopen = () => {
+      if (this.socket !== socket) return;
       this.reconnectDelay = 500;
-      if (this.hasOpened) this.onReconnect?.();
+      const isReconnect = this.hasOpened;
       this.hasOpened = true;
+      if (isReconnect) this.onReconnect?.();
+      else this.onInitialOpen?.();
     };
-    socket.onmessage = (message) => void this.handleMessage(message.data, this.session);
+    socket.onmessage = (message) => void this.handleMessage(message.data, socket, session);
     socket.onerror = () => { socket.close(); };
     socket.onclose = () => {
-      if (this.socket === socket) this.socket = undefined;
+      if (this.socket !== socket) return;
+      this.socket = undefined;
       this.scheduleReconnect();
     };
   }
@@ -66,10 +80,10 @@ export class SessionSocket {
     this.reconnectTimer = window.setTimeout(() => { this.open(); }, delay);
   }
 
-  private async handleMessage(data: MessageEvent["data"], session: SessionRef | undefined): Promise<void> {
+  private async handleMessage(data: MessageEvent["data"], socket: WebSocket, session: SessionRef): Promise<void> {
     const event = parseSessionSocketEvent(await parseSocketEvent(data));
-    if (event === undefined) return;
-    if (event.type === "notifications.inbox" && (session?.id !== event.summary.sessionId || session.cwd !== event.summary.cwd)) return;
+    if (this.socket !== socket || event === undefined) return;
+    if (event.type === "notifications.inbox" && (session.id !== event.summary.sessionId || session.cwd !== event.summary.cwd)) return;
     this.onEvent?.(event);
   }
 }
@@ -107,13 +121,15 @@ export class RealtimeSocket {
     const socket = realtimeEvents(this.machineId);
     this.socket = socket;
     socket.onopen = () => {
+      if (this.socket !== socket) return;
       this.reconnectDelay = 500;
       this.onOpen?.();
     };
-    socket.onmessage = (message) => void this.handleMessage(message.data);
+    socket.onmessage = (message) => void this.handleMessage(message.data, socket);
     socket.onerror = () => { socket.close(); };
     socket.onclose = () => {
-      if (this.socket === socket) this.socket = undefined;
+      if (this.socket !== socket) return;
+      this.socket = undefined;
       this.scheduleReconnect();
     };
   }
@@ -126,9 +142,9 @@ export class RealtimeSocket {
     this.reconnectTimer = window.setTimeout(() => { this.open(); }, delay);
   }
 
-  private async handleMessage(data: MessageEvent["data"]): Promise<void> {
+  private async handleMessage(data: MessageEvent["data"], socket: WebSocket): Promise<void> {
     const event = parseRealtimeSocketEvent(await parseSocketEvent(data));
-    if (event !== undefined) this.onEvent?.(event);
+    if (this.socket === socket && event !== undefined) this.onEvent?.(event);
   }
 }
 

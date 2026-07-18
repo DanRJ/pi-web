@@ -399,8 +399,8 @@ export class ChatView extends LitElement {
     const polite = announcements.filter((announcement) => announcement.severity !== "error");
     const assertive = announcements.filter((announcement) => announcement.severity === "error");
     return html`
-      <div class="visually-hidden notification-live" aria-live="polite" aria-atomic="false">${polite.map((announcement) => html`<span data-announcement-id=${announcement.id}>${notificationSeverityLabel(announcement.severity)} notification: ${announcement.message}</span>`)}</div>
-      <div class="visually-hidden notification-live" aria-live="assertive" aria-atomic="false">${assertive.map((announcement) => html`<span data-announcement-id=${announcement.id}>Error notification: ${announcement.message}</span>`)}</div>
+      <div class="visually-hidden notification-live" aria-live="polite" aria-atomic="false">${repeat(polite, (announcement) => announcement.id, (announcement) => html`<span data-announcement-id=${announcement.id}>${notificationSeverityLabel(announcement.severity)} notification: ${announcement.message}</span>`)}</div>
+      <div class="visually-hidden notification-live" aria-live="assertive" aria-atomic="false">${repeat(assertive, (announcement) => announcement.id, (announcement) => html`<span data-announcement-id=${announcement.id}>Error notification: ${announcement.message}</span>`)}</div>
     `;
   }
 

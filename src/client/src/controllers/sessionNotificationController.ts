@@ -6,6 +6,7 @@ import {
   freshNotificationCatalog,
   installSelectedNotificationSnapshot,
   loadingSelectedNotificationInbox,
+  notificationSummaryIsEmpty,
   notificationTargetsEqual,
   selectedNotificationView,
   type SelectedSessionNotificationInbox,
@@ -143,9 +144,11 @@ export class SessionNotificationController {
 
   applyInboxEvent(machineId: string, event: SessionNotificationInboxEvent): void {
     this.acceptedSupportByMachine.add(machineId);
-    this.applyCatalogSummary(machineId, inboxSummaryEvent(event));
     const target = this.selectedTarget;
-    if (target?.machineId !== machineId || target.sessionId !== event.summary.sessionId || target.cwd !== event.summary.cwd) return;
+    if (target?.machineId !== machineId || target.sessionId !== event.summary.sessionId || target.cwd !== event.summary.cwd) {
+      this.applyCatalogSummary(machineId, inboxSummaryEvent(event));
+      return;
+    }
     const join = this.selectedJoin;
     if (join?.generation === this.selectedGeneration) {
       join.events.push(event);
@@ -153,6 +156,7 @@ export class SessionNotificationController {
     }
     const result = applySelectedNotificationEvent(this.getState().selectedNotificationInbox, target, event);
     if (result.changed) this.setState({ selectedNotificationInbox: result.value });
+    this.applyCatalogSummary(machineId, inboxSummaryEvent(event));
     if (result.needsRefresh) this.scheduleSelectedRefresh(target);
   }
 
@@ -163,7 +167,10 @@ export class SessionNotificationController {
       join.events.push(event);
       return;
     }
-    this.applyCatalogSummary(machineId, event);
+    // The matching per-session event carries the notification text and must win
+    // the live-announcement race. Initial-open and reconnect snapshots still
+    // reconcile selected state through the catalog join.
+    this.applyCatalogSummary(machineId, event, false);
     this.ensureSelectedSupport(machineId);
   }
 
@@ -193,10 +200,14 @@ export class SessionNotificationController {
         else if (!wasEligible || next.notificationCatalogsByMachine[machineId]?.status !== "fresh") void this.refreshCatalog(machineId);
       }
       const selected = this.selectedTarget;
-      if (selected !== undefined && this.machineSupportsNotifications(selected.machineId) && this.machineIsReachable(selected.machineId)) {
-        this.ensureSelectedProjection(selected);
-        if (!this.machineSupportsNotificationsInState(previous, selected.machineId) || next.selectedNotificationInbox?.status !== "fresh") {
-          void this.refreshSelectedSession({ id: selected.sessionId, cwd: selected.cwd }, selected.machineId);
+      if (selected !== undefined) {
+        if (!this.machineSupportsNotifications(selected.machineId) || !this.machineIsReachable(selected.machineId)) {
+          this.markSelectedStale(selected);
+        } else {
+          this.ensureSelectedProjection(selected);
+          if (!this.machineSupportsNotificationsInState(previous, selected.machineId) || next.selectedNotificationInbox?.status !== "fresh") {
+            void this.refreshSelectedSession({ id: selected.sessionId, cwd: selected.cwd }, selected.machineId);
+          }
         }
       }
     }
@@ -285,16 +296,21 @@ export class SessionNotificationController {
       try {
         const snapshot = await this.api.notificationInbox({ id: target.sessionId, cwd: target.cwd }, target.machineId);
         if (!this.isCurrentTarget(target, operation.generation)) return;
+        if (!this.machineSupportsNotifications(target.machineId) || !this.machineIsReachable(target.machineId)) {
+          this.markSelectedStale(target);
+          return;
+        }
         this.acceptedSupportByMachine.add(target.machineId);
         let inbox = installSelectedNotificationSnapshot(this.getState().selectedNotificationInbox, target, snapshot);
-        this.applyCatalogSummary(target.machineId, snapshotSummaryEvent(snapshot));
+        const catalogEvents = [snapshotSummaryEvent(snapshot)];
         for (const event of [...join.events].sort((left, right) => left.summary.inboxRevision - right.summary.inboxRevision)) {
           const result = applySelectedNotificationEvent(inbox, target, event);
           inbox = result.value;
-          this.applyCatalogSummary(target.machineId, inboxSummaryEvent(event));
+          catalogEvents.push(inboxSummaryEvent(event));
           if (result.needsRefresh) operation.trailing = true;
         }
         this.setState({ selectedNotificationInbox: inbox });
+        for (const event of catalogEvents) this.applyCatalogSummary(target.machineId, event);
       } catch (error) {
         if (this.isCurrentTarget(target, operation.generation)) {
           const current = this.getState().selectedNotificationInbox;
@@ -350,7 +366,7 @@ export class SessionNotificationController {
     } while (operation.trailing && this.machineIsKnown(machineId) && this.machineIsReachable(machineId));
   }
 
-  private applyCatalogSummary(machineId: string, event: SessionNotificationSummaryEvent): void {
+  private applyCatalogSummary(machineId: string, event: SessionNotificationSummaryEvent, reconcileSelected = true): void {
     const join = this.catalogJoins.get(machineId);
     if (join !== undefined) {
       join.events.push(event);
@@ -358,7 +374,7 @@ export class SessionNotificationController {
     }
     const current = this.getState().notificationCatalogsByMachine[machineId];
     const result = applyNotificationCatalogEvent(current, machineId, event);
-    if (result.changed) this.setCatalog(machineId, result.value);
+    if (result.changed) this.setCatalog(machineId, result.value, reconcileSelected);
     if (result.needsRefresh) this.scheduleCatalogRefresh(machineId);
   }
 
@@ -369,6 +385,10 @@ export class SessionNotificationController {
   ): void {
     const current = this.getState().selectedNotificationInbox;
     if (current === undefined || !notificationTargetsEqual(current, target)) return;
+    if (!this.machineSupportsNotifications(target.machineId) || !this.machineIsReachable(target.machineId)) {
+      this.setState({ selectedNotificationInbox: { ...removeOverlay(current), status: "stale" } });
+      return;
+    }
     const shouldInstall = current.daemonInstanceId !== snapshot.daemonInstanceId
       || current.summary === undefined
       || snapshot.summary.inboxRevision >= current.summary.inboxRevision;
@@ -389,6 +409,8 @@ export class SessionNotificationController {
   private ensureSelectedSupport(machineId: string): void {
     const target = this.selectedTarget;
     if (target?.machineId !== machineId) return;
+    const current = this.getState().selectedNotificationInbox;
+    if (current !== undefined && notificationTargetsEqual(current, target) && current.status === "fresh") return;
     this.ensureSelectedProjection(target);
     void this.refreshSelectedSession({ id: target.sessionId, cwd: target.cwd }, machineId);
   }
@@ -412,16 +434,48 @@ export class SessionNotificationController {
     });
   }
 
-  private setCatalog(machineId: string, projection: SessionNotificationCatalogProjection): void {
+  private setCatalog(machineId: string, projection: SessionNotificationCatalogProjection, reconcileSelected = true): void {
     const current = this.getState().notificationCatalogsByMachine;
     if (current[machineId] === projection) return;
     this.setState({ notificationCatalogsByMachine: { ...current, [machineId]: projection } });
+    if (reconcileSelected) this.reconcileSelectedWithCatalog(projection);
+  }
+
+  private reconcileSelectedWithCatalog(catalog: SessionNotificationCatalogProjection): void {
+    if (catalog.status !== "fresh" || catalog.daemonInstanceId === undefined) return;
+    const target = this.selectedTarget;
+    if (target?.machineId !== catalog.machineId || !this.machineIsReachable(target.machineId)) return;
+    const inbox = this.getState().selectedNotificationInbox;
+    if (inbox === undefined || !notificationTargetsEqual(inbox, target) || inbox.status !== "fresh" || inbox.daemonInstanceId === undefined || inbox.summary === undefined) {
+      this.scheduleSelectedRefresh(target);
+      return;
+    }
+    if (inbox.daemonInstanceId !== catalog.daemonInstanceId) {
+      this.scheduleSelectedRefresh(target);
+      return;
+    }
+    const catalogSummary = catalog.summariesBySessionId[target.sessionId];
+    if (catalogSummary === undefined) {
+      if (!notificationSummaryIsEmpty(inbox.summary)) this.scheduleSelectedRefresh(target);
+      return;
+    }
+    if (catalogSummary.cwd !== target.cwd
+      || catalogSummary.inboxRevision > inbox.summary.inboxRevision
+      || (catalogSummary.inboxRevision === inbox.summary.inboxRevision && !notificationSummariesEqual(catalogSummary, inbox.summary))) {
+      this.scheduleSelectedRefresh(target);
+    }
   }
 
   private markCatalogStale(machineId: string): void {
     const current = this.getState().notificationCatalogsByMachine[machineId];
     if (current === undefined || current.status === "stale") return;
     this.setCatalog(machineId, { ...current, status: "stale" });
+  }
+
+  private markSelectedStale(target: SessionNotificationTarget): void {
+    const current = this.getState().selectedNotificationInbox;
+    if (current === undefined || !notificationTargetsEqual(current, target) || current.status === "stale") return;
+    this.setState({ selectedNotificationInbox: { ...current, status: "stale" } });
   }
 
   private pruneRemovedMachines(machines: readonly Machine[]): void {
@@ -538,6 +592,18 @@ async function forEachWithConcurrency<T>(items: readonly T[], concurrency: numbe
 
 function workspaceHydrationId(machineId: string, projectId: string): string {
   return JSON.stringify([machineId, projectId]);
+}
+
+function notificationSummariesEqual(
+  left: SessionNotificationInboxSnapshot["summary"],
+  right: SessionNotificationInboxSnapshot["summary"],
+): boolean {
+  return left.sessionId === right.sessionId
+    && left.cwd === right.cwd
+    && left.inboxRevision === right.inboxRevision
+    && left.retainedCount === right.retainedCount
+    && left.discardedCount === right.discardedCount
+    && left.highestSeverity === right.highestSeverity;
 }
 
 function errorMessage(error: unknown): string {

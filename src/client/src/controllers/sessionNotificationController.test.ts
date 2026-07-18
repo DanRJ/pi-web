@@ -123,7 +123,12 @@ function createHarness(initialState = capableState(), overrides: Partial<Session
     (patch) => { state = { ...state, ...patch }; },
     { api, onBackgroundError: vi.fn() },
   );
-  return { controller, api, get state() { return state; } };
+  return {
+    controller,
+    api,
+    get state() { return state; },
+    replaceState(next: AppState) { state = next; },
+  };
 }
 
 describe("SessionNotificationController capability and joins", () => {
@@ -184,6 +189,66 @@ describe("SessionNotificationController capability and joins", () => {
     expect(harness.controller.shouldFilterLegacyNotification("local", "notification-1")).toBe(true);
   });
 
+  it("lets the selected live event announce before its matching global summary can trigger a snapshot", async () => {
+    const first = inboxSnapshot([entry(1)], { inboxRevision: 1, catalogRevision: 1 });
+    const state = {
+      ...capableState(),
+      notificationCatalogsByMachine: {
+        local: {
+          machineId: "local",
+          status: "fresh" as const,
+          daemonInstanceId: first.daemonInstanceId,
+          catalogRevision: first.catalogRevision,
+          summariesBySessionId: { [session.id]: first.summary },
+        },
+      },
+    };
+    const notificationInbox = vi.fn(() => Promise.resolve(first));
+    const harness = createHarness(state, { notificationInbox });
+    harness.controller.prepareSelectedSession(session, "local");
+    await harness.controller.refreshSelectedSession(session, "local");
+
+    const event = addedEvent(entry(2, "warning"), 2, 2);
+    harness.controller.applySummaryEvent("local", {
+      type: "notifications.summary",
+      daemonInstanceId: event.daemonInstanceId,
+      catalogRevision: event.catalogRevision,
+      summary: event.summary,
+    });
+    await Promise.resolve();
+    expect(notificationInbox).toHaveBeenCalledOnce();
+
+    harness.controller.applyInboxEvent("local", event);
+    expect(selectedNotificationView(harness.state.selectedNotificationInbox)?.announcements).toMatchObject([
+      { severity: "warning", message: "notice 2" },
+    ]);
+    expect(notificationInbox).toHaveBeenCalledOnce();
+  });
+
+  it("refetches the selected inbox when a newly opened global socket finds a newer catalog revision", async () => {
+    const first = inboxSnapshot([entry(1)], { inboxRevision: 1, catalogRevision: 1 });
+    const second = inboxSnapshot([entry(2, "error"), entry(1)], { inboxRevision: 2, catalogRevision: 2 });
+    const notificationInbox = vi.fn()
+      .mockResolvedValueOnce(first)
+      .mockResolvedValueOnce(second);
+    const notificationCatalog = vi.fn(() => Promise.resolve<SessionNotificationCatalogSnapshot>({
+      daemonInstanceId: second.daemonInstanceId,
+      catalogRevision: second.catalogRevision,
+      sessions: [second.summary],
+    }));
+    const harness = createHarness(capableState(), { notificationInbox, notificationCatalog });
+
+    harness.controller.prepareSelectedSession(session, "local");
+    await harness.controller.refreshSelectedSession(session, "local");
+    harness.controller.globalSocketOpened("local");
+
+    await vi.waitFor(() => { expect(notificationInbox).toHaveBeenCalledTimes(2); });
+    expect(selectedNotificationView(harness.state.selectedNotificationInbox)?.notifications.map((notification) => notification.id)).toEqual([
+      "daemon-a:2",
+      "daemon-a:1",
+    ]);
+  });
+
   it("hydrates missing selected-machine project workspaces without changing selection", async () => {
     const project = { id: "project-1", name: "Repo", path: "/repo", createdAt: "now" };
     const next = {
@@ -224,19 +289,70 @@ describe("SessionNotificationController capability and joins", () => {
 
     expect(harness.state.selectedNotificationInbox).toMatchObject({ sessionId: "session-2", status: "loading", notifications: [] });
   });
+
+  it("hides a selected remote inbox when the machine becomes unreachable and ignores an in-flight snapshot", async () => {
+    const remoteMachine: Machine = { ...localMachine, id: "remote-a", name: "Remote", kind: "remote", baseUrl: "https://remote.example.test/" };
+    const runtime = capableState().machineRuntimes["local"];
+    if (runtime === undefined) throw new Error("expected capable runtime fixture");
+    const initial = {
+      ...capableState(),
+      machines: [remoteMachine],
+      selectedMachine: remoteMachine,
+      machineRuntimes: { [remoteMachine.id]: { ...runtime, machineId: remoteMachine.id } },
+    };
+    const pendingInbox = deferred<SessionNotificationInboxSnapshot>();
+    const notificationInbox = vi.fn()
+      .mockResolvedValueOnce(inboxSnapshot())
+      .mockImplementationOnce(() => pendingInbox.promise);
+    const harness = createHarness(initial, { notificationInbox });
+
+    harness.controller.prepareSelectedSession(session, remoteMachine.id);
+    await harness.controller.refreshSelectedSession(session, remoteMachine.id);
+    expect(selectedNotificationView(harness.state.selectedNotificationInbox)?.notifications).toHaveLength(1);
+
+    const refresh = harness.controller.refreshSelectedSession(session, remoteMachine.id);
+    const previous = harness.state;
+    const offline: AppState = {
+      ...previous,
+      machineStatuses: {
+        [remoteMachine.id]: {
+          machineId: remoteMachine.id,
+          ok: false,
+          checkedAt: "2026-07-18T00:01:00.000Z",
+          status: "offline",
+        },
+      },
+    };
+    harness.replaceState(offline);
+    harness.controller.syncEnvironment(previous, offline);
+
+    expect(harness.state.selectedNotificationInbox?.status).toBe("stale");
+    expect(selectedNotificationView(harness.state.selectedNotificationInbox)).toBeUndefined();
+
+    pendingInbox.resolve(inboxSnapshot([entry(2, "error")], { inboxRevision: 2, catalogRevision: 2 }));
+    await refresh;
+    expect(harness.state.selectedNotificationInbox?.status).toBe("stale");
+    expect(selectedNotificationView(harness.state.selectedNotificationInbox)).toBeUndefined();
+  });
 });
 
 describe("SessionNotificationController optimistic mutations", () => {
   it("optimistically dismisses one card, reconciles the response, and rolls back/refetches on failure", async () => {
     const dismiss = deferred<SessionNotificationInboxSnapshot>();
     const refreshAfterFailure = deferred<SessionNotificationInboxSnapshot>();
+    const initialInbox = inboxSnapshot([entry(2, "warning"), entry(1)]);
     const notificationInbox = vi.fn()
-      .mockResolvedValueOnce(inboxSnapshot([entry(2, "warning"), entry(1)]))
+      .mockResolvedValueOnce(initialInbox)
       .mockImplementationOnce(() => refreshAfterFailure.promise);
     const dismissNotification = vi.fn()
       .mockImplementationOnce(() => dismiss.promise)
       .mockRejectedValueOnce(new Error("offline"));
-    const harness = createHarness(capableState(), { notificationInbox, dismissNotification });
+    const notificationCatalog = vi.fn(() => Promise.resolve<SessionNotificationCatalogSnapshot>({
+      daemonInstanceId: initialInbox.daemonInstanceId,
+      catalogRevision: initialInbox.catalogRevision,
+      sessions: [initialInbox.summary],
+    }));
+    const harness = createHarness(capableState(), { notificationInbox, dismissNotification, notificationCatalog });
 
     harness.controller.prepareSelectedSession(session, "local");
     await harness.controller.refreshSelectedSession(session, "local");

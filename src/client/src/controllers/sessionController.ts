@@ -20,7 +20,13 @@ const MESSAGE_PAGE_SIZE = 100;
 const BULK_FALLBACK_CONCURRENCY = 4;
 
 export interface SessionEventSocket {
-  connect(session: SessionRef, onEvent: (event: SessionUiEvent) => void, onReconnect?: () => void, machineId?: string): void;
+  connect(
+    session: SessionRef,
+    onEvent: (event: SessionUiEvent) => void,
+    onReconnect?: () => void,
+    machineId?: string,
+    onInitialOpen?: () => void,
+  ): void;
   setHandler(onEvent: (event: SessionUiEvent) => void): void;
   close(): void;
 }
@@ -206,7 +212,8 @@ export class SessionController {
         session,
         (event) => buffered.push(event),
         () => { void this.refreshSelectedSession(session.id); },
-        selectedMachineId(this.getState()),
+        machineId,
+        () => { void this.notifications?.refreshSelectedSession(session, machineId); },
       );
       await this.requestSelectedSessionRefresh({ session, machineId, selectionSeq: seq });
       if (!this.isCurrentRefreshTarget({ session, machineId, selectionSeq: seq })) return;

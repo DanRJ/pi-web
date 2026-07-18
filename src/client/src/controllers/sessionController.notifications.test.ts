@@ -33,6 +33,42 @@ function inboxEvent(): SessionNotificationInboxEvent {
 }
 
 describe("SessionController notification event boundary", () => {
+  it("refetches the bounded notification snapshot when the selected socket first opens", async () => {
+    const socket = new EmitSocket();
+    let state: AppState = { ...initialAppState(), selectedWorkspace: workspace, selectedSession: oldSession, sessions: [oldSession] };
+    const refreshSelectedSession = vi.fn(() => Promise.resolve());
+    const bridge: SessionNotificationSessionBridge = {
+      prepareSelectedSession: vi.fn(),
+      clearSelectedSession: vi.fn(),
+      refreshSelectedSession,
+      applyInboxEvent: vi.fn(),
+      shouldFilterLegacyNotification: vi.fn(() => true),
+    };
+    const controller = new SessionController(
+      () => state,
+      (patch) => { state = { ...state, ...patch }; },
+      () => undefined,
+      undefined,
+      {
+        socket,
+        notifications: bridge,
+        api: {
+          ...defaultApi,
+          messages: vi.fn(() => Promise.resolve(emptyPage)),
+          status: vi.fn(() => Promise.resolve(status(oldSession.id))),
+          streamSnapshot: vi.fn(() => Promise.resolve({ seq: 0, partial: null })),
+        },
+      },
+    );
+
+    await controller.selectSession(oldSession, { updateUrl: false });
+    expect(refreshSelectedSession).toHaveBeenCalledOnce();
+
+    socket.open();
+    expect(refreshSelectedSession).toHaveBeenCalledTimes(2);
+    expect(refreshSelectedSession).toHaveBeenLastCalledWith(oldSession, "local");
+  });
+
   it("handles inbox events before transcript watermarking and filters only marked legacy output with support", async () => {
     const socket = new EmitSocket();
     let state: AppState = { ...initialAppState(), selectedWorkspace: workspace, selectedSession: oldSession, sessions: [oldSession] };
