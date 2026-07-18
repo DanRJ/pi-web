@@ -52,6 +52,18 @@ describe("PiWebApp mobile shell", () => {
     expect(mobileShellStyles()).not.toContain(".shell.modernist-tools-expanded main { display: none; }");
   });
 
+  it("keeps a selected workspace workbench reachable through the Tools destination", () => {
+    const app = createApp();
+    setMobileLayout(app);
+    setState(app, { ...initialAppState(), selectedWorkspace: workspace(), mainView: "chat", workspaceTool: "core:workspace.files" });
+
+    call(app, "selectMobileDestination", "tools");
+
+    expect(Reflect.get(app, "mobileDestination")).toBe("tools");
+    expect(values(app.render())).toContain("shell chat-view mobile-destination-tools");
+    expect(templateMarkup(app.render())).toContain("<workspace-panel");
+  });
+
   it("keeps the mounted chat surface when every bottom destination follows a Modernist tool", () => {
     const app = createApp();
     setMobileLayout(app);

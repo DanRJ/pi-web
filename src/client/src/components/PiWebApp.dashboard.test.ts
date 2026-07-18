@@ -4,6 +4,7 @@ import type { LocalSessionDashboardSessionSummary } from "../api";
 import type { AppAction } from "../actions";
 import { initialAppState, type AppState } from "../appState";
 import { PiWebApp } from "./PiWebApp";
+import { WorkspacePanel, type WorkspacePanelEmptyState } from "./WorkspacePanel";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -229,6 +230,40 @@ describe("PiWebApp dashboard transitions", () => {
     callVoid(app, "selectMobileDestination", "chat");
     expect(Reflect.get(app, "topLevelPage")).toBe("workspace");
     expect(Reflect.get(app, "mobileDestination")).toBe("chat");
+  });
+
+  it("opens the empty Tools destination from a fresh dashboard without restoring a workspace or session", () => {
+    const app = createApp();
+    setState(app, initialAppState());
+    setMobileLayout(app);
+    Reflect.set(app, "topLevelPage", "dashboard");
+    const selectProject = vi.fn();
+    const selectWorkspace = vi.fn();
+    const restoreRouteFor = vi.fn();
+    Reflect.set(app, "workspaces", { selectProject, selectWorkspace });
+    Reflect.set(app, "restoreRouteFor", restoreRouteFor);
+
+    // This narrow extraction verifies the rendered destination-tab click wiring.
+    binding(renderTemplate(app, "renderMobileDestinationTabs"), ".onSelect=")("tools");
+
+    expect(Reflect.get(app, "topLevelPage")).toBe("workspace");
+    expect(Reflect.get(app, "mobileDestination")).toBe("tools");
+    expect(projectAppState(app)).toMatchObject({ selectedProject: undefined, selectedWorkspace: undefined, selectedSession: undefined });
+    expect(selectProject).not.toHaveBeenCalled();
+    expect(selectWorkspace).not.toHaveBeenCalled();
+    expect(restoreRouteFor).not.toHaveBeenCalled();
+
+    const workspacePanel = renderTemplate(app, "renderWorkspacePanel");
+    const emptyState = propertyValue(workspacePanel, ".emptyState=");
+    if (!isWorkspacePanelEmptyState(emptyState)) throw new Error("Expected workspace empty state");
+    expect(emptyState).toEqual({
+      title: "No projects yet",
+      body: "Use Actions → Add Project to add a folder. Workspace tools will appear here after you choose a workspace.",
+    });
+
+    const emptyPanel = new WorkspacePanel();
+    emptyPanel.emptyState = emptyState;
+    expect(strings(emptyPanel.render()).join("")).toContain('<section class="empty-state" role="status">');
   });
 
   it("starts through the existing session flow only after the dashboard chooser selects its workspace", async () => {
@@ -457,10 +492,15 @@ function actions(app: PiWebApp): AppAction[] {
 }
 
 function binding(template: TemplateResult, marker: string): (...args: unknown[]) => void {
-  const index = strings(template).findIndex((value) => value.includes(marker));
-  const handler = index < 0 ? undefined : values(template)[index];
+  const handler = propertyValue(template, marker);
   if (!isTemplateBinding(handler)) throw new Error(`Binding ${marker} unavailable`);
   return handler;
+}
+
+function propertyValue(template: TemplateResult, marker: string): unknown {
+  const index = strings(template).findIndex((value) => value.includes(marker));
+  if (index < 0) throw new Error(`Property ${marker} unavailable`);
+  return values(template)[index];
 }
 
 function findTemplate(template: TemplateResult, marker: string): TemplateResult {
@@ -514,6 +554,10 @@ function isTemplate(value: unknown): value is TemplateResult {
 
 function isAppAction(value: unknown): value is AppAction {
   return typeof value === "object" && value !== null && typeof Reflect.get(value, "id") === "string" && typeof Reflect.get(value, "run") === "function";
+}
+
+function isWorkspacePanelEmptyState(value: unknown): value is WorkspacePanelEmptyState {
+  return typeof value === "object" && value !== null && typeof Reflect.get(value, "title") === "string";
 }
 
 function isTemplateBinding(value: unknown): value is (...args: unknown[]) => void {

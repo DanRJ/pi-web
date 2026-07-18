@@ -6,30 +6,33 @@ describe("AppMobileDestinationTabs", () => {
   it("renders the exact labelled destination order as mobile navigation buttons", () => {
     const tabs = new AppMobileDestinationTabs();
     tabs.selected = "chat";
-    tabs.toolsAvailable = true;
 
     const template = tabs.render();
     const markup = templateMarkup(template);
     expect(markup).toContain('<nav aria-label="Mobile destinations">');
     expect(markup).not.toContain('role="tablist"');
     expect(tabDestinations(template)).toEqual(["chat", "sessions", "tools", "settings"]);
+    expect(templateMarkup(template)).not.toContain("?disabled=");
     expect(tabTemplates(template).some((tab) => templateStrings(tab).some((part) => part.includes("aria-current=")))).toBe(true);
     expect(templateMarkup(tabTemplates(template).find((tab) => templateValues(tab)[0] === "settings") ?? template)).toContain("aria-haspopup=");
   });
 
-  it("skips unavailable Tools when navigating with a keyboard", () => {
-    expect(nextDestination("sessions", 1, false)).toBe("settings");
-    expect(nextDestination("settings", 1, false)).toBe("chat");
+  it("includes Tools when navigating with a keyboard", () => {
+    expect(nextDestination("sessions", 1)).toBe("tools");
+    expect(nextDestination("settings", -1)).toBe("tools");
   });
 
-  it("selects Settings through its real callback", () => {
+  it("selects every destination through its real callback", () => {
     const tabs = new AppMobileDestinationTabs();
     const onSelect = vi.fn();
     tabs.onSelect = onSelect;
     const template = tabs.render();
-    const callback = callbackAfterDestination(template, "settings");
-    callback();
-    expect(onSelect).toHaveBeenCalledWith("settings");
+
+    callbackAfterDestination(template, "tools")();
+    callbackAfterDestination(template, "settings")();
+
+    expect(onSelect).toHaveBeenNthCalledWith(1, "tools");
+    expect(onSelect).toHaveBeenNthCalledWith(2, "settings");
   });
 });
 

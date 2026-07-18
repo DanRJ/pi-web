@@ -34,7 +34,7 @@ import { PluginRegistry, installPluginRuntimeScope, installWorkspacePanelScope }
 import { queryNamespace, readNamespacedString, setNamespacedQueryKey } from "../namespacedQueryArgs";
 import { AppShellController } from "../appShell/appShellController";
 import { BrowserResumeController } from "../appShell/browserResumeController";
-import { mobileDestinationFallback, mobileDestinationFromMainView, type MobileDestination } from "../appShell/mobileDestination";
+import { mobileDestinationFromMainView, type MobileDestination } from "../appShell/mobileDestination";
 import { NavigationSectionsController, type NavigationSection } from "../appShell/navigationState";
 import { PanelCollapseController, mainViewClass } from "../appShell/panelCollapseController";
 import { MODERNIST_NAVIGATION_PANEL_DEFAULT_WIDTH, PanelResizeController, type PanelResizeConstraints, type ResizablePanelSide } from "../appShell/panelResizeController";
@@ -445,7 +445,7 @@ export class PiWebApp extends LitElement {
         selectedTerminalId: routeSurface.selectedTerminalId,
       });
       if (this.appShell.isMobileNavigationLayout) {
-        const destination = mobileDestinationFallback(mobileDestinationFromMainView(restoredMainView ?? route.view ?? this.defaultRouteView()), this.mobileDestinationAvailability());
+        const destination = mobileDestinationFromMainView(restoredMainView ?? route.view ?? this.defaultRouteView());
         if (this.settingsSection === undefined) this.mobileDestination = destination;
         else this.mobileDestinationBeforeSettings = destination;
       }
@@ -924,39 +924,29 @@ export class PiWebApp extends LitElement {
   }
 
   private selectMobileDestination(destination: MobileDestination): void {
-    const next = mobileDestinationFallback(destination, this.mobileDestinationAvailability());
-    if (this.topLevelPage === "dashboard") this.leaveDashboard(next === "sessions" ? undefined : next);
-    if (next === "settings") {
+    if (this.topLevelPage === "dashboard") this.leaveDashboard(destination === "sessions" ? undefined : destination);
+    if (destination === "settings") {
       this.openSettings();
       return;
     }
-    this.mobileDestination = next;
-  }
-
-  private mobileDestinationAvailability() {
-    return {
-      hasSession: this.state.selectedSession !== undefined,
-      hasTools: this.state.selectedWorkspace !== undefined && this.visibleWorkspacePanels().length > 0,
-    };
+    this.mobileDestination = destination;
   }
 
   private mobileDestinationForCurrentSurface(): MobileDestination {
-    return mobileDestinationFallback(mobileDestinationFromMainView(this.state.mainView), this.mobileDestinationAvailability());
+    return mobileDestinationFromMainView(this.state.mainView);
   }
 
   private ensureMobileDestination(): void {
     if (!this.appShell.isMobileNavigationLayout) return;
     if (this.settingsSection !== undefined) {
-      if (this.mobileDestination !== "settings") this.mobileDestinationBeforeSettings ??= mobileDestinationFallback(this.mobileDestination, this.mobileDestinationAvailability());
+      if (this.mobileDestination !== "settings") this.mobileDestinationBeforeSettings ??= this.mobileDestination;
       this.mobileDestination = "settings";
       return;
     }
     if (this.mobileDestination === "settings") {
-      this.mobileDestination = mobileDestinationFallback(this.mobileDestinationBeforeSettings ?? this.mobileDestinationForCurrentSurface(), this.mobileDestinationAvailability());
+      this.mobileDestination = this.mobileDestinationBeforeSettings ?? this.mobileDestinationForCurrentSurface();
       this.mobileDestinationBeforeSettings = undefined;
-      return;
     }
-    this.mobileDestination = mobileDestinationFallback(this.mobileDestination, this.mobileDestinationAvailability());
   }
 
   private handleMobileNavigationLayoutChange(isMobile: boolean): void {
@@ -1012,11 +1002,11 @@ export class PiWebApp extends LitElement {
     this.settingsSection = section;
     if (this.appShell.isMobileNavigationLayout) {
       if (section !== undefined) {
-        if (this.mobileDestination !== "settings") this.mobileDestinationBeforeSettings = mobileDestinationFallback(this.mobileDestination, this.mobileDestinationAvailability());
+        if (this.mobileDestination !== "settings") this.mobileDestinationBeforeSettings = this.mobileDestination;
         else this.mobileDestinationBeforeSettings ??= this.mobileDestinationForCurrentSurface();
         this.mobileDestination = "settings";
       } else if (wasOpen || this.mobileDestination === "settings") {
-        this.mobileDestination = mobileDestinationFallback(this.mobileDestinationBeforeSettings ?? this.mobileDestinationForCurrentSurface(), this.mobileDestinationAvailability());
+        this.mobileDestination = this.mobileDestinationBeforeSettings ?? this.mobileDestinationForCurrentSurface();
         this.mobileDestinationBeforeSettings = undefined;
       }
     }
@@ -2308,7 +2298,6 @@ export class PiWebApp extends LitElement {
     return html`
       <app-mobile-destination-tabs
         .selected=${this.mobileDestination}
-        .toolsAvailable=${this.mobileDestinationAvailability().hasTools}
         .onSelect=${(destination: MobileDestination) => { this.selectMobileDestination(destination); }}
       ></app-mobile-destination-tabs>
     `;
