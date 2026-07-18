@@ -566,19 +566,19 @@ export const actionPaletteStyles = css`
 `;
 
 export const promptEditorStyles = css`
-  :host { position: relative; z-index: 5; display: block; color: var(--pi-text); font: 0.875rem var(--pi-body-font-family, system-ui, sans-serif); }
+  :host { position: relative; z-index: 5; display: block; container-type: inline-size; color: var(--pi-text); font: 0.875rem var(--pi-body-font-family, system-ui, sans-serif); }
   footer { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--pi-space-2, 0.5rem); padding: var(--pi-space-3, 0.75rem); border-top: var(--pi-divider-width, 1px) solid var(--pi-border); background: var(--pi-bg); }
   footer.shell-mode { border-top-color: var(--pi-success); background: var(--pi-success-bg); }
   .editor-wrap { position: relative; min-width: 0; }
-  .actions { display: flex; gap: 8px; align-items: center; justify-content: flex-end; flex-wrap: nowrap; white-space: nowrap; }
+  /* Classic and PI WEB retain the original single action row. Modernist has a
+     separately rendered template so its grouping cannot rearrange legacy DOM. */
+  .legacy-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: nowrap; white-space: nowrap; }
+  .modernist-composer { display: none; }
   .compact-status { display: flex; min-width: 0; align-items: center; gap: 6px; color: var(--pi-muted); font-size: 12px; flex: 1 1 0; }
   .compact-status > button { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
   .select-model { max-width: min(42vw, 320px); }
-  /* Modernist gives the editor visual priority. Its yielding first grid column
-     makes a long model name the only control-row content allowed to truncate. */
-  :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .actions { display: grid; grid-template-columns: minmax(0, 1fr) repeat(3, max-content); gap: 0.5rem; justify-content: end; min-width: 0; }
-  :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .compact-status { gap: 0.375rem; font-size: 0.75rem; }
-  :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .select-model { max-width: min(42vw, 20rem); }
+  .model-value { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .action-label { display: none; }
   .icon-button { flex: 0 0 auto; display: inline-grid; place-items: center; width: 36px; height: 36px; padding: 0; }
   .icon-button .prompt-action-icon, .icon-button .prompt-thinking-gauge { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
   .icon-button .prompt-action-icon-filled { fill: currentColor; stroke: none; }
@@ -597,30 +597,50 @@ export const promptEditorStyles = css`
   .markdown-editor .cm-focused { outline: none; }
   .shell-mode textarea, .shell-mode .markdown-editor .cm-editor { border-color: var(--pi-success); box-shadow: 0 0 0 1px var(--pi-success-ring); }
   .mode-hint { position: absolute; right: 46px; bottom: 8px; max-width: calc(100% - 54px); border: 1px solid var(--pi-success-border); border-radius: 999px; background: var(--pi-success-surface); color: var(--pi-success); padding: 2px 8px; font-size: 12px; pointer-events: none; }
-  .attachments { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; }
+  .attachments { display: flex; max-width: 100%; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; }
   .attachment-chip { position: relative; width: 56px; height: 56px; border: 1px solid var(--pi-border); border-radius: 8px; overflow: hidden; background: var(--pi-bg); }
   .attachment-chip img { width: 100%; height: 100%; object-fit: cover; display: block; }
   .attachment-chip-file { display: grid; place-items: center; }
   .attachment-file-preview { display: grid; place-items: center; width: 34px; height: 26px; border: 1px solid var(--pi-border-muted); border-radius: 4px; background: var(--pi-surface); color: var(--pi-muted); font: 700 10px/1 system-ui, sans-serif; letter-spacing: .03em; }
   .attachment-file-name { position: absolute; right: 4px; bottom: 3px; left: 4px; overflow: hidden; color: var(--pi-muted); font-size: 10px; line-height: 1.2; text-align: center; text-overflow: ellipsis; white-space: nowrap; }
   .attachment-remove { position: absolute; top: 1px; right: 1px; width: 18px; height: 18px; padding: 0; line-height: 16px; border-radius: 50%; border: 1px solid var(--pi-border); background: var(--pi-surface); color: var(--pi-text); font-size: 13px; cursor: pointer; }
-  .attachment-delivery select { border: 1px solid var(--pi-border); border-radius: 8px; background: var(--pi-surface); color: var(--pi-text); padding: 5px 7px; font: var(--pi-control-font-size, 16px) var(--pi-control-font-family, system-ui, sans-serif); }
+  .attachment-delivery { min-width: 0; max-width: 100%; }
+  .attachment-delivery select { max-width: 100%; border: 1px solid var(--pi-border); border-radius: 8px; background: var(--pi-surface); color: var(--pi-text); padding: 5px 7px; font: var(--pi-control-font-size, 16px) var(--pi-control-font-family, system-ui, sans-serif); }
   .attachment-error { flex-basis: 100%; color: var(--pi-danger); font-size: 12px; }
   button { border: var(--pi-divider-width, 1px) solid var(--pi-border); border-radius: var(--pi-radius-control, 0.5rem); background: var(--pi-surface); color: var(--pi-text); padding: 0.4375rem 0.5625rem; cursor: pointer; font-family: var(--pi-control-font-family, system-ui, sans-serif); }
   button:focus-visible, .markdown-editor .cm-focused { outline: var(--pi-focus-ring-width, 2px) solid var(--pi-accent); outline-offset: var(--pi-focus-ring-offset, 2px); }
   button:disabled, textarea:disabled, .markdown-editor-disabled .cm-editor { opacity: .5; cursor: not-allowed; }
+  /* Modernist alone swaps to a grouped template. Display none keeps the
+     inactive duplicate out of both keyboard focus and the accessibility tree. */
+  :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .legacy-composer { display: none; }
+  :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .modernist-composer { display: grid; }
+  :host-context(:root[data-pi-web-theme^="themes:modernist-"]) footer { gap: 0.5rem; padding: 0.75rem; border-top-width: 2px; }
+  :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .modernist-actions { grid-template-columns: minmax(0, 1fr) max-content; gap: 0.5rem; align-items: center; overflow: hidden; }
+  :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .action-context { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 0.5rem; min-width: 0; }
+  :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .compact-status { display: grid; grid-template-columns: minmax(0, 1fr) max-content; gap: 0.5rem; font-size: 0.75rem; }
+  :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .compact-status > button { max-width: none; }
+  :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .select-model { display: inline-flex; min-width: 0; max-width: none; align-items: center; gap: 0.5rem; }
+  :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .action-execution { display: flex; align-items: center; gap: 0.5rem; }
+  :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .action-button { display: inline-flex; min-height: 2.75rem; align-items: center; justify-content: center; gap: 0.5rem; border-width: 2px; border-radius: 0; padding: 0.5rem 0.75rem; font-family: var(--pi-body-font-family, system-ui, sans-serif); }
+  :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .action-button .action-label { display: inline; }
+  :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .icon-button.action-button { width: auto; height: 2.75rem; }
+  :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .editor-attach { position: static; width: 2.75rem; padding: 0; background: var(--pi-surface); color: var(--pi-text); }
+  :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .editor-attach .action-label { display: none; }
+  :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .markdown-editor .cm-content { padding: 8px; }
+  :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .mode-hint { right: 8px; max-width: calc(100% - 16px); }
+  :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .select-model, :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .select-thinking { background: var(--pi-surface); color: var(--pi-muted); }
+  :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .steer-button, :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .stop-button { background: transparent; color: var(--pi-text); }
+  :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .send-button:not(:disabled) { border-color: var(--pi-accent); background: var(--pi-accent); color: var(--pi-bg); font-family: Archivo, var(--pi-body-font-family, system-ui, sans-serif); font-weight: 800; }
+  :host-context(:root[data-pi-web-theme^="themes:modernist-"]) button:focus-visible, :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .markdown-editor .cm-focused { outline: 2px solid var(--pi-accent); outline-offset: 2px; }
+  :host-context(:root[data-pi-web-theme^="themes:modernist-"]) button:disabled, :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .markdown-editor-disabled .cm-editor { opacity: .45; }
+  :host-context(:root[data-pi-web-theme^="themes:modernist-"]) textarea, :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .markdown-editor .cm-editor, :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .attachment-chip, :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .attachment-file-preview, :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .attachment-remove, :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .attachment-delivery select { border-width: 2px; border-radius: 0; }
+  :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .attachment-delivery select { max-width: 100%; }
   @media (max-width: 640px) {
     footer { gap: 8px; padding: 8px; }
     .actions { gap: 6px; }
     .compact-status { flex: 1 1 220px; gap: 4px; }
     .select-model { max-width: min(58vw, 260px); }
     button { padding: 6px 8px; }
-  }
-  @media (max-width: 40rem) {
-    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) footer { gap: 0.5rem; padding: 0.5rem; }
-    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .actions { gap: 0.375rem; }
-    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .select-model { max-width: min(48vw, 16.25rem); }
-    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) button { padding: 0.375rem 0.5rem; }
   }
   @media (max-width: 767px) {
     /* Keep the controls in normal flow: a smaller, scrolling editor gives the
@@ -629,16 +649,23 @@ export const promptEditorStyles = css`
     .icon-button, .editor-attach { width: 2.75rem; height: 2.75rem; min-width: 2.75rem; min-height: 2.75rem; }
     textarea, .markdown-editor .cm-editor { min-height: 3.75rem; max-height: var(--pi-mobile-editor-max-height, 13.75rem); }
     .markdown-editor .cm-scroller { max-height: var(--pi-mobile-editor-max-height, 13.75rem); }
-    .markdown-editor .cm-content { padding-right: 3.5rem; }
   }
   @media (max-width: 430px) {
     .compact-status { flex-basis: 170px; font-size: 11px; }
     .select-model { max-width: 48vw; }
     button { padding: 5px 7px; }
   }
-  @media (max-width: 26.875rem) {
-    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .compact-status { flex-basis: auto; font-size: 0.6875rem; }
-    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .select-model { max-width: 8.25rem; }
-    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) button { padding: 0.3125rem 0.4375rem; }
+  @container (max-width: 38rem) {
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .action-button { width: 2.75rem; height: 2.75rem; min-width: 2.75rem; padding: 0; }
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .select-model { width: 100%; min-width: 0; padding: 0.5rem; justify-content: flex-start; }
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .action-button .action-label { display: none; }
+  }
+  @container (max-width: 22rem) {
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .actions { grid-template-columns: minmax(0, 1fr); }
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .action-context { grid-column: 1; }
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .action-execution { grid-column: 1; justify-self: end; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) * { transition: none; animation: none; }
   }
 `;

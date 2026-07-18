@@ -4,16 +4,18 @@ import type { SessionStatus } from "../api";
 import { PromptEditor } from "./PromptEditor";
 import { promptEditorStyles } from "./shared";
 
-describe("PromptEditor Calm Cockpit controls", () => {
-  it("keeps attachment, delivery, send, steer, and Stop controls accessible", () => {
+describe("PromptEditor Modernist controls", () => {
+  it("keeps scoped Modernist and legacy templates with their respective action orders", () => {
     const editor = new PromptEditor();
     editor.canSteer = true;
     editor.canStop = true;
     editor.status = status();
 
     const markup = templateMarkup(editor.render());
-    expect(markup).toContain('aria-label="Attach files"');
-    expect(markup).toContain('aria-label="Steer current response"');
+    expect(markup.indexOf('class="composer-template legacy-composer actions legacy-actions"')).toBeLessThan(markup.indexOf('class="composer-template modernist-composer actions modernist-actions"'));
+    expect(markup.indexOf('class="action-context"')).toBeLessThan(markup.indexOf('class="action-execution"'));
+    // The jsdom companion test covers rendered visibility, nested button order,
+    // and callbacks; this node test keeps the fast template contract.
     expect(valuesDeep(editor.render())).toEqual(expect.arrayContaining([
       "Queue message",
       "Thinking level: medium",
@@ -42,12 +44,18 @@ describe("PromptEditor Calm Cockpit controls", () => {
     expect(candidate.call(editor, new Map([["status", status({ thinkingLevel: "high" })]]))).toBe(true);
   });
 
-  it("uses a yielding model slot and fixed coarse-pointer action targets on mobile", () => {
-    // The structural sizing contract is intentionally tested here because it
-    // protects CodeMirror from being remounted or squeezed by long model names.
-    expect(promptEditorStyles.cssText).toContain(':host-context(:root[data-pi-web-theme^="themes:modernist-"]) .actions');
-    expect(promptEditorStyles.cssText).toContain("grid-template-columns: minmax(0, 1fr) repeat(3, max-content)");
-    expect(promptEditorStyles.cssText).toContain(".icon-button, .editor-attach { width: 2.75rem; height: 2.75rem; min-width: 2.75rem; min-height: 2.75rem; }");
+  it("gives Modernist one nonwrapping 44px row, with an explicit extra-narrow fallback", () => {
+    // This structural contract protects CodeMirror from being remounted or
+    // squeezed by a long model name while the keyboard viewport is reduced.
+    expect(promptEditorStyles.cssText).toContain(".modernist-composer { display: none; }");
+    expect(promptEditorStyles.cssText).toContain(".legacy-composer { display: none; }");
+    expect(promptEditorStyles.cssText).toContain(".modernist-actions { grid-template-columns: minmax(0, 1fr) max-content; gap: 0.5rem; align-items: center; overflow: hidden; }");
+    expect(promptEditorStyles.cssText).toContain(".action-context { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 0.5rem; min-width: 0; }");
+    expect(promptEditorStyles.cssText).toContain("@container (max-width: 38rem)");
+    expect(promptEditorStyles.cssText).toContain(".action-button { width: 2.75rem; height: 2.75rem; min-width: 2.75rem; padding: 0; }");
+    expect(promptEditorStyles.cssText).toContain("@container (max-width: 22rem)");
+    expect(promptEditorStyles.cssText).toContain(".actions { grid-template-columns: minmax(0, 1fr); }");
+    expect(promptEditorStyles.cssText).toContain(".markdown-editor .cm-content { min-height: 38px; padding: 8px 44px 8px 8px;");
   });
 });
 
