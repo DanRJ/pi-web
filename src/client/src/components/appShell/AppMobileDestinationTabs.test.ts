@@ -18,6 +18,17 @@ describe("AppMobileDestinationTabs", () => {
     expect(templateValues(settingsTab(template))).toContain("dialog");
   });
 
+  it("keeps every mobile destination button horizontal, centered, and visible at narrow widths", () => {
+    const styles = AppMobileDestinationTabs.styles.cssText;
+
+    expect(styles).toContain("button { display: flex; align-items: center; justify-content: center; gap: 0.25rem;");
+    expect(styles).toContain("min-width: 0; min-height: 2.75rem;");
+    expect(styles).toContain("white-space: nowrap;");
+    expect(styles).toContain("button[aria-current=\"page\"] { box-shadow:");
+    expect(styles).toContain("button:focus-visible { outline:");
+    expect(styles).toContain("@media (max-width: 359px) { button { gap: 0.1875rem; font-size: 0.625rem; }");
+  });
+
   it("omits dialog semantics when Modernist presents Settings as a destination", () => {
     const tabs = new AppMobileDestinationTabs();
     tabs.settingsPresentation = "destination";

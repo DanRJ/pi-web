@@ -27,6 +27,13 @@ describe("PiWebApp mobile shell", () => {
     expect(styles).toContain("app-mobile-destination-tabs { grid-column: 1; grid-row: 2; display: block; min-width: 0; }");
   });
 
+  it("overrides the high-specificity Settings desktop tracks with one mobile content column", () => {
+    const styles = mobileShellStyles();
+    expect(styles).toContain(".shell[data-settings-destination] { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }");
+    expect(styles).toContain(".shell[data-settings-destination] > settings-dialog { grid-column: 1; grid-row: 1; display: block; min-width: 0; min-height: 0; }");
+    expect(styles).toContain("app-mobile-destination-tabs { grid-column: 1; grid-row: 2; display: block; min-width: 0; }");
+  });
+
   it("keeps Tools visible in the first mobile grid row while tablet-only non-workspace views hide it", () => {
     const mobileStyles = mobileShellStyles();
     expect(mobileStyles).toContain(".shell.mobile-destination-tools > workspace-panel { grid-column: 1; grid-row: 1; display: flex; }");

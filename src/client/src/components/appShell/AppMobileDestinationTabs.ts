@@ -64,10 +64,11 @@ export class AppMobileDestinationTabs extends LitElement {
     :host { display: block; flex: 0 0 auto; min-width: 0; color: var(--pi-text); background: var(--pi-bg); font-family: var(--pi-control-font-family, system-ui, sans-serif); }
     nav { border-top: var(--pi-divider-width, 2px) solid var(--pi-border); padding: 0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
     .destinations { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); min-height: 3.625rem; }
-    button { display: grid; place-content: center; gap: 0.125rem; min-width: 2.75rem; min-height: 2.75rem; border: 0; border-radius: 0; background: transparent; color: var(--pi-muted); padding: 0.25rem; font: 600 0.6875rem/1.1 var(--pi-control-font-family, system-ui, sans-serif); cursor: pointer; }
-    button[aria-current="page"] { color: var(--pi-accent); font-weight: 800; }
+    button { display: flex; align-items: center; justify-content: center; gap: 0.25rem; min-width: 0; min-height: 2.75rem; border: 0; border-radius: 0; background: transparent; color: var(--pi-muted); padding: 0.25rem 0.125rem; font: 600 0.6875rem/1.1 var(--pi-control-font-family, system-ui, sans-serif); white-space: nowrap; cursor: pointer; }
+    button[aria-current="page"] { box-shadow: inset 0 -0.1875rem 0 currentColor; color: var(--pi-accent); font-weight: 800; }
     button:focus-visible { outline: var(--pi-focus-ring-width, 2px) solid var(--pi-accent); outline-offset: calc(-1 * var(--pi-focus-ring-offset, 2px)); }
-    svg { width: 1.125rem; height: 1.125rem; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+    svg { flex: 0 0 auto; width: 1.125rem; height: 1.125rem; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+    @media (max-width: 359px) { button { gap: 0.1875rem; font-size: 0.625rem; } svg { width: 1rem; height: 1rem; } }
     @media (forced-colors: active) { button[aria-current="page"] { outline: 2px solid SelectedItem; outline-offset: -2px; } }
   `;
 }
