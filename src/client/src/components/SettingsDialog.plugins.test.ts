@@ -73,6 +73,7 @@ describe("settings-dialog plugin settings machine targeting", () => {
         },
       },
       "remote-a",
+      remoteMachine.updatedAt,
     ]]);
     expect(pluginsSpy.mock.calls).toEqual([["remote-a"]]);
     expect(getDialogProperty(dialog, "selectedPluginConfigResponse")).toBe(savedConfig);

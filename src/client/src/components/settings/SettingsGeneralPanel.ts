@@ -178,7 +178,7 @@ export class SettingsGeneralPanel extends LitElement {
   private renderMachineMessages(): TemplateResult | null {
     const error = this.machineLocalError || this.machineError;
     if (error === "") return null;
-    return html`<div class="message error-message">${error}</div>`;
+    return html`<div class="message error-message" role="alert">${error}</div>`;
   }
 
   private renderOverrideBadge(key: keyof PiWebConfigEnvOverrides): TemplateResult | null {
@@ -283,6 +283,19 @@ export class SettingsGeneralPanel extends LitElement {
     .muted { color: var(--pi-muted); }
     .form-actions { display: flex; justify-content: flex-end; gap: 8px; padding-top: 2px; }
     .primary { border-color: var(--pi-accent); background: var(--pi-selection-bg); color: var(--pi-text-bright); }
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) button,
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) input,
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) select,
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) textarea,
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) code,
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .settings-card,
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .message,
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .loading-card,
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .config-path-card,
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .effective-card,
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .override-badge { border-radius: 0; }
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .settings-card,
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .message { border-width: var(--pi-divider-width, 2px); }
 
     @media (max-width: 767px) {
       .effective-card dl > div { grid-template-columns: minmax(0, 1fr); gap: 3px; }

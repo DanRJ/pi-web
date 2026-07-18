@@ -222,14 +222,18 @@ export class PiWebApp extends LitElement {
   @state() private mobileDestination: MobileDestination = "chat";
   private mobileDestinationBeforeSettings: MobileDestination | undefined;
   private settingsFocusReturnTarget: HTMLElement | undefined;
+  private machineDialogMachine: Machine | undefined;
   private readonly onPopState = () => void this.withChatScrollTransition(async () => {
     // A browser history traversal owns the destination, even if a card restore is pending.
     this.invalidateDashboardSessionOpen();
+    const dashboardWasVisible = this.topLevelPage === "dashboard";
     this.restoreSettingsRoute();
     const route = readRoute();
     this.topLevelPage = route.page ?? "workspace";
     if (this.topLevelPage === "dashboard") {
-      void this.dashboard.refresh();
+      // Closing a Settings destination is a same-page history traversal: retain
+      // the already-mounted dashboard rather than replacing its live state.
+      if (!dashboardWasVisible) void this.dashboard.refresh();
       return;
     }
     await this.restoreRoute(false);
@@ -307,6 +311,7 @@ export class PiWebApp extends LitElement {
     this.ensureMobileDestination();
     this.handleActivityTransition(previous, this.state);
     this.handleWorkspaceChange(previous, this.state);
+    if (machineTargetKey(previous.selectedMachine) !== machineTargetKey(this.state.selectedMachine)) this.auth.handleMachineTargetChange();
     this.handleMachineChange(previous, this.state);
     if (machineActivitySubscriptionInputsChanged(previous, this.state)) this.syncMachineActivitySubscriptions();
   }
@@ -924,10 +929,18 @@ export class PiWebApp extends LitElement {
   }
 
   private selectMobileDestination(destination: MobileDestination): void {
-    if (this.topLevelPage === "dashboard") this.leaveDashboard(destination === "sessions" ? undefined : destination);
+    // Modernist Settings is a destination over the dashboard, not navigation
+    // away from it. Other bottom destinations retain their existing behavior.
+    if (this.topLevelPage === "dashboard" && destination !== "settings") this.leaveDashboard(destination === "sessions" ? undefined : destination);
     if (destination === "settings") {
       this.openSettings();
       return;
+    }
+    // A destination tab is a real navigation choice, not an overlay dismissal.
+    // Close Modernist settings before exposing the selected mounted surface.
+    if (this.settingsSection !== undefined) {
+      this.reconcileSettingsRoute(undefined);
+      writeSettingsSection(undefined);
     }
     this.mobileDestination = destination;
   }
@@ -976,14 +989,15 @@ export class PiWebApp extends LitElement {
   }
 
   private openSettings(section: SettingsSection = "general"): void {
-    if (this.topLevelPage === "dashboard") this.leaveDashboard();
+    // The legacy modal keeps its existing dashboard-to-workspace handoff.
+    if (this.topLevelPage === "dashboard" && !this.isModernistSettingsDestination()) this.leaveDashboard();
     this.settingsFocusReturnTarget = deepActiveElement(this.renderRoot);
-    this.reconcileSettingsRoute(section, { focusDialog: true });
+    this.reconcileSettingsRoute(section, { focusDialog: !this.isModernistSettingsDestination() });
     writeSettingsSection(section);
   }
 
-  private closeSettings(): void {
-    this.reconcileSettingsRoute(undefined, { restoreFocus: true });
+  private closeSettings(options: { restoreFocus?: boolean } = {}): void {
+    this.reconcileSettingsRoute(undefined, { restoreFocus: options.restoreFocus !== false });
     writeSettingsSection(undefined);
   }
 
@@ -1014,6 +1028,10 @@ export class PiWebApp extends LitElement {
       void this.updateComplete.then(() => { this.settingsDialog?.focusInitialControl(); });
     }
     if (section === undefined && options.restoreFocus === true) this.restoreSettingsFocus();
+  }
+
+  private isModernistSettingsDestination(): boolean {
+    return this.activeThemeId.startsWith("themes:modernist-");
   }
 
   private restoreSettingsFocus(): void {
@@ -2040,14 +2058,51 @@ export class PiWebApp extends LitElement {
     }
   }
 
-  private openMachineDialog(): void {
+  private openMachineDialog(machine?: Machine): void {
+    if (machine?.kind === "local") {
+      this.setState({ error: "The local machine cannot be configured as a remote connection." });
+      return;
+    }
+    this.machineDialogMachine = machine;
     this.setState({ machineDialogOpen: true, error: "" });
   }
 
+  private closeMachineDialog(): void {
+    this.machineDialogMachine = undefined;
+    this.setState({ machineDialogOpen: false });
+  }
+
+  private async selectSettingsMachine(machine: Machine): Promise<void> {
+    await this.selectMachineWithMemory(machine);
+    // Local has no connection form. Selecting it takes the user straight to
+    // the settings that are scoped to its gateway/session daemon.
+    if (machine.kind === "local" && this.state.selectedMachine?.id === machine.id) this.navigateSettings("sessiond");
+  }
+
+  private openSettingsModelPicker(): void {
+    const session = this.state.selectedSession;
+    if (session === undefined || session.archived === true) return;
+    // A destination must not schedule focus restoration back into its closed
+    // Settings surface while the existing picker is opening.
+    this.closeSettings({ restoreFocus: false });
+    void this.openModelDialog();
+  }
+
+  private openSettingsAuth(mode: "login" | "logout"): void {
+    // Auth replaces Settings. Restoring focus between the two overlays can put
+    // it on an exposed background control before AuthDialog has rendered.
+    this.closeSettings({ restoreFocus: false });
+    if (mode === "login") void this.auth.openLogin();
+    else void this.auth.openLogout();
+  }
+
   private async submitMachineDialog(input: MachineDialogSubmit): Promise<void> {
-    const machine = await this.machines.addMachine(input);
+    const editedMachine = this.machineDialogMachine;
+    const machine = editedMachine === undefined
+      ? await this.machines.addMachine(input)
+      : await this.machines.updateMachine(editedMachine, input);
     if (machine !== undefined) {
-      this.setState({ machineDialogOpen: false });
+      this.closeMachineDialog();
       this.schedulePiWebStatusRefresh();
     }
   }
@@ -2298,6 +2353,7 @@ export class PiWebApp extends LitElement {
     return html`
       <app-mobile-destination-tabs
         .selected=${this.mobileDestination}
+        .settingsPresentation=${this.isModernistSettingsDestination() ? "destination" : "dialog"}
         .onSelect=${(destination: MobileDestination) => { this.selectMobileDestination(destination); }}
       ></app-mobile-destination-tabs>
     `;
@@ -2323,23 +2379,51 @@ export class PiWebApp extends LitElement {
     return html`<app-refresh-control .onReload=${() => { this.hardReloadApp(); }}></app-refresh-control>`;
   }
 
+  private renderSettings(presentation: "dialog" | "destination", state: AppState = this.state) {
+    if (this.settingsSection === undefined) return null;
+    return html`<settings-dialog
+      .presentation=${presentation}
+      .section=${this.settingsSection}
+      .machine=${state.selectedMachine}
+      .machineRuntime=${this.selectedMachineRuntime()}
+      .machines=${state.machines}
+      .machineStatuses=${state.machineStatuses}
+      .machineRuntimes=${state.machineRuntimes}
+      .session=${state.selectedSession}
+      .sessionStatus=${state.status}
+      .actions=${this.getDefaultActions()}
+      .onNavigate=${(section: SettingsSection) => { this.navigateSettings(section); }}
+      .onClose=${() => { this.closeSettings(); }}
+      .onSelectMachine=${(machine: Machine) => this.selectSettingsMachine(machine)}
+      .onAddMachine=${() => { this.openMachineDialog(); }}
+      .onConfigureMachine=${(machine: Machine) => { this.openMachineDialog(machine); }}
+      .onRemoveMachine=${(machine: Machine) => { void this.removeMachine(machine); }}
+      .onSelectModel=${() => { this.openSettingsModelPicker(); }}
+      .onConfigureAuth=${() => { this.openSettingsAuth("login"); }}
+      .onLogoutAuth=${() => { this.openSettingsAuth("logout"); }}
+      .onConfigSaved=${(config: PiWebConfigValues) => { this.applyClientConfig(config); }}
+      .onRefreshMachineRuntime=${(machineId: string) => this.machines.refreshMachineRuntime(machineId)}
+    ></settings-dialog>`;
+  }
+
   private renderGlobalOverlays(state: AppState = this.state) {
     return html`
       ${state.actionPaletteOpen ? html`<action-palette .actions=${this.getActions()} .onRun=${(action: AppAction) => { this.setState({ actionPaletteOpen: false }); this.runAction(action); }} .onCancel=${() => { this.setState({ actionPaletteOpen: false }); }}></action-palette>` : null}
       ${state.projectDialogOpen ? html`<project-dialog .machineId=${selectedMachineId(state)} .onSubmit=${(path: string, create: boolean) => this.projects.addProject(path, create)} .onCancel=${() => { this.setState({ projectDialogOpen: false }); }}></project-dialog>` : null}
-      ${state.machineDialogOpen ? html`<machine-dialog .error=${state.error} .onSubmit=${(input: MachineDialogSubmit) => this.submitMachineDialog(input)} .onCancel=${() => { this.setState({ machineDialogOpen: false }); }}></machine-dialog>` : null}
+      ${state.machineDialogOpen ? html`<machine-dialog .machine=${this.machineDialogMachine} .error=${state.error} .onSubmit=${(input: MachineDialogSubmit) => this.submitMachineDialog(input)} .onCancel=${() => { this.closeMachineDialog(); }}></machine-dialog>` : null}
       ${state.authDialog !== undefined ? html`<auth-dialog .state=${state.authDialog} .onChooseMethod=${(authType: "oauth" | "api_key") => { void this.auth.chooseLoginMethod(authType); }} .onSelectProvider=${(providerId: string, authType: "oauth" | "api_key") => { void this.auth.selectLoginProvider(providerId, authType); }} .onApiKeyInput=${(value: string) => { this.auth.updateApiKey(value); }} .onSaveApiKey=${() => { void this.auth.saveApiKey(); }} .onLogoutProvider=${(providerId: string) => { void this.auth.logoutProvider(providerId); }} .onOAuthInput=${(value: string) => { this.auth.updateOAuthInput(value); }} .onOAuthRespond=${(value?: string) => { void this.auth.respondOAuth(value); }} .onOAuthCancel=${() => { void this.auth.cancelOAuth(); }} .onCancel=${() => { this.auth.closeDialog(); }}></auth-dialog>` : null}
       ${this.sessionCleanupDialog !== undefined ? html`<session-cleanup-dialog .canCleanup=${this.canCleanupSessions()} .unavailableMessage=${this.sessionCleanupUnavailableMessage()} .preview=${this.sessionCleanupDialog.preview} .previewRequest=${this.sessionCleanupDialog.previewRequest} .result=${this.sessionCleanupDialog.result} .loading=${this.sessionCleanupDialog.loading === true} .running=${this.sessionCleanupDialog.running === true} .error=${this.sessionCleanupDialog.error ?? ""} .onPreview=${(request: SessionCleanupRequest) => { void this.previewSessionCleanup(request); }} .onRun=${(request: SessionCleanupRequest) => { void this.runSessionCleanup(request); }} .onClose=${() => { this.closeSessionCleanupDialog(); }}></session-cleanup-dialog>` : null}
       ${state.themeDialog !== undefined ? html`<command-picker title=${state.themeDialog.title} .options=${state.themeDialog.options} .selectedValue=${state.themeDialog.selectedValue} .onPick=${(value: string) => { this.pickTheme(value); }} .onCancel=${() => { this.setState({ themeDialog: undefined }); }}></command-picker>` : null}
-      ${this.settingsSection !== undefined ? html`<settings-dialog .section=${this.settingsSection} .machine=${state.selectedMachine} .machineRuntime=${this.selectedMachineRuntime()} .actions=${this.getDefaultActions()} .onNavigate=${(section: SettingsSection) => { this.navigateSettings(section); }} .onClose=${() => { this.closeSettings(); }} .onConfigSaved=${(config: PiWebConfigValues) => { this.applyClientConfig(config); }} .onRefreshMachineRuntime=${(machineId: string) => this.machines.refreshMachineRuntime(machineId)}></settings-dialog>` : null}
+      ${this.settingsSection !== undefined && !this.isModernistSettingsDestination() ? this.renderSettings("dialog", state) : null}
     `;
   }
 
   private renderDashboardPage() {
     return html`
-      <div class=${`${this.panelCollapse.shellClass(this.state.mainView)} dashboard-page mobile-destination-${this.mobileDestination}`} style=${this.panelResize.shellStyle({ navigation: this.resizablePanelConstraints("navigation"), workspace: this.resizablePanelConstraints("workspace") })}>
+      <div class=${`${this.panelCollapse.shellClass(this.state.mainView)} dashboard-page mobile-destination-${this.mobileDestination}`} ?data-settings-destination=${this.settingsSection !== undefined && this.isModernistSettingsDestination()} style=${this.panelResize.shellStyle({ navigation: this.resizablePanelConstraints("navigation"), workspace: this.resizablePanelConstraints("workspace") })}>
         <aside id="navigation-panel">${this.appShell.isMobileNavigationLayout ? null : this.renderNavigationPanel()}</aside>
         ${this.renderNavigationPanelEdgeControl()}
+        ${this.settingsSection !== undefined && this.isModernistSettingsDestination() ? this.renderSettings("destination") : null}
         <main class="dashboard-main" tabindex="-1" aria-label="Session dashboard">
           <session-dashboard
             .dashboard=${this.dashboardState.dashboard}
@@ -2365,9 +2449,10 @@ export class PiWebApp extends LitElement {
     if (this.topLevelPage === "dashboard") return html`${this.renderDashboardPage()}${this.renderGlobalOverlays()}`;
     const state = this.state;
     return html`
-      <div class=${`${this.panelCollapse.shellClass(state.mainView)}${this.isModernistWorkbenchExpanded() ? " modernist-tools-expanded" : ""} mobile-destination-${this.mobileDestination}`} style=${this.panelResize.shellStyle({ navigation: this.resizablePanelConstraints("navigation"), workspace: this.resizablePanelConstraints("workspace") })}>
+      <div class=${`${this.panelCollapse.shellClass(state.mainView)}${this.isModernistWorkbenchExpanded() ? " modernist-tools-expanded" : ""} mobile-destination-${this.mobileDestination}`} ?data-settings-destination=${this.settingsSection !== undefined && this.isModernistSettingsDestination()} style=${this.panelResize.shellStyle({ navigation: this.resizablePanelConstraints("navigation"), workspace: this.resizablePanelConstraints("workspace") })}>
         <aside id="navigation-panel">${this.appShell.isMobileNavigationLayout ? null : this.renderNavigationPanel()}</aside>
         ${this.renderNavigationPanelEdgeControl()}
+        ${this.settingsSection !== undefined && this.isModernistSettingsDestination() ? this.renderSettings("destination", state) : null}
         <main class=${mainViewClass(state.mainView)} tabindex="-1" aria-label="PI WEB workspace">
           ${this.renderContextBar()}
           ${this.renderMobileMainTabs()}
@@ -2471,6 +2556,10 @@ function machineScopedKey(machineId: string, value: string): string {
 function remoteRouteRestoreRetryDelay(attempt: number): number {
   const index = Math.min(attempt, REMOTE_ROUTE_RESTORE_RETRY_DELAYS_MS.length - 1);
   return REMOTE_ROUTE_RESTORE_RETRY_DELAYS_MS[index] ?? 30_000;
+}
+
+function machineTargetKey(machine: Machine | undefined): string {
+  return JSON.stringify(machine === undefined ? ["local"] : [machine.id, machine.kind, machine.name, machine.baseUrl ?? "", machine.createdAt, machine.updatedAt]);
 }
 
 function errorMessage(error: unknown): string {

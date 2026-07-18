@@ -110,6 +110,13 @@ export const appStyles = css`
   .shell.dashboard-page { grid-template-columns: var(--navigation-panel-width) 1px minmax(0, 1fr); }
   .shell.dashboard-page main { grid-column: 3; }
   .dashboard-main session-dashboard { flex: 1 1 auto; min-height: 0; }
+  /* Settings is a Modernist destination, not a modal: leave every underlying
+     surface mounted while the post-navigation track belongs to settings. */
+  .shell[data-settings-destination] { grid-template-columns: var(--navigation-panel-width) var(--pi-divider-width, 2px) minmax(0, 1fr); }
+  .shell[data-settings-destination] > settings-dialog { grid-column: 3; grid-row: 1; min-width: 0; min-height: 0; }
+  .shell[data-settings-destination] > main,
+  .shell[data-settings-destination] > workspace-panel,
+  .shell[data-settings-destination] > .workspace-panel-edge { display: none; }
   /* Modernist turns an active workspace tool into the post-navigation workbench.
      The legacy workspace width/collapse values remain stored; this composition
      simply does not consume that sidecar track while it is expanded. */
@@ -127,6 +134,7 @@ export const appStyles = css`
   @media (min-width: 768px) and (max-width: 1180px) {
     .shell.modernist-tools-expanded { grid-template-rows: minmax(0, 1fr); }
     .shell.modernist-tools-expanded main { display: none; }
+    .shell[data-settings-destination] > settings-dialog { grid-column: 3; grid-row: 1; }
     .shell.modernist-tools-expanded > workspace-panel { grid-column: 3; grid-row: 1; }
     .shell.modernist-tools-expanded > .workspace-panel-edge { display: none; }
     .shell:not(.workspace-view):not(.modernist-tools-expanded) > workspace-panel { display: none; }
@@ -155,6 +163,9 @@ export const appStyles = css`
     main { grid-column: 1; grid-row: 1; }
     .shell > workspace-panel { grid-column: 1; grid-row: 1; display: none; min-height: 0; }
     .shell.dashboard-page main { grid-column: 1; grid-row: 1; display: flex; }
+    .shell[data-settings-destination] > settings-dialog { grid-column: 1; grid-row: 1; display: block; min-width: 0; min-height: 0; }
+    .shell[data-settings-destination] > main,
+    .shell[data-settings-destination] > workspace-panel { display: none; }
     .shell.mobile-destination-chat > workspace-panel,
     .shell.mobile-destination-sessions > workspace-panel,
     .shell.mobile-destination-settings > workspace-panel { display: none; }

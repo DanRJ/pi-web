@@ -5,6 +5,8 @@ import { MOBILE_DESTINATION_ORDER, type MobileDestination } from "../../appShell
 @customElement("app-mobile-destination-tabs")
 export class AppMobileDestinationTabs extends LitElement {
   @property({ attribute: false }) selected: MobileDestination = "chat";
+  /** Settings opens a modal only in the legacy presentations. */
+  @property({ attribute: false }) settingsPresentation: "dialog" | "destination" = "dialog";
   @property({ attribute: false }) onSelect?: (destination: MobileDestination) => void;
 
   override render() {
@@ -28,7 +30,7 @@ export class AppMobileDestinationTabs extends LitElement {
         type="button"
         data-destination=${destination}
         aria-current=${selected ? "page" : nothing}
-        aria-haspopup=${destination === "settings" ? "dialog" : nothing}
+        aria-haspopup=${destination === "settings" && this.settingsPresentation === "dialog" ? "dialog" : nothing}
         aria-label=${destinationLabel(destination)}
         @click=${() => { this.select(destination); }}
         @keydown=${(event: KeyboardEvent) => { this.onKeyDown(event, destination); }}

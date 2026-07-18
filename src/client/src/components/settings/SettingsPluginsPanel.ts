@@ -73,7 +73,7 @@ export class SettingsPluginsPanel extends LitElement {
     const configured = this.configResponse?.config.plugins?.[plugin.id];
     const configuredState = configured?.enabled === false ? "Config disabled" : configured?.enabled === true ? "Config enabled" : "Default enabled";
     return html`
-      <article class=${`plugin-card${plugin.enabled ? "" : " disabled"}`}>
+      <article class=${`plugin-row plugin-card${plugin.enabled ? "" : " disabled"}`}>
         <div class="plugin-main">
           <strong>${plugin.id}</strong>
           <small>${plugin.source} · ${plugin.scope}${plugin.machineSpecific ? " · machine-specific" : ""}</small>
@@ -96,20 +96,25 @@ export class SettingsPluginsPanel extends LitElement {
     :host { display: block; }
     input { font: inherit; }
     input:disabled { opacity: .55; cursor: not-allowed; }
-    .loading-card, .plugin-note, .plugin-card { border: 1px solid var(--pi-border); border-radius: 10px; background: var(--pi-surface); padding: 12px; }
+    .loading-card, .plugin-note, .plugin-row { border: 1px solid var(--pi-border); border-radius: 10px; background: var(--pi-surface); padding: 12px; }
     .loading-card, .plugin-note { color: var(--pi-muted); }
     code { border: 1px solid var(--pi-border-muted); border-radius: 5px; background: var(--pi-bg); padding: 1px 4px; color: var(--pi-text); font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; overflow-wrap: anywhere; }
     .plugin-list { display: grid; gap: 10px; }
-    .plugin-card { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: center; }
-    .plugin-card.disabled { opacity: .75; }
+    .plugin-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: center; }
+    .plugin-row.disabled { opacity: .75; }
     .plugin-main { min-width: 0; display: grid; gap: 3px; }
     .plugin-main strong, .plugin-main small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .plugin-main small { color: var(--pi-muted); }
     .toggle { display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; }
     .toggle input { width: 18px; height: 18px; accent-color: var(--pi-accent); }
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .loading-card,
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .plugin-note,
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .plugin-row,
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) code { border-radius: 0; }
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .plugin-row { border-width: var(--pi-divider-width, 2px); }
 
     @media (max-width: 767px) {
-      .plugin-card { grid-template-columns: minmax(0, 1fr); align-items: start; }
+      .plugin-row { grid-template-columns: minmax(0, 1fr); align-items: start; }
       .toggle { justify-self: start; }
     }
   `;

@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
 import type { WebSocket } from "ws";
 import type { PiWebAgentConfig } from "../../shared/apiTypes.js";
+import { expectedMachineRevision, MACHINE_REVISION_CONFLICT_ERROR, MACHINE_REVISION_HEADER } from "../../shared/machineRevision.js";
 import { FEDERATED_HTTP_ROUTES, FEDERATED_WEBSOCKET_ROUTES, type FederatedHttpRouteSpec } from "../../shared/federatedRoutes.js";
 import { mergeSelectedMachineConfig, parsePiWebConfigResponseBody, parseSelectedMachineConfigRequest, selectedMachineConfigResponse } from "../configRoutes.js";
 import { bridgeSockets } from "../webSocketBridge.js";
@@ -25,7 +26,7 @@ export function registerMachineProxyRoutes(app: FastifyInstance, machines = new 
     app.route<{ Params: { machineId: string }; Body: unknown }>({
       method: spec.method,
       url: `/api/machines/:machineId${spec.path}`,
-      handler: (request, reply) => proxyHttpRequest(machines, spec, request.params.machineId, request.method, request.url, request.body, request.headers["content-type"], reply),
+      handler: (request, reply) => proxyHttpRequest(machines, spec, request.params.machineId, request.method, request.url, request.body, request.headers["content-type"], expectedMachineRevision(request.headers[MACHINE_REVISION_HEADER]), reply),
     });
   }
 
@@ -36,15 +37,23 @@ export function registerMachineProxyRoutes(app: FastifyInstance, machines = new 
   }
 }
 
-async function proxyHttpRequest(machines: MachineService, spec: FederatedHttpRouteSpec, machineId: string, method: string, requestUrl: string, body: unknown, contentType: string | string[] | undefined, reply: FastifyReply): Promise<FastifyReply> {
+async function proxyHttpRequest(machines: MachineService, spec: FederatedHttpRouteSpec, machineId: string, method: string, requestUrl: string, body: unknown, contentType: string | string[] | undefined, expectedRevision: string | undefined, reply: FastifyReply): Promise<FastifyReply> {
   if (machineId === "local") {
     return reply.code(501).send({ error: "Local machine route is not registered for this endpoint" });
   }
 
-  const client = await machines.remoteClient(machineId);
-  if (client === undefined) {
-    return reply.code(404).send({ error: "Machine not found" });
+  // Do this before constructing a remote client. A stable ID can be patched
+  // to a new endpoint/token while an old browser write is still queued.
+  const resolved = await machines.remoteClientAtRevision(machineId, expectedRevision);
+  if (resolved.status === "missing") return reply.code(404).send({ error: "Machine not found" });
+  if (resolved.status === "stale") {
+    return reply.code(409).send({
+      error: MACHINE_REVISION_CONFLICT_ERROR,
+      machineId,
+      currentRevision: resolved.currentRevision,
+    });
   }
+  const client = resolved.client;
 
   try {
     const remotePath = remoteApiPath(machineId, requestUrl);

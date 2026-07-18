@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { parseSettingsSection, readSettingsSection, writeSettingsSection } from "./settingsRoute";
+import { parseSettingsSection, readSettingsSection, settingsSectionAnchor, writeSettingsSection } from "./settingsRoute";
 
 const originalWindow = globalThis.window;
 
@@ -37,12 +37,21 @@ describe("settings route helpers", () => {
     expect(parseSettingsSection("general")).toBe("general");
     expect(parseSettingsSection("sessiond")).toBe("sessiond");
     expect(parseSettingsSection("sessions")).toBe("sessiond");
+    expect(parseSettingsSection("agent")).toBe("sessiond");
+    expect(parseSettingsSection("agents")).toBe("sessiond");
+    expect(parseSettingsSection("machines")).toBe("machines");
+    expect(parseSettingsSection("machine")).toBe("machines");
     expect(parseSettingsSection("packages")).toBe("packages");
     expect(parseSettingsSection("pi-packages")).toBe("packages");
     expect(parseSettingsSection("plugins")).toBe("plugins");
     expect(parseSettingsSection("shortcuts")).toBe("shortcuts");
     expect(parseSettingsSection("keyboard")).toBe("shortcuts");
     expect(parseSettingsSection("unknown")).toBeUndefined();
+  });
+
+  it("provides stable destination anchors", () => {
+    expect(settingsSectionAnchor("sessiond")).toBe("settings-sessiond");
+    expect(settingsSectionAnchor("machines")).toBe("settings-machines");
   });
 
   it("reads the settings section from the current URL", () => {

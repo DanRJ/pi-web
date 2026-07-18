@@ -391,6 +391,17 @@ export class SettingsShortcutsPanel extends LitElement {
     kbd { border: 1px solid var(--pi-border); border-radius: 6px; background: var(--pi-bg); color: var(--pi-text-secondary); padding: 3px 7px; font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: nowrap; }
     .unassigned { color: var(--pi-muted); font-size: 12px; }
     .recording-hint { color: var(--pi-accent); font-size: 12px; }
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) button,
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) input,
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) code,
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) kbd,
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .loading-card,
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .config-path-card,
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .prompt-enter-card,
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .shortcut-list,
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .shortcut-status small.conflict { border-radius: 0; }
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .prompt-enter-card,
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .shortcut-list { border-width: var(--pi-divider-width, 2px); }
 
     @media (max-width: 767px) {
       .prompt-enter-card { grid-template-columns: minmax(0, 1fr); }

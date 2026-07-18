@@ -106,7 +106,7 @@ describe("settings-dialog session daemon machine targeting", () => {
 
     await callDialogPromise(dialog, "saveSessiondConfig", patch);
 
-    expect(saveSpy).toHaveBeenCalledWith(patch, remoteMachine.id);
+    expect(saveSpy).toHaveBeenCalledWith(patch, remoteMachine.id, remoteMachine.updatedAt);
     expect(getDialogProperty(dialog, "sessiondConfigResponse")).toBe(saved);
   });
 

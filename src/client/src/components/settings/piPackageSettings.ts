@@ -12,6 +12,8 @@ export interface PiPackageTargetContext {
   id: string;
   name: string;
   kind: MachineKind;
+  /** Present for request contexts created by SettingsDialog. */
+  requestKey?: string;
 }
 
 export type PiPackageManagementSupportState = "supported" | "unsupported" | "unknown";

@@ -1,6 +1,6 @@
 import { css, html, LitElement, type PropertyValues, type TemplateResult } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
-import type { ActiveAgentProfileDescriptor, PiWebConfigResponse, PiWebConfigValues } from "../../api";
+import type { ActiveAgentProfileDescriptor, PiWebConfigResponse, PiWebConfigValues, SessionInfo, SessionStatus } from "../../api";
 import "./SettingsPanelFrame";
 import type { SettingsNotice } from "./SettingsPanelFrame";
 import { agentProfileConfigPatchFromDraft, agentProfileDraftFromConfig, agentProfileDraftMatchesConfig, emptyAgentProfileConfigDraft, type AgentProfileConfigDraft } from "./settingsConfigDraft";
@@ -17,6 +17,11 @@ export class SettingsSessiondPanel extends LitElement {
   @property() targetLabel = "local (local gateway)";
   @property({ attribute: false }) activeAgentProfile: ActiveAgentProfileDescriptor | undefined;
   @property({ attribute: false }) agentProfileSupport: AgentProfileSettingsSupport = { state: "supported" };
+  @property({ attribute: false }) session: SessionInfo | undefined;
+  @property({ attribute: false }) sessionStatus: SessionStatus | undefined;
+  @property({ attribute: false }) onSelectModel?: () => void;
+  @property({ attribute: false }) onConfigureAuth?: () => void;
+  @property({ attribute: false }) onLogoutAuth?: () => void;
   @property({ attribute: false }) onReload?: () => void | Promise<void>;
   @property({ attribute: false }) onSave?: (config: PiWebConfigValues) => void | Promise<void>;
   @state() private agentDraft: AgentProfileConfigDraft = emptyAgentProfileConfigDraft();
@@ -63,6 +68,7 @@ export class SettingsSessiondPanel extends LitElement {
         .notices=${this.panelNotices(config)}
         .onAction=${this.onReload}
       >
+        ${this.renderCurrentSessionAgent()}
         ${config === undefined ? this.renderUnavailableConfigState() : html`
           <div class="config-path-card">
             <span>Config file</span>
@@ -158,6 +164,25 @@ export class SettingsSessiondPanel extends LitElement {
     `;
   }
 
+  private renderCurrentSessionAgent(): TemplateResult {
+    const session = this.session;
+    const available = session !== undefined && session.archived !== true;
+    const model = this.sessionStatus?.model;
+    return html`
+      <section class="current-session-card" aria-label="Current session agent">
+        <h3>Current session</h3>
+        ${available ? html`
+          <div class="session-model"><span>Model</span><strong>${model?.name ?? model?.id ?? "Model unavailable"}</strong></div>
+          <div class="session-actions">
+            <button type="button" @click=${() => this.onSelectModel?.()}>Change model</button>
+            <button type="button" @click=${() => this.onConfigureAuth?.()}>Configure auth</button>
+            <button type="button" @click=${() => this.onLogoutAuth?.()}>Log out</button>
+          </div>
+        ` : html`<p>Model settings are available only for an active, unarchived session.</p>`}
+      </section>
+    `;
+  }
+
   private panelNotices(config: PiWebConfigResponse | undefined): readonly SettingsNotice[] {
     const notices: SettingsNotice[] = [];
     const error = this.agentLocalError || this.error;
@@ -216,10 +241,15 @@ export class SettingsSessiondPanel extends LitElement {
     button, input { font: inherit; }
     button { border: 1px solid var(--pi-border); border-radius: 8px; background: var(--pi-surface); color: var(--pi-text); padding: 7px 9px; cursor: pointer; }
     button:disabled { opacity: .55; cursor: not-allowed; }
-    .loading-card, .config-path-card, .effective-card, .profile-support-message { border: 1px solid var(--pi-border); border-radius: 10px; background: var(--pi-surface); padding: 12px; }
+    .loading-card, .config-path-card, .effective-card, .profile-support-message, .current-session-card { border: 1px solid var(--pi-border); border-radius: var(--pi-radius-control, 0px); background: var(--pi-surface); padding: .75rem; }
     .loading-card { color: var(--pi-muted); }
     .config-path-card { display: grid; gap: 5px; }
     .profile-form { display: grid; gap: 14px; }
+    .current-session-card { display: grid; gap: .75rem; }
+    .current-session-card p { margin: 0; color: var(--pi-muted); line-height: 1.45; }
+    .session-model { display: grid; gap: .25rem; }
+    .session-model span { color: var(--pi-muted); font-size: .75rem; font-weight: 700; text-transform: uppercase; }
+    .session-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
     .profile-support-message { color: var(--pi-muted); line-height: 1.45; }
     .form-actions { display: flex; justify-content: flex-end; }
     .primary { border-color: var(--pi-accent); background: var(--pi-accent); color: var(--pi-accent-contrast); }
@@ -252,6 +282,18 @@ export class SettingsSessiondPanel extends LitElement {
     .effective-card dl > div { display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: 12px; align-items: baseline; }
     dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
     .muted { color: var(--pi-muted); }
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) button,
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) input,
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) code,
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .loading-card,
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .config-path-card,
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .effective-card,
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .profile-support-message,
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .current-session-card,
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .override-badge,
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .beta-badge { border-radius: 0; }
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .current-session-card,
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .effective-card { border-width: var(--pi-divider-width, 2px); }
 
     @media (max-width: 767px) {
       .effective-card dl > div { grid-template-columns: minmax(0, 1fr); gap: 3px; }

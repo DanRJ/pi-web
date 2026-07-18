@@ -4,6 +4,8 @@ import type { GetState, SetState, UpdateUrl } from "./types";
 import type { ProjectController } from "./projectController";
 
 export class MachineController {
+  private readonly updateSequences = new Map<string, number>();
+
   constructor(private readonly getState: GetState, private readonly setState: SetState, private readonly updateUrl: UpdateUrl, private readonly projects: Pick<ProjectController, "loadProjects">) {}
 
   async loadMachines(routeMachineId?: string): Promise<void> {
@@ -65,6 +67,38 @@ export class MachineController {
     }
   }
 
+  /** Updates a registered remote without changing its selected project/workspace/session state. */
+  async updateMachine(machine: Machine, input: { name?: string; baseUrl?: string; token?: string }): Promise<Machine | undefined> {
+    if (machine.kind === "local") {
+      this.setState({ error: "The local machine cannot be changed." });
+      return undefined;
+    }
+    const sequence = (this.updateSequences.get(machine.id) ?? 0) + 1;
+    this.updateSequences.set(machine.id, sequence);
+    this.setState({ error: "" });
+    try {
+      const updated = await api.updateMachine(machine.id, input);
+      if (!this.isCurrentUpdate(updated.id, sequence)) return updated;
+      const state = this.getState();
+      // Do not use selectMachine here: editing a connection must leave the
+      // active project, workspace, session, tool, and drafts intact.
+      this.setState({
+        machines: state.machines.map((candidate) => candidate.id === updated.id ? updated : candidate),
+        ...(state.selectedMachine?.id === updated.id ? { selectedMachine: updated } : {}),
+        // The ID is stable across an endpoint/token edit. Remove old results
+        // before polling the revised connection so a failed refresh is shown
+        // as unknown rather than falsely online or versioned.
+        machineStatuses: omitKey(state.machineStatuses, updated.id),
+        machineRuntimes: omitKey(state.machineRuntimes, updated.id),
+      });
+      await this.refreshUpdatedMachine(updated, sequence);
+      return updated;
+    } catch (error) {
+      if (this.isCurrentUpdate(machine.id, sequence)) this.setState({ error: String(error) });
+      return undefined;
+    }
+  }
+
   async deleteMachine(machine: Machine | undefined = this.getState().selectedMachine, options: { selectFallback?: boolean } = {}): Promise<Machine | undefined> {
     if (machine === undefined) return undefined;
     if (machine.kind === "local") {
@@ -90,23 +124,46 @@ export class MachineController {
   }
 
   async refreshMachineHealth(machineId = this.getState().selectedMachine?.id ?? "local"): Promise<MachineHealth | undefined> {
+    const machine = this.machineSnapshot(machineId);
+    if (machine === undefined) return undefined;
     try {
-      const health = await api.health(machineId);
+      const health = await api.health(machine.id);
+      if (!this.isCurrentMachineSnapshot(machine)) return health;
       this.setState({ machineStatuses: { ...this.getState().machineStatuses, [health.machineId]: health } });
       return health;
     } catch (error) {
-      this.setState({ error: String(error) });
+      if (this.isCurrentMachineSnapshot(machine)) this.setState({ error: String(error) });
       return undefined;
     }
   }
 
   async refreshMachineRuntime(machineId = this.getState().selectedMachine?.id ?? "local"): Promise<void> {
+    const machine = this.machineSnapshot(machineId);
+    if (machine === undefined) return;
     try {
-      const runtime = await api.runtime(machineId, true);
+      const runtime = await api.runtime(machine.id, true);
+      if (!this.isCurrentMachineSnapshot(machine)) return;
       this.setState({ machineRuntimes: { ...this.getState().machineRuntimes, [runtime.machineId]: runtime } });
     } catch (error) {
-      this.setState({ error: String(error) });
+      if (this.isCurrentMachineSnapshot(machine)) this.setState({ error: String(error) });
     }
+  }
+
+  private isCurrentUpdate(machineId: string, sequence: number): boolean {
+    return this.updateSequences.get(machineId) === sequence && this.getState().machines.some((machine) => machine.id === machineId);
+  }
+
+  private async refreshUpdatedMachine(machine: Machine, sequence: number): Promise<void> {
+    const [healthResult, runtimeResult] = await Promise.allSettled([
+      api.health(machine.id),
+      api.runtime(machine.id, true),
+    ]);
+    if (!this.isCurrentUpdate(machine.id, sequence) || !this.isCurrentMachineSnapshot(machine)) return;
+    const state = this.getState();
+    const patch: Partial<Parameters<SetState>[0]> = {};
+    if (healthResult.status === "fulfilled") patch.machineStatuses = { ...state.machineStatuses, [machine.id]: healthResult.value };
+    if (runtimeResult.status === "fulfilled") patch.machineRuntimes = { ...state.machineRuntimes, [machine.id]: runtimeResult.value };
+    if (Object.keys(patch).length > 0) this.setState(patch);
   }
 
   private async selectInitialMachine(machines: Machine[], routeMachineId?: string): Promise<Machine | undefined> {
@@ -141,15 +198,24 @@ export class MachineController {
   }
 
   private async refreshMachineHealthFor(machines: Machine[]): Promise<void> {
-    const results = await Promise.allSettled(machines.map((machine) => api.health(machine.id)));
-    const health = Object.fromEntries(results.flatMap((result) => result.status === "fulfilled" ? [[result.value.machineId, result.value] as const] : []));
+    const results = await Promise.allSettled(machines.map(async (machine) => ({ machine, health: await api.health(machine.id) })));
+    const health = Object.fromEntries(results.flatMap((result) => result.status === "fulfilled" && this.isCurrentMachineSnapshot(result.value.machine) ? [[result.value.health.machineId, result.value.health] as const] : []));
     if (Object.keys(health).length > 0) this.setState({ machineStatuses: { ...this.getState().machineStatuses, ...health } });
   }
 
   private async refreshMachineRuntimeFor(machines: Machine[]): Promise<void> {
-    const results = await Promise.allSettled(machines.map((machine) => api.runtime(machine.id)));
-    const runtimes = Object.fromEntries(results.flatMap((result) => result.status === "fulfilled" ? [[result.value.machineId, result.value] as const] : []));
+    const results = await Promise.allSettled(machines.map(async (machine) => ({ machine, runtime: await api.runtime(machine.id) })));
+    const runtimes = Object.fromEntries(results.flatMap((result) => result.status === "fulfilled" && this.isCurrentMachineSnapshot(result.value.machine) ? [[result.value.runtime.machineId, result.value.runtime] as const] : []));
     if (Object.keys(runtimes).length > 0) this.setState({ machineRuntimes: { ...this.getState().machineRuntimes, ...runtimes } });
+  }
+
+  private machineSnapshot(machineId: string): Machine | undefined {
+    return this.getState().machines.find((machine) => machine.id === machineId) ?? (machineId === "local" ? this.getState().selectedMachine?.id === "local" ? this.getState().selectedMachine : undefined : undefined);
+  }
+
+  private isCurrentMachineSnapshot(snapshot: Machine): boolean {
+    const current = this.getState().machines.find((machine) => machine.id === snapshot.id) ?? (snapshot.id === "local" ? this.getState().selectedMachine?.id === "local" ? this.getState().selectedMachine : undefined : undefined);
+    return current !== undefined && machineConnectionKey(current) === machineConnectionKey(snapshot);
   }
 }
 
@@ -159,4 +225,9 @@ function omitKey<T>(record: Record<string, T>, keyToOmit: string): Record<string
 
 function filterKeys<T>(record: Record<string, T>, allowedKeys: Set<string>): Record<string, T> {
   return Object.fromEntries(Object.entries(record).filter(([key]) => allowedKeys.has(key)));
+}
+
+/** Public identity plus the server's revision stamp; IDs alone survive endpoint edits. */
+function machineConnectionKey(machine: Machine): string {
+  return JSON.stringify([machine.id, machine.kind, machine.name, machine.baseUrl ?? "", machine.createdAt, machine.updatedAt]);
 }
