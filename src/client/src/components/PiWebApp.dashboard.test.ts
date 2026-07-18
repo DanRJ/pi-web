@@ -1,5 +1,7 @@
+import type { TemplateResult } from "lit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { LocalSessionDashboardSessionSummary } from "../api";
+import type { AppAction } from "../actions";
 import { initialAppState, type AppState } from "../appState";
 import { PiWebApp } from "./PiWebApp";
 
@@ -18,6 +20,64 @@ describe("PiWebApp dashboard transitions", () => {
     handler.call(app);
     await flush();
     expect(restoreRoute).not.toHaveBeenCalled();
+  });
+
+  it("renders the Actions palette from the dashboard sidebar", () => {
+    const app = createApp();
+    setState(app, appState());
+    Reflect.set(app, "topLevelPage", "dashboard");
+
+    // Template extraction keeps this narrow wiring test independent of a DOM harness.
+    binding(renderTemplate(app, "renderNavigationPanel"), ".onShowActions")();
+
+    expect(templateMarkup(app.render())).toContain("<action-palette");
+  });
+
+  it("closes the dashboard Actions palette when cancelled", () => {
+    const app = createApp();
+    setState(app, { ...appState(), actionPaletteOpen: true });
+    Reflect.set(app, "topLevelPage", "dashboard");
+
+    binding(findTemplate(app.render(), "<action-palette"), ".onCancel")();
+
+    expect(projectAppState(app).actionPaletteOpen).toBe(false);
+    expect(templateMarkup(app.render())).not.toContain("<action-palette");
+  });
+
+  it("runs a modal action over the dashboard without leaving it", async () => {
+    const app = createApp();
+    setState(app, { ...appState(), actionPaletteOpen: true });
+    Reflect.set(app, "topLevelPage", "dashboard");
+    const projectAction = actions(app).find((action) => action.id === "core:project.add");
+    if (projectAction === undefined) throw new Error("Add Project action unavailable");
+
+    binding(findTemplate(app.render(), "<action-palette"), ".onRun")(projectAction);
+    await flush();
+
+    expect(projectAppState(app)).toMatchObject({ actionPaletteOpen: false, projectDialogOpen: true });
+    expect(Reflect.get(app, "topLevelPage")).toBe("dashboard");
+    expect(templateMarkup(app.render())).toContain("<project-dialog");
+  });
+
+  it("leaves the dashboard for an action that focuses the workspace", async () => {
+    const app = createApp();
+    setState(app, { ...appState(), actionPaletteOpen: true });
+    Reflect.set(app, "topLevelPage", "dashboard");
+    const focusPrompt = actions(app).find((action) => action.id === "core:prompt.focus");
+    if (focusPrompt === undefined) throw new Error("Focus Prompt action unavailable");
+
+    binding(findTemplate(app.render(), "<action-palette"), ".onRun")(focusPrompt);
+    await flush();
+
+    expect(Reflect.get(app, "topLevelPage")).toBe("workspace");
+    expect(projectAppState(app).mainView).toBe("chat");
+  });
+
+  it("renders one action palette in the workspace shell", () => {
+    const app = createApp();
+    setState(app, { ...appState(), actionPaletteOpen: true });
+
+    expect(occurrences(templateMarkup(app.render()), "<action-palette")).toBe(1);
   });
 
   it("only leaves the dashboard after the target card fully restores", async () => {
@@ -378,6 +438,86 @@ function setMobileLayout(app: PiWebApp): void {
   const shell: unknown = Reflect.get(app, "appShell");
   if (typeof shell !== "object" || shell === null || !("isMobileNavigationLayout" in shell)) throw new Error("App shell unavailable");
   if (!Reflect.set(shell, "isMobileNavigationLayout", true)) throw new Error("Could not set mobile layout");
+}
+
+function renderTemplate(app: PiWebApp, name: string): TemplateResult {
+  const method: unknown = Reflect.get(app, name);
+  if (!isUnknownMethod(method)) throw new Error(`Missing ${name}`);
+  const template = method.call(app);
+  if (!isTemplate(template)) throw new Error(`${name} did not return a template`);
+  return template;
+}
+
+function actions(app: PiWebApp): AppAction[] {
+  const method: unknown = Reflect.get(app, "getActions");
+  if (!isUnknownMethod(method)) throw new Error("Actions unavailable");
+  const result = method.call(app);
+  if (!Array.isArray(result) || !result.every(isAppAction)) throw new Error("Invalid actions");
+  return result;
+}
+
+function binding(template: TemplateResult, marker: string): (...args: unknown[]) => void {
+  const index = strings(template).findIndex((value) => value.includes(marker));
+  const handler = index < 0 ? undefined : values(template)[index];
+  if (!isTemplateBinding(handler)) throw new Error(`Binding ${marker} unavailable`);
+  return handler;
+}
+
+function findTemplate(template: TemplateResult, marker: string): TemplateResult {
+  if (strings(template).some((value) => value.includes(marker))) return template;
+  for (const value of values(template)) {
+    const found = findNestedTemplate(value, marker);
+    if (found !== undefined) return found;
+  }
+  throw new Error(`Template ${marker} unavailable`);
+}
+
+function findNestedTemplate(value: unknown, marker: string): TemplateResult | undefined {
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = findNestedTemplate(item, marker);
+      if (found !== undefined) return found;
+    }
+    return undefined;
+  }
+  return isTemplate(value) ? (strings(value).some((item) => item.includes(marker)) ? value : values(value).map((item) => findNestedTemplate(item, marker)).find((item) => item !== undefined)) : undefined;
+}
+
+function templateMarkup(template: TemplateResult): string {
+  return `${strings(template).join("")}${values(template).map((value) => nestedMarkup(value)).join("")}`;
+}
+
+function nestedMarkup(value: unknown): string {
+  if (Array.isArray(value)) return value.map((item) => nestedMarkup(item)).join("");
+  return isTemplate(value) ? templateMarkup(value) : "";
+}
+
+function occurrences(value: string, search: string): number {
+  return value.split(search).length - 1;
+}
+
+function strings(template: TemplateResult): readonly string[] {
+  const value: unknown = Reflect.get(template, "strings");
+  if (!Array.isArray(value) || !value.every((item) => typeof item === "string")) throw new Error("Template strings unavailable");
+  return value;
+}
+
+function values(template: TemplateResult): readonly unknown[] {
+  const value: unknown = Reflect.get(template, "values");
+  if (!Array.isArray(value)) throw new Error("Template values unavailable");
+  return value;
+}
+
+function isTemplate(value: unknown): value is TemplateResult {
+  return typeof value === "object" && value !== null && Array.isArray(Reflect.get(value, "strings"));
+}
+
+function isAppAction(value: unknown): value is AppAction {
+  return typeof value === "object" && value !== null && typeof Reflect.get(value, "id") === "string" && typeof Reflect.get(value, "run") === "function";
+}
+
+function isTemplateBinding(value: unknown): value is (...args: unknown[]) => void {
+  return typeof value === "function";
 }
 
 function callAsync(app: PiWebApp, name: string, ...args: unknown[]): Promise<void> {

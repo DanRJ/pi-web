@@ -92,7 +92,7 @@ export class SessionDashboard extends LitElement {
           <div><dt>Branch</dt><dd>${nonEmpty(session.workspace.branch, session.workspace.isMain ? "main" : "No branch")}</dd></div>
           <div><dt>Machine</dt><dd>${machineName}</dd></div>
         </dl>
-        <div class="card-actions"><a href=${href} @click=${(event: MouseEvent) => { this.openSession(event, session, machineId); }}>Open session</a><a href=${href} target="_blank" rel="noopener">Open in new tab</a></div>
+        <div class="card-actions"><a href=${href} @click=${(event: MouseEvent) => { this.openSession(event, session, machineId); }}>Open session</a></div>
       </article>
     `;
   }
