@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CLASSIC_THEME_ID, DEFAULT_THEME_PREFERENCE, MODERNIST_DARK_THEME_ID, MODERNIST_LIGHT_THEME_ID, findThemePairForTheme, readStoredThemePreference, resolveThemePreference, toggleThemePreference, writeStoredThemePreference } from "./theme";
 import { themePackPlugin } from "./plugins/themes";
+import { chatStyles } from "./components/shared";
 import type { PluginActivationContext, QualifiedContributionId, QualifiedThemeContribution, QualifiedThemePairContribution, ThemeColorScheme, ThemeTokens } from "./plugins/types";
 
 const tokens = {
@@ -111,6 +112,13 @@ describe("Modernist structural token boundaries", () => {
     expect(shellThemeCss).toContain("--pi-tool-error-icon-color: var(--pi-muted);");
     expect(shellThemeCss).toContain("--pi-tool-error-icon-stroke-width: 0px;");
     expect(shellThemeCss).not.toMatch(/data-pi-web-theme\^="themes:(?:classic|pi-web-)"/u);
+  });
+
+  it("keeps assistant prose and sticky headers scoped to Modernist", () => {
+    expect(chatStyles.cssText).toContain(':host-context(:root[data-pi-web-theme^="themes:modernist-"]) .msg.assistant { padding-inline: 0; }');
+    expect(chatStyles.cssText).toContain(':host-context(:root[data-pi-web-theme^="themes:modernist-"]) .msg.assistant > .msg-header { margin: 0 0 0.5rem; padding: 0.4375rem 0 0.375rem; }');
+    expect(chatStyles.cssText).toContain('.msg.event-group > summary { position: sticky; top: -26px;');
+    expect(chatStyles.cssText).not.toContain('.msg.assistant { padding-inline: 0; }\n  .msg.user');
   });
 
   it("limits flat and ink error overrides to Modernist", () => {

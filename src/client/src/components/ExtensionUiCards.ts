@@ -92,6 +92,12 @@ export class ExtensionUiCards extends LitElement {
     .settled { border-left-color: var(--pi-muted); color: var(--pi-muted); }
     .notification.warning { border-left-color: var(--pi-warning, #b7791f); }
     .notification.error { border-left-color: var(--pi-danger); }
+    @media (max-width: 47.9375rem) {
+      /* Extension cards stay in the transcript flow; these are visual-only
+         Modernist touch targets and do not change reconciliation ownership. */
+      :host-context(:root[data-pi-web-theme^="themes:modernist-"]) button { min-height: 2.75rem; }
+      :host-context(:root[data-pi-web-theme^="themes:modernist-"]) textarea { min-height: 5.5rem; }
+    }
     @media (max-width: 24.375rem) { .extension-actions.primary-actions { flex-wrap: nowrap; } }
   `;
 }

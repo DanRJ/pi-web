@@ -17,6 +17,9 @@ describe("mobile keyboard viewport contract", () => {
   it("sizes the mobile fixed shell from the visible viewport with a dynamic viewport fallback", () => {
     expect(appStyles.cssText).toContain("var(--pi-visible-viewport-bottom, var(--pi-visible-viewport-height, 100dvh))");
     expect(appStyles.cssText).toContain(".shell { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; height: 100%; }");
+    // Safe-area padding is intentionally independent from the keyboard bridge.
+    expect(appStyles.cssText).toContain("--pi-app-safe-area-bottom");
+    expect(appStyles.cssText).toContain("env(safe-area-inset-bottom)");
   });
 
   it("keeps a scrolling, bounded editor and non-shrinking 44px action controls on mobile", () => {

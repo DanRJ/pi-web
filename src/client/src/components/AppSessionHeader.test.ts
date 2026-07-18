@@ -48,6 +48,29 @@ describe("AppSessionHeader", () => {
     expect(onStop).toHaveBeenCalledOnce();
   });
 
+  it("only announces queue clearing when Stop is enabled and it clears the server queue", () => {
+    const header = new AppSessionHeader();
+    header.session = session();
+    header.clearsServerQueue = true;
+    expect(templateMarkup(header.render())).not.toContain("clear queued server messages");
+
+    header.canStop = true;
+    expect(templateMarkup(header.render())).toContain('aria-label="Stop session work and clear queued server messages"');
+
+    header.clearsServerQueue = false;
+    expect(templateMarkup(header.render())).not.toContain("clear queued server messages");
+  });
+
+  it("keeps Stop beside title, status, and theme controls in the compact header", () => {
+    const header = new AppSessionHeader();
+    header.session = session();
+    header.canStop = true;
+
+    expect(templateMarkup(header.render())).toContain('class="session-stop-control"');
+    expect(AppSessionHeader.styles.cssText).toContain(".session-detail, .session-stop-control { display: none; }");
+    expect(AppSessionHeader.styles.cssText).toContain("button { min-width: 2.75rem; min-height: 2.75rem; }");
+  });
+
   it("does not duplicate navigation, Actions, or settings controls", () => {
     const header = new AppSessionHeader();
     header.session = session();

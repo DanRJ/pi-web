@@ -136,6 +136,7 @@ export const appStyles = css`
   }
   @media (max-width: 767px) {
     .shell { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; height: 100%; }
+    .shell.dashboard-page { grid-template-columns: minmax(0, 1fr); }
     aside, .navigation-panel-edge, .workspace-panel-edge { display: none; }
     main { grid-column: 1; grid-row: 1; }
     .shell > workspace-panel { grid-column: 1; grid-row: 1; display: none; min-height: 0; }
@@ -323,6 +324,21 @@ export const chatStyles = css`
   .msg.event-group.live > summary { border-bottom-color: var(--pi-success-border); background: var(--pi-success-bg); color: var(--pi-success); }
   .msg.event-group > summary .label { margin: 0; }
   .group-body { padding: 0 12px 12px; }
+  :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .msg.assistant { padding-inline: 0; }
+  /* The assistant header shares its prose edge: unlike the stock card header,
+     it has no negative margins that could extend beyond the Modernist surface. */
+  :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .msg.assistant > .msg-header { margin: 0 0 0.5rem; padding: 0.4375rem 0 0.375rem; }
+  :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .msg.system { border-left-width: var(--pi-accent-rule-width, 0.25rem); border-color: var(--pi-danger); background: transparent; }
+  :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .msg.event-group[data-event-status="error"] { border-left-width: var(--pi-accent-rule-width, 0.25rem); border-left-color: var(--pi-text); }
+  :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .msg.event-group > summary { top: -1.625rem; gap: 0.5rem; padding: 0.5rem 0.75rem; border-radius: var(--pi-chat-card-radius, 0.625rem) var(--pi-chat-card-radius, 0.625rem) 0 0; border-bottom-width: var(--pi-divider-width, 1px); }
+  :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .event-icon { flex: 0 0 auto; font-weight: 800; }
+  :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .event-summary { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .event-detail { flex: 0 0 auto; overflow: hidden; max-width: 18rem; color: var(--pi-dim); font-size: 0.75rem; text-overflow: ellipsis; white-space: nowrap; }
+  :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .group-body { padding: 0 0.75rem 0.75rem; }
+  :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .subsession-rows { display: grid; gap: 0.375rem; padding: 0.625rem 0; border-bottom: var(--pi-divider-width, 1px) solid var(--pi-border-muted); }
+  :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .subsession-row { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 0.375rem 0.5rem; align-items: baseline; font-size: 0.8125rem; }
+  :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .subsession-row small { grid-column: 2; min-width: 0; overflow: hidden; color: var(--pi-muted); text-overflow: ellipsis; white-space: nowrap; }
+  :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .subsession-status { color: var(--pi-muted); font-size: 0.75rem; text-transform: uppercase; }
   .chat-image { display: block; max-width: 100%; max-height: 320px; margin: 8px 0 0; border: 1px solid var(--pi-border-muted); border-radius: 8px; object-fit: contain; }
   .group-msg { max-width: 100%; min-width: 0; box-sizing: border-box; padding: 10px 0; border-top: 1px solid var(--pi-border-muted); color: var(--pi-text); overflow: visible; }
   .group-msg.tool { color: var(--pi-warning); }
@@ -343,6 +359,13 @@ export const chatStyles = css`
   .queued-message { display: grid; gap: 4px; padding-top: 8px; border-top: 1px solid var(--pi-border); }
   .queued-message:first-of-type { padding-top: 0; border-top: 0; }
   .queued-kind { color: var(--pi-muted); font-size: 12px; text-transform: uppercase; }
+  :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .queued-lane { display: grid; gap: 0.5rem; }
+  :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .queued-lane + .queued-lane { padding-top: 0.5rem; border-top: var(--pi-divider-width, 1px) solid var(--pi-border); }
+  :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .queued-lane-heading { color: var(--pi-warning); font-size: 0.75rem; text-transform: uppercase; }
+  :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .queued-message { gap: 0.25rem; padding-top: 0; border-top: 0; }
+  :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .queued-kind { font-size: 0.75rem; }
+  :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .queued-unlisted,
+  :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .queued-stop-note { color: var(--pi-muted); font-size: 0.75rem; }
   .session-activity { max-width: 100%; min-width: 0; box-sizing: border-box; display: grid; gap: 0.25rem; margin: 0 0 0.875rem; padding: var(--pi-chat-message-padding, 0.75rem); border: var(--pi-divider-width, 1px) solid var(--pi-border); border-radius: var(--pi-chat-card-radius, 0.625rem); background: var(--pi-surface); color: var(--pi-text); overflow: hidden; }
   .session-activity.compacting { border-color: var(--pi-purple-border); background: var(--pi-purple-surface); }
   .session-activity.receiving { border-color: var(--pi-success-border); background: var(--pi-success-bg); }
@@ -385,6 +408,8 @@ export const chatStyles = css`
   .tool-line { color: var(--pi-warning); }
   .summary { color: var(--pi-muted); margin-left: 6px; }
   .part:is(details) { border-top: 1px solid var(--pi-border); padding-top: 8px; }
+  :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .part:is(details) { border-top-width: var(--pi-divider-width, 1px); padding-top: 0.5rem; }
+  :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .msg.assistant .part:is(details) { color: var(--pi-muted); }
   .part > formatted-text { display: block; max-width: 100%; min-width: 0; overflow: visible; }
   .skill-invocation, .skill-read { border: var(--pi-divider-width, 1px) solid var(--pi-border); border-radius: var(--pi-chat-inline-card-radius, 8px); background: var(--pi-surface); padding: 0.5rem 0.625rem; }
   .skill-invocation > summary, .skill-read > strong { color: var(--pi-purple); }
@@ -395,7 +420,24 @@ export const chatStyles = css`
   @media (max-width: 30rem) {
     .chat { padding: 1rem 0.75rem 4rem; }
     .msg.user { width: 100%; }
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .event-detail { display: none; }
     .activity-dock { left: 0.75rem; right: 0.75rem; }
+  }
+  @media (max-width: 47.9375rem) {
+    /* Each Modernist transcript surface owns its overflow. The shell itself
+       never needs a horizontal scrollbar for a long path, line, or diff. */
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .chat { padding: 1rem 0.75rem 4rem; overscroll-behavior: contain; }
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .msg,
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .group-msg,
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .queued-messages,
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .session-activity { overflow-wrap: anywhere; }
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .event-detail { max-width: 10rem; }
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .subsession-row { grid-template-columns: minmax(0, 1fr); gap: 0.125rem; }
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .subsession-row small { grid-column: 1; }
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .subsession-status { justify-self: start; }
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .queued-header { gap: 0.5rem; }
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .queued-clear-button { min-height: 2.75rem; }
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .activity-dock { left: 0.75rem; right: 0.75rem; }
   }
   @media (prefers-reduced-motion: reduce) { .activity-dock.active .dot, .msg-actions, .msg-meta { animation: none; transition: none; } }
   @keyframes pulse { 0%, 100% { transform: scale(.75); opacity: .55; } 50% { transform: scale(1.2); opacity: 1; } }
@@ -500,6 +542,11 @@ export const promptEditorStyles = css`
   .compact-status { display: flex; min-width: 0; align-items: center; gap: 6px; color: var(--pi-muted); font-size: 12px; flex: 1 1 0; }
   .compact-status > button { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
   .select-model { max-width: min(42vw, 320px); }
+  /* Modernist gives the editor visual priority. Its yielding first grid column
+     makes a long model name the only control-row content allowed to truncate. */
+  :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .actions { display: grid; grid-template-columns: minmax(0, 1fr) repeat(3, max-content); gap: 0.5rem; justify-content: end; min-width: 0; }
+  :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .compact-status { gap: 0.375rem; font-size: 0.75rem; }
+  :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .select-model { max-width: min(42vw, 20rem); }
   .icon-button { flex: 0 0 auto; display: inline-grid; place-items: center; width: 36px; height: 36px; padding: 0; }
   .icon-button .prompt-action-icon, .icon-button .prompt-thinking-gauge { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
   .icon-button .prompt-action-icon-filled { fill: currentColor; stroke: none; }
@@ -537,6 +584,12 @@ export const promptEditorStyles = css`
     .select-model { max-width: min(58vw, 260px); }
     button { padding: 6px 8px; }
   }
+  @media (max-width: 40rem) {
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) footer { gap: 0.5rem; padding: 0.5rem; }
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .actions { gap: 0.375rem; }
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .select-model { max-width: min(48vw, 16.25rem); }
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) button { padding: 0.375rem 0.5rem; }
+  }
   @media (max-width: 767px) {
     /* Keep the controls in normal flow: a smaller, scrolling editor gives the
        non-shrinking action row and the destination nav room above the IME. */
@@ -550,5 +603,10 @@ export const promptEditorStyles = css`
     .compact-status { flex-basis: 170px; font-size: 11px; }
     .select-model { max-width: 48vw; }
     button { padding: 5px 7px; }
+  }
+  @media (max-width: 26.875rem) {
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .compact-status { flex-basis: auto; font-size: 0.6875rem; }
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .select-model { max-width: 8.25rem; }
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) button { padding: 0.3125rem 0.4375rem; }
   }
 `;

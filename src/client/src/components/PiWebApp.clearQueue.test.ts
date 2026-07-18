@@ -44,9 +44,38 @@ describe("PiWebApp queued-message clear wiring", () => {
       expect(templateValueAfterMarker(renderChatView(app, state), ".canClearServerQueue=")).toBe(false);
     }
   });
+
+  it("keeps Stop available as the queue-only abort fallback without queue-clear capability", () => {
+    const app = createApp();
+    const state = stateWithRuntime(runtimeWithCapabilities([PI_WEB_CAPABILITIES.sessionsReload]));
+    state.status = { ...queuedStatus(), isStreaming: false, pendingMessageCount: 1 };
+    setAppState(app, state);
+
+    expect(canStop(app, state.status)).toBe(true);
+    expect(stopClearsServerQueue(app, state.status)).toBe(true);
+    expect(templateValueAfterMarker(renderChatView(app, state), ".canStop=")).toBe(true);
+    expect(templateValueAfterMarker(renderChatView(app, state), ".clearsServerQueue=")).toBe(true);
+    expect(templateValueAfterMarker(renderChatView(app, state), ".canClearServerQueue=")).toBe(false);
+    expect(templateValuesAfterMarkerDeep(app.render(), ".canStop=")).toEqual(expect.arrayContaining([true]));
+    expect(templateValuesAfterMarkerDeep(app.render(), ".clearsServerQueue=")).toEqual(expect.arrayContaining([true]));
+  });
+
+  it("keeps Stop available for active work but does not promise queue clearing when the authoritative pending count is zero", () => {
+    const app = createApp();
+    const state = stateWithRuntime(runtimeWithCapabilities([PI_WEB_CAPABILITIES.sessionsReload]));
+    state.status = { ...queuedStatus(), isStreaming: true, pendingMessageCount: 0, queuedMessages: [{ kind: "followUp", text: "stale listed row" }] };
+    setAppState(app, state);
+
+    expect(canStop(app, state.status)).toBe(true);
+    expect(stopClearsServerQueue(app, state.status)).toBe(false);
+    expect(templateValueAfterMarker(renderChatView(app, state), ".canStop=")).toBe(true);
+    expect(templateValueAfterMarker(renderChatView(app, state), ".clearsServerQueue=")).toBe(false);
+    expect(templateValuesAfterMarkerDeep(app.render(), ".clearsServerQueue=")).toEqual(expect.arrayContaining([false]));
+  });
 });
 
 type RenderChatView = (this: PiWebApp, state: AppState, session: SessionInfo) => TemplateResult;
+type SessionStopCheck = (this: PiWebApp, status?: SessionStatus) => boolean;
 type ClearServerQueueCallback = () => void;
 
 function createApp(): PiWebApp {
@@ -56,7 +85,9 @@ function createApp(): PiWebApp {
     removeItem: () => undefined,
   };
   vi.stubGlobal("window", { location: { search: "" }, localStorage: storage });
-  return new PiWebApp();
+  const app = new PiWebApp();
+  Reflect.set(app, "getBoundingClientRect", () => ({ width: 0 }));
+  return app;
 }
 
 function stateWithRuntime(runtime: MachineRuntime | undefined): AppState {
@@ -116,6 +147,24 @@ function isRenderChatView(value: unknown): value is RenderChatView {
   return typeof value === "function";
 }
 
+function canStop(app: PiWebApp, status: SessionStatus): boolean {
+  return sessionStopCheck(app, "canStopActiveWork").call(app, status);
+}
+
+function stopClearsServerQueue(app: PiWebApp, status: SessionStatus): boolean {
+  return sessionStopCheck(app, "stopClearsServerQueue").call(app, status);
+}
+
+function sessionStopCheck(app: PiWebApp, property: "canStopActiveWork" | "stopClearsServerQueue"): SessionStopCheck {
+  const check: unknown = Reflect.get(app, property);
+  if (!isSessionStopCheck(check)) throw new Error(`PiWebApp.${property} is not callable`);
+  return check;
+}
+
+function isSessionStopCheck(value: unknown): value is SessionStopCheck {
+  return typeof value === "function";
+}
+
 function templateCallbackAfterMarker(template: TemplateResult, marker: string): ClearServerQueueCallback {
   const value = templateValueAfterMarker(template, marker);
   if (!isClearServerQueueCallback(value)) throw new Error(`Expected callback after ${marker}`);
@@ -148,4 +197,28 @@ function templateValues(template: TemplateResult): readonly unknown[] {
 
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((item: unknown) => typeof item === "string");
+}
+
+function templateValuesAfterMarkerDeep(template: TemplateResult, marker: string): unknown[] {
+  const matches: unknown[] = [];
+  visit(template);
+  return matches;
+
+  function visit(value: unknown): void {
+    if (Array.isArray(value)) {
+      value.forEach(visit);
+      return;
+    }
+    if (!isTemplateResult(value)) return;
+    const strings = templateStrings(value);
+    const values = templateValues(value);
+    for (let index = 0; index < values.length; index += 1) {
+      if (strings[index]?.includes(marker) === true) matches.push(values[index]);
+      visit(values[index]);
+    }
+  }
+}
+
+function isTemplateResult(value: unknown): value is TemplateResult {
+  return typeof value === "object" && value !== null && isStringArray(Reflect.get(value, "strings")) && Array.isArray(Reflect.get(value, "values"));
 }
