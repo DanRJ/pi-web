@@ -17,7 +17,8 @@ export class AuthDialog extends LitElement {
   @property({ attribute: false }) onOAuthCancel?: () => void;
   @property({ attribute: false }) onCancel?: () => void;
   @query("input") private input?: HTMLInputElement;
-  private lastFocusedInputKey: string | undefined;
+  @query("header button") private closeButton?: HTMLButtonElement;
+  private lastFocusedControlKey: string | undefined;
 
   override render() {
     const state = this.state;
@@ -36,7 +37,7 @@ export class AuthDialog extends LitElement {
   }
 
   protected override updated(): void {
-    this.focusInputIfNeeded();
+    this.focusInitialControlIfNeeded();
   }
 
   private dialogTitle(state: AuthDialogState): string {
@@ -62,7 +63,7 @@ export class AuthDialog extends LitElement {
         <div class="form">
           <p>Enter the API key for <strong>${state.provider.name}</strong>. It will be stored in the active Pi-compatible profile's <code>auth.json</code>.</p>
           <input type="password" autocomplete="off" placeholder="API key" .value=${state.value} @input=${(event: Event) => { if (event.target instanceof HTMLInputElement) this.onApiKeyInput?.(event.target.value); }}>
-          ${state.error !== undefined && state.error !== "" ? html`<div class="error-text">${state.error}</div>` : null}
+          ${state.error !== undefined && state.error !== "" ? html`<div class="error-text" role="alert">${state.error}</div>` : null}
           <div class="actions"><button @click=${() => { this.cancel(); }}>Cancel</button><button class="primary" ?disabled=${state.saving === true} @click=${() => { this.onSaveApiKey?.(); }}>${state.saving === true ? "Saving…" : "Save API key"}</button></div>
         </div>
       `;
@@ -103,22 +104,25 @@ export class AuthDialog extends LitElement {
           <p>${select.message}</p>
           <div class="inline-options">${select.options.map((option) => html`<button @click=${() => { this.onOAuthRespond?.(option.value); }}>${option.label}</button>`)}</div>
         ` : null}
-        ${state.error !== undefined && state.error !== "" ? html`<div class="error-text">${state.error}</div>` : null}
-        ${flow.status === "error" || flow.status === "cancelled" ? html`<div class="error-text">${flow.error ?? flow.status}</div><div class="actions"><button @click=${() => { this.cancel(); }}>Close</button></div>` : null}
+        ${state.error !== undefined && state.error !== "" ? html`<div class="error-text" role="alert">${state.error}</div>` : null}
+        ${flow.status === "error" || flow.status === "cancelled" ? html`<div class="error-text" role="alert">${flow.error ?? flow.status}</div><div class="actions"><button @click=${() => { this.cancel(); }}>Close</button></div>` : null}
         ${prompt === undefined && select === undefined && flow.status === "running" ? html`<div class="actions"><button @click=${() => { this.onOAuthCancel?.(); }}>Cancel</button></div>` : null}
       </div>
     `;
   }
 
-  private focusInputIfNeeded(): void {
+  private focusInitialControlIfNeeded(): void {
     const key = focusKey(this.state);
     if (key === undefined) {
-      this.lastFocusedInputKey = undefined;
+      this.lastFocusedControlKey = undefined;
       return;
     }
-    if (key === this.lastFocusedInputKey) return;
-    this.lastFocusedInputKey = key;
-    this.input?.focus();
+    if (key === this.lastFocusedControlKey) return;
+    this.lastFocusedControlKey = key;
+    // Input states should accept typing immediately. Choice, loading, and
+    // error states still need a control inside the modal rather than leaving
+    // focus on the Settings surface behind this overlay.
+    (this.input ?? this.closeButton ?? this.renderRoot.querySelector<HTMLButtonElement>("button:not([disabled])"))?.focus();
   }
 
   private handleKeyDown(event: KeyboardEvent): void {
@@ -167,9 +171,15 @@ function authTypeLabel(authType: "oauth" | "api_key"): string {
 }
 
 function focusKey(state: AuthDialogState | undefined): string | undefined {
-  if (state?.step === "apiKey") return `api-key:${state.provider.authType}:${state.provider.id}`;
-  if (state?.step === "oauth" && state.flow.prompt !== undefined) return `oauth:${state.flow.flowId}:${state.flow.prompt.requestId}`;
-  return undefined;
+  if (state === undefined) return undefined;
+  if (state.step === "apiKey") return `api-key:${state.provider.authType}:${state.provider.id}`;
+  if (state.step === "oauth") {
+    return state.flow.prompt !== undefined
+      ? `oauth:${state.flow.flowId}:${state.flow.prompt.requestId}`
+      : `oauth:${state.flow.flowId}:${state.flow.status}:${state.flow.error ?? ""}:${state.error ?? ""}`;
+  }
+  if (state.step === "providers" || state.step === "logout") return `${state.step}:${state.providers.map((provider) => provider.id).join(",")}`;
+  return state.step;
 }
 
 function statusLabel(provider: AuthProviderOption): string {

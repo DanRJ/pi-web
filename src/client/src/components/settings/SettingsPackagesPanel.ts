@@ -223,6 +223,14 @@ export class SettingsPackagesPanel extends LitElement {
     .package-main strong, .package-main small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .package-actions { display: flex; align-items: center; gap: 8px; }
     code { border: 1px solid var(--pi-border-muted); border-radius: 5px; background: var(--pi-bg); padding: 1px 4px; color: var(--pi-text); font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; overflow-wrap: anywhere; }
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) button,
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) input,
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) code,
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .loading-card,
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .install-card,
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .package-card { border-radius: 0; }
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .install-card,
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .package-card { border-width: var(--pi-divider-width, 2px); }
 
     @media (max-width: 767px) {
       .package-toolbar { display: grid; gap: 12px; }

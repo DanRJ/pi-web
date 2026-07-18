@@ -237,6 +237,30 @@ describe("MachineService", () => {
     expect(requestJson).toHaveBeenCalledTimes(2);
   });
 
+  it("does not cache a deferred probe from an old connection generation", async () => {
+    const probes: { resolve: (value: { statusCode: number; headers: Record<string, string>; body: unknown }) => void }[] = [];
+    const remoteService = new MachineService(new MachineStore(storePath), {
+      remoteClientFactory: () => fakeRemoteClient({
+        requestJson: () => new Promise((resolve) => { probes.push({ resolve }); }),
+      }),
+      healthCacheTtlMs: 10_000,
+    });
+    const machine = await remoteService.add({ name: "Remote", baseUrl: "https://old.example.test" });
+
+    const oldProbe = remoteService.health(machine.id);
+    await vi.waitFor(() => { expect(probes).toHaveLength(1); });
+    await remoteService.update(machine.id, { baseUrl: "https://new.example.test" });
+    const newProbe = remoteService.health(machine.id);
+    await vi.waitFor(() => { expect(probes).toHaveLength(2); });
+    probes[1]?.resolve({ statusCode: 200, headers: {}, body: remoteStatusBody() });
+    await newProbe;
+    probes[0]?.resolve({ statusCode: 503, headers: {}, body: {} });
+    await oldProbe;
+
+    await expect(remoteService.health(machine.id)).resolves.toMatchObject({ ok: true, status: "online" });
+    expect(probes).toHaveLength(2);
+  });
+
   it("does not allow local machine mutation", async () => {
     await expect(service.update("local", { name: "Other" })).rejects.toThrow("Local machine cannot be changed");
     await expect(service.remove("local")).rejects.toThrow("Local machine cannot be deleted");
@@ -251,6 +275,15 @@ describe("MachineService", () => {
 async function expectOwnerOnlyMachineStore(path: string): Promise<void> {
   if (process.platform === "win32") return;
   expect((await stat(path)).mode & 0o777).toBe(0o600);
+}
+
+function remoteStatusBody() {
+  return {
+    components: {
+      web: { component: "web" as const, label: "Web/UI", stale: false, available: true },
+      sessiond: { component: "sessiond" as const, label: "Session daemon", stale: false, available: true },
+    },
+  };
 }
 
 function remoteRuntimeBody(): PiWebRuntimeResponse {

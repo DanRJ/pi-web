@@ -113,6 +113,10 @@ export class SettingsPanelFrame extends LitElement {
     code { border: 1px solid var(--pi-border-muted); border-radius: 5px; background: var(--pi-bg); padding: 1px 4px; color: var(--pi-text); font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; overflow-wrap: anywhere; }
     .content { display: grid; gap: 14px; min-width: 0; }
     .content ::slotted(*) { min-width: 0; }
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) button,
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .notice,
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) code { border-radius: 0; }
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .notice { border-width: var(--pi-divider-width, 2px); }
 
     @media (max-width: 767px) {
       .section-heading { display: grid; gap: 12px; }

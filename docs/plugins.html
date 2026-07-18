@@ -160,7 +160,8 @@
               <p>
                 Use <strong>Settings → PI WEB plugins</strong> to enable or disable discovered PI WEB browser plugins
                 before the browser imports them. In a federated setup, this plugin enablement surface targets the
-                currently selected machine and labels where changes are saved. If an older or unavailable remote PI WEB
+                currently selected machine and labels where changes are saved. Editing that remote connection in
+                <strong>Settings → Machines</strong> preserves the selected machine and its active work, so it does not switch the plugin target. If an older or unavailable remote PI WEB
                 server does not advertise selected-machine settings support, PI WEB reports the plugin settings as
                 unsupported or unavailable instead of silently falling back to the gateway. After installing, removing, or
                 updating a Pi package, type <code>/reload</code> in each idle PI WEB session on the target machine to

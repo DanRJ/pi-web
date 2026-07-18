@@ -1,12 +1,13 @@
 import { css, html, LitElement, type PropertyValues, type TemplateResult } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import type { AppAction } from "../actions";
-import { configApi, piPackagesApi, pluginsApi, type Machine, type MachineRuntime, type PiPackageMutationResponse, type PiPackageScope, type PiPackagesResponse, type PiWebConfigResponse, type PiWebConfigValues, type PiWebPluginsResponse } from "../api";
-import type { SettingsSection } from "../settingsRoute";
+import { configApi, piPackagesApi, pluginsApi, type Machine, type MachineHealth, type MachineRuntime, type PiPackageMutationResponse, type PiPackageScope, type PiPackagesResponse, type PiWebConfigResponse, type PiWebConfigValues, type PiWebPluginsResponse, type SessionInfo, type SessionStatus } from "../api";
+import { settingsSectionAnchor, type SettingsSection } from "../settingsRoute";
 import "./settings/SettingsGeneralPanel";
 import "./settings/SettingsSessiondPanel";
 import "./settings/SettingsPackagesPanel";
 import "./settings/SettingsPluginsPanel";
+import "./settings/SettingsMachinesPanel";
 import "./settings/SettingsShortcutsPanel";
 import { friendlyPiPackageErrorMessage, isPiPackageManagementUnsupported, piPackageManagementSupport, piPackageManagementSupportKey, piPackageMutationFollowUpMessage, piPackageTargetLabel, shouldRefreshGatewayPluginsAfterPiPackageMutation, type PiPackageManagementSupport, type PiPackageOperationState, type PiPackageTargetContext } from "./settings/piPackageSettings";
 import { loadGatewaySettingsData, loadPiPackagesData } from "./settings/settingsDataLoading";
@@ -21,8 +22,21 @@ export class SettingsDialog extends LitElement {
   @property({ attribute: false }) actions: AppAction[] = [];
   @property({ attribute: false }) machine: Machine | undefined;
   @property({ attribute: false }) machineRuntime: MachineRuntime | undefined;
+  @property({ attribute: false }) machines: readonly Machine[] = [];
+  @property({ attribute: false }) machineStatuses: Record<string, MachineHealth> = {};
+  @property({ attribute: false }) machineRuntimes: Record<string, MachineRuntime> = {};
+  @property({ attribute: false }) session: SessionInfo | undefined;
+  @property({ attribute: false }) sessionStatus: SessionStatus | undefined;
+  @property({ reflect: true }) presentation: "dialog" | "destination" = "dialog";
   @property({ attribute: false }) onNavigate?: (section: SettingsSection) => void;
   @property({ attribute: false }) onClose?: () => void;
+  @property({ attribute: false }) onSelectMachine?: (machine: Machine) => void | Promise<void>;
+  @property({ attribute: false }) onAddMachine?: () => void;
+  @property({ attribute: false }) onConfigureMachine?: (machine: Machine) => void;
+  @property({ attribute: false }) onRemoveMachine?: (machine: Machine) => void | Promise<void>;
+  @property({ attribute: false }) onSelectModel?: () => void;
+  @property({ attribute: false }) onConfigureAuth?: () => void;
+  @property({ attribute: false }) onLogoutAuth?: () => void;
   @property({ attribute: false }) onConfigSaved?: (config: PiWebConfigValues) => void;
   @property({ attribute: false }) onRefreshMachineRuntime?: (machineId: string) => void | Promise<void>;
   @state() private configResponse: PiWebConfigResponse | undefined;
@@ -47,12 +61,17 @@ export class SettingsDialog extends LitElement {
   @state() private savedMessage = "";
   @state() private packageMessage = "";
   private savedMessageTimer: number | undefined;
+  private savingTargetKey: string | undefined;
   private loadRequestSeq = 0;
   private accessLoadRequestSeq = 0;
   private sessiondLoadRequestSeq = 0;
   private pluginLoadRequestSeq = 0;
   private packageLoadRequestSeq = 0;
   private packageMutationSeq = 0;
+  private gatewaySaveRequestSeq = 0;
+  private hasPresentedDestination = false;
+  private hasFinishedFirstUpdate = false;
+  private skipNextDestinationSectionScroll = false;
 
   override connectedCallback(): void {
     super.connectedCallback();
@@ -64,12 +83,22 @@ export class SettingsDialog extends LitElement {
   }
 
   override firstUpdated(): void {
-    this.focusInitialControl();
+    this.hasFinishedFirstUpdate = true;
+    if (this.presentation === "dialog") {
+      this.focusInitialControl();
+      return;
+    }
+    this.hasPresentedDestination = true;
+    // Lit invokes firstUpdated and updated in differing order depending on the
+    // initial property set, so consume the first section update in either case.
+    this.skipNextDestinationSectionScroll = true;
+    this.scrollToSection(this.section, false);
+    void this.updateComplete.then(() => { this.skipNextDestinationSectionScroll = false; });
   }
 
   /** Lets the shell hand focus into this modal after it has rendered. */
   focusInitialControl(): void {
-    this.renderRoot.querySelector<HTMLButtonElement>(".close-button")?.focus();
+    if (this.presentation === "dialog") this.renderRoot.querySelector<HTMLButtonElement>(".close-button")?.focus();
   }
 
   override disconnectedCallback(): void {
@@ -79,18 +108,43 @@ export class SettingsDialog extends LitElement {
   }
 
   protected override updated(changed: PropertyValues<this>): void {
+    if (this.presentation !== "destination") {
+      this.hasPresentedDestination = false;
+      this.skipNextDestinationSectionScroll = false;
+    } else if (!this.hasFinishedFirstUpdate) {
+      // firstUpdated performs the initial passive scroll.
+    } else if (changed.has("section") && this.skipNextDestinationSectionScroll) {
+      this.skipNextDestinationSectionScroll = false;
+    } else if (changed.has("section") && this.hasPresentedDestination) {
+      this.scrollToSection(this.section, false);
+    } else if (changed.has("presentation") && !this.hasPresentedDestination) {
+      this.hasPresentedDestination = true;
+      this.scrollToSection(this.section, false);
+    }
     const currentTarget = this.settingsTarget();
     if (changed.has("machine")) {
       const previousTarget = settingsMachineTarget(changed.get("machine"));
-      if (previousTarget.id !== currentTarget.id) {
+      if (previousTarget.requestKey !== currentTarget.requestKey) {
+        // An edited remote retains its ID. Treat its endpoint/token revision as
+        // a new request target so no old connection can populate this surface.
+        this.invalidateRequestSequencesForTargetChange();
         this.resetAccessStateForTargetChange();
-        if (this.isConnected) void this.loadAccessConfigForTarget(currentTarget);
         this.resetSessiondStateForTargetChange();
-        if (this.isConnected) void this.loadSessiondConfigForTarget(currentTarget);
         this.resetPluginStateForTargetChange();
-        if (this.isConnected) void this.loadPluginsForTarget(currentTarget);
         this.resetPackageStateForTargetChange();
-        if (this.isConnected) void this.loadPackagesForTarget(currentTarget);
+        // A gateway save has no machine target and must remain locked until its
+        // own response settles. Only release a save owned by the old target.
+        if (this.savingTargetKey === previousTarget.requestKey) {
+          this.saving = false;
+          this.savingTargetKey = undefined;
+        }
+        if (this.isConnected) {
+          void this.loadConfig();
+          void this.loadAccessConfigForTarget(currentTarget);
+          void this.reloadSessiondState(currentTarget);
+          void this.loadPluginsForTarget(currentTarget);
+          void this.loadPackagesForTarget(currentTarget);
+        }
         return;
       }
     }
@@ -110,35 +164,78 @@ export class SettingsDialog extends LitElement {
   }
 
   override render(): TemplateResult {
+    return this.presentation === "destination" ? this.renderDestination() : this.renderDialog();
+  }
+
+  private renderDialog(): TemplateResult {
     return html`
       <div class="backdrop" @mousedown=${() => this.onClose?.()}>
         <section class="settings-shell" role="dialog" aria-modal="true" aria-label="PI WEB settings" @mousedown=${(event: MouseEvent) => { event.stopPropagation(); }} @keydown=${(event: KeyboardEvent) => { this.handleKeyDown(event); }}>
           <header class="settings-header">
-            <div>
-              <span class="eyebrow">Settings</span>
-              <h1>PI WEB</h1>
-            </div>
+            <div><span class="eyebrow">Settings</span><h1>PI WEB</h1></div>
             <button class="close-button" title="Close settings" aria-label="Close settings" @click=${() => this.onClose?.()}>×</button>
           </header>
-          <div class="settings-body">
-            <nav class="settings-nav" aria-label="Settings sections">
-              ${this.renderNavButton("general", "General", "Gateway + selected machine")}
-              ${this.renderNavButton("sessiond", "Session daemon", "Selected machine")}
-              ${this.renderNavButton("packages", "Pi packages", "Selected machine")}
-              ${this.renderNavButton("plugins", "PI WEB plugins", "Selected machine")}
-              ${this.renderNavButton("shortcuts", "Keyboard", "Gateway shortcuts")}
-            </nav>
-            <main class="settings-content">
-              ${this.renderActiveSection()}
-            </main>
-          </div>
+          <div class="settings-body"><nav class="settings-nav" aria-label="Settings sections">${this.renderLegacyNav()}</nav><main class="settings-content">${this.renderActiveSection()}</main></div>
         </section>
       </div>
     `;
   }
 
-  private renderActiveSection(): TemplateResult {
-    if (this.section === "sessiond") {
+  private renderDestination(): TemplateResult {
+    return html`
+      <section class="destination-shell" aria-label="PI WEB settings">
+        <header class="settings-header">
+          <div><span class="eyebrow">Settings</span><h1>PI WEB</h1></div>
+          <button class="close-button" title="Close settings" aria-label="Close settings" @click=${() => this.onClose?.()}>×</button>
+        </header>
+        <div class="destination-body">
+          <nav class="settings-nav" aria-label="Settings sections">${this.renderNav()}</nav>
+          <main class="settings-content destination-content">
+            ${this.renderDestinationSections()}
+          </main>
+        </div>
+      </section>
+    `;
+  }
+
+  private renderLegacyNav(): TemplateResult[] {
+    return [
+      this.renderNavButton("general", "General", "Gateway + selected machine"),
+      this.renderNavButton("sessiond", "Session daemon", "Selected machine"),
+      this.renderNavButton("packages", "Pi packages", "Selected machine"),
+      this.renderNavButton("plugins", "PI WEB plugins", "Selected machine"),
+      this.renderNavButton("shortcuts", "Keyboard", "Gateway shortcuts"),
+    ];
+  }
+
+  private renderNav(): TemplateResult[] {
+    return [
+      this.renderNavButton("sessiond", "Agent", "Current session + daemon"),
+      this.renderNavButton("plugins", "Plugins", "Selected machine"),
+      this.renderNavButton("machines", "Machines", "Connections"),
+      this.renderNavButton("packages", "Packages", "Selected machine"),
+      this.renderNavButton("general", "General", "Gateway + files"),
+      this.renderNavButton("shortcuts", "Keyboard", "Gateway shortcuts"),
+    ];
+  }
+
+  private renderDestinationSections(): TemplateResult[] {
+    return [
+      this.renderDestinationSection("sessiond", this.renderActiveSection("sessiond")),
+      this.renderDestinationSection("plugins", this.renderActiveSection("plugins")),
+      this.renderDestinationSection("machines", this.renderActiveSection("machines")),
+      this.renderDestinationSection("packages", this.renderActiveSection("packages")),
+      this.renderDestinationSection("general", this.renderActiveSection("general")),
+      this.renderDestinationSection("shortcuts", this.renderActiveSection("shortcuts")),
+    ];
+  }
+
+  private renderDestinationSection(section: SettingsSection, content: TemplateResult): TemplateResult {
+    return html`<section id=${settingsSectionAnchor(section)} class="destination-section" tabindex="-1">${content}</section>`;
+  }
+
+  private renderActiveSection(section = this.section): TemplateResult {
+    if (section === "sessiond") {
       return html`
         <settings-sessiond-panel
           .configResponse=${this.sessiondConfigResponse}
@@ -149,12 +246,17 @@ export class SettingsDialog extends LitElement {
           .targetLabel=${settingsMachineTargetLabel(this.settingsTarget())}
           .activeAgentProfile=${this.machineRuntime?.components?.sessiond.activeAgentProfile}
           .agentProfileSupport=${this.agentProfileSettingsSupport()}
+          .session=${this.session}
+          .sessionStatus=${this.sessionStatus}
+          .onSelectModel=${this.onSelectModel}
+          .onConfigureAuth=${this.onConfigureAuth}
+          .onLogoutAuth=${this.onLogoutAuth}
           .onReload=${() => this.reloadSessiondState()}
           .onSave=${(config: PiWebConfigValues) => this.saveSessiondConfig(config)}
         ></settings-sessiond-panel>
       `;
     }
-    if (this.section === "shortcuts") {
+    if (section === "shortcuts") {
       return html`
         <settings-shortcuts-panel
           .actions=${this.actions}
@@ -168,7 +270,22 @@ export class SettingsDialog extends LitElement {
         ></settings-shortcuts-panel>
       `;
     }
-    if (this.section === "packages") {
+    if (section === "machines") {
+      return html`
+        <settings-machines-panel
+          .machines=${this.machines}
+          .selectedMachine=${this.machine}
+          .machineStatuses=${this.machineStatuses}
+          .machineRuntimes=${this.machineRuntimes}
+          .onSelectMachine=${this.onSelectMachine}
+          .onAddMachine=${this.onAddMachine}
+          .onConfigureMachine=${this.onConfigureMachine}
+          .onRemoveMachine=${this.onRemoveMachine}
+          .configureDisabled=${this.saving && this.savingTargetKey !== undefined}
+        ></settings-machines-panel>
+      `;
+    }
+    if (section === "packages") {
       return html`
         <settings-packages-panel
           .packagesResponse=${this.packagesResponse}
@@ -185,7 +302,7 @@ export class SettingsDialog extends LitElement {
         ></settings-packages-panel>
       `;
     }
-    if (this.section === "plugins") {
+    if (section === "plugins") {
       return html`
         <settings-plugins-panel
           .configResponse=${this.selectedPluginConfigResponse}
@@ -230,7 +347,27 @@ export class SettingsDialog extends LitElement {
   }
 
   private navigate(section: SettingsSection): void {
+    if (this.presentation !== "destination") {
+      this.onNavigate?.(section);
+      return;
+    }
+    // Sections are all mounted in the destination, so an intentional jump can
+    // scroll immediately. Suppress the matching property-update scroll.
+    this.skipNextDestinationSectionScroll = true;
     this.onNavigate?.(section);
+    this.scrollToSection(section, true);
+    void this.updateComplete.then(() => { this.skipNextDestinationSectionScroll = false; });
+  }
+
+  private scrollToSection(section: SettingsSection, focus: boolean): void {
+    void this.updateComplete.then(() => {
+      const content = this.renderRoot.querySelector<HTMLElement>(".destination-content");
+      const target = this.renderRoot.querySelector<HTMLElement>(`#${settingsSectionAnchor(section)}`);
+      if (content === null || target === null) return;
+      const top = content.scrollTop + target.getBoundingClientRect().top - content.getBoundingClientRect().top;
+      content.scrollTo({ top, behavior: focus ? "smooth" : "auto" });
+      if (focus) target.focus({ preventScroll: true });
+    });
   }
 
   private async loadConfig(): Promise<void> {
@@ -366,10 +503,11 @@ export class SettingsDialog extends LitElement {
     }
     const patch = pluginEnabledConfigPatch(this.selectedPluginConfigResponse.config, pluginId, enabled);
     this.saving = true;
+    this.savingTargetKey = target.requestKey;
     this.pluginError = "";
     this.savedMessage = "";
     try {
-      const response = await configApi.saveConfig(patch, target.id);
+      const response = await this.saveConfigForTarget(patch, target);
       if (!this.isCurrentSettingsTarget(target)) return;
       this.selectedPluginConfigResponse = response;
       if (target.kind === "local" && this.configResponse !== undefined) {
@@ -385,24 +523,32 @@ export class SettingsDialog extends LitElement {
         this.pluginError = `Failed to save PI WEB plugin config on ${settingsMachineTargetLabel(target)}: ${friendlySelectedMachineSettingsErrorMessage(errorMessage(error), target)}`;
       }
     } finally {
-      this.saving = false;
+      this.finishTargetSave(target);
     }
   }
 
   private async saveConfig(config: PiWebConfigValues): Promise<void> {
     if (this.saving) return;
+    // Gateway configuration is global rather than machine-scoped. Keep its
+    // lock independent of selection changes until this request settles.
+    const saveSeq = ++this.gatewaySaveRequestSeq;
     this.saving = true;
+    this.savingTargetKey = undefined;
     this.error = "";
     this.savedMessage = "";
     try {
       const response = await configApi.saveConfig(config);
+      if (saveSeq !== this.gatewaySaveRequestSeq) return;
+      // A config reload may have started while this save was in flight (for
+      // example after a machine switch). It must not overwrite this response.
+      this.loadRequestSeq += 1;
       this.configResponse = response;
       this.onConfigSaved?.(response.effectiveConfig);
       this.showSavedMessage();
     } catch (error) {
-      this.error = `Failed to save config: ${errorMessage(error)}`;
+      if (saveSeq === this.gatewaySaveRequestSeq) this.error = `Failed to save config: ${errorMessage(error)}`;
     } finally {
-      this.saving = false;
+      if (saveSeq === this.gatewaySaveRequestSeq) this.saving = false;
     }
   }
 
@@ -415,10 +561,11 @@ export class SettingsDialog extends LitElement {
       return;
     }
     this.saving = true;
+    this.savingTargetKey = target.requestKey;
     this.accessError = "";
     this.savedMessage = "";
     try {
-      const response = await configApi.saveConfig(config, target.id);
+      const response = await this.saveConfigForTarget(config, target);
       if (!this.isCurrentSettingsTarget(target)) return;
       this.accessConfigResponse = response;
       if (target.kind === "local" && this.configResponse !== undefined) {
@@ -431,7 +578,7 @@ export class SettingsDialog extends LitElement {
         this.accessError = `Failed to save file access/upload config on ${settingsMachineTargetLabel(target)}: ${friendlySelectedMachineSettingsErrorMessage(errorMessage(error), target)}`;
       }
     } finally {
-      this.saving = false;
+      this.finishTargetSave(target);
     }
   }
 
@@ -451,10 +598,11 @@ export class SettingsDialog extends LitElement {
       }
     }
     this.saving = true;
+    this.savingTargetKey = target.requestKey;
     this.sessiondError = "";
     this.savedMessage = "";
     try {
-      const response = await configApi.saveConfig(config, target.id);
+      const response = await this.saveConfigForTarget(config, target);
       if (!this.isCurrentSettingsTarget(target)) return;
       this.sessiondConfigResponse = response;
       if (target.kind === "local" && this.configResponse !== undefined) this.configResponse = mergeSelectedMachineSessiondConfig(this.configResponse, response);
@@ -464,7 +612,7 @@ export class SettingsDialog extends LitElement {
         this.sessiondError = `Failed to save session-daemon config on ${settingsMachineTargetLabel(target)}: ${friendlySelectedMachineSettingsErrorMessage(errorMessage(error), target)}`;
       }
     } finally {
-      this.saving = false;
+      this.finishTargetSave(target);
     }
   }
 
@@ -494,6 +642,7 @@ export class SettingsDialog extends LitElement {
     this.packageLoadRequestSeq += 1;
     this.packageLoading = false;
     this.saving = true;
+    this.savingTargetKey = target.requestKey;
     this.packageOperation = operation;
     this.packageError = "";
     this.packageMessage = "";
@@ -509,10 +658,8 @@ export class SettingsDialog extends LitElement {
       if (this.isCurrentPackageMutation(requestSeq, target)) this.packageError = `Failed to ${label} on ${piPackageTargetLabel(target)}: ${friendlyPiPackageErrorMessage(errorMessage(error), target)}`;
       throw error;
     } finally {
-      if (this.packageMutationSeq === requestSeq) {
-        this.packageOperation = undefined;
-        this.saving = false;
-      }
+      if (this.packageMutationSeq === requestSeq && this.isCurrentPackageTarget(target)) this.packageOperation = undefined;
+      this.finishTargetSave(target);
     }
   }
 
@@ -533,6 +680,13 @@ export class SettingsDialog extends LitElement {
     } catch (error) {
       return `Config saved, but failed to refresh PI WEB plugins from ${settingsMachineTargetLabel(target)}: ${friendlySelectedMachineSettingsErrorMessage(errorMessage(error), target)}`;
     }
+  }
+
+  /** Keeps legacy local calls header-free while binding remote writes to their captured revision. */
+  private saveConfigForTarget(config: PiWebConfigValues, target: SettingsMachineTarget): Promise<PiWebConfigResponse> {
+    return target.revision === undefined
+      ? configApi.saveConfig(config, target.id)
+      : configApi.saveConfig(config, target.id, target.revision);
   }
 
   private settingsTarget(): SettingsMachineTarget {
@@ -568,6 +722,12 @@ export class SettingsDialog extends LitElement {
     return previousSupport.state === "unsupported" || currentSupport.state === "unsupported";
   }
 
+  private finishTargetSave(target: SettingsMachineTarget | PiPackageTargetContext): void {
+    if (this.savingTargetKey !== target.requestKey) return;
+    this.saving = false;
+    this.savingTargetKey = undefined;
+  }
+
   private isCurrentLoad(requestSeq: number): boolean {
     return requestSeq === this.loadRequestSeq;
   }
@@ -593,15 +753,24 @@ export class SettingsDialog extends LitElement {
   }
 
   private isCurrentPackageTarget(target: PiPackageTargetContext): boolean {
-    return this.packageTarget().id === target.id;
+    return this.packageTarget().requestKey === target.requestKey;
   }
 
   private isCurrentSettingsTarget(target: SettingsMachineTarget): boolean {
-    return this.settingsTarget().id === target.id;
+    return this.settingsTarget().requestKey === target.requestKey;
+  }
+
+  /** Invalidates every in-flight request tied to the previous machine connection. */
+  private invalidateRequestSequencesForTargetChange(): void {
+    this.loadRequestSeq += 1;
+    this.accessLoadRequestSeq += 1;
+    this.sessiondLoadRequestSeq += 1;
+    this.pluginLoadRequestSeq += 1;
+    this.packageLoadRequestSeq += 1;
+    this.packageMutationSeq += 1;
   }
 
   private resetAccessStateForTargetChange(): void {
-    this.accessLoadRequestSeq += 1;
     this.accessLoading = false;
     this.accessError = "";
     this.accessConfigResponse = undefined;
@@ -609,7 +778,6 @@ export class SettingsDialog extends LitElement {
   }
 
   private resetSessiondStateForTargetChange(): void {
-    this.sessiondLoadRequestSeq += 1;
     this.sessiondLoading = false;
     this.sessiondError = "";
     this.sessiondConfigResponse = undefined;
@@ -617,7 +785,6 @@ export class SettingsDialog extends LitElement {
   }
 
   private resetPluginStateForTargetChange(): void {
-    this.pluginLoadRequestSeq += 1;
     this.pluginLoading = false;
     this.pluginError = "";
     this.selectedPluginConfigResponse = undefined;
@@ -627,14 +794,12 @@ export class SettingsDialog extends LitElement {
 
   private resetPackageStateForTargetChange(): void {
     const hadPackageOperation = this.packageOperation !== undefined;
-    this.packageLoadRequestSeq += 1;
-    this.packageMutationSeq += 1;
     this.packageLoading = false;
     this.packageOperation = undefined;
     this.packageMessage = "";
     this.packageError = "";
     this.packagesResponse = undefined;
-    if (hadPackageOperation) this.saving = false;
+    if (hadPackageOperation && this.savingTargetKey !== undefined) this.saving = false;
   }
 
   private showSavedMessage(): void {
@@ -663,6 +828,7 @@ export class SettingsDialog extends LitElement {
 
   static override styles = css`
     :host { position: fixed; inset: 0; z-index: 30; color: var(--pi-text); font: 14px var(--pi-body-font-family, system-ui, sans-serif); }
+    :host([presentation="destination"]) { position: static; inset: auto; z-index: auto; display: block; min-width: 0; min-height: 0; height: 100%; }
     .backdrop { box-sizing: border-box; width: 100%; height: 100dvh; display: grid; place-items: center; padding: max(20px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right)) max(20px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left)); background: var(--pi-overlay); overflow: hidden; }
     .settings-shell { width: min(980px, 100%); max-height: min(760px, 100%); min-height: min(620px, 100%); display: grid; grid-template-rows: auto minmax(0, 1fr); border: var(--pi-divider-width, 1px) solid var(--pi-border); border-radius: var(--pi-radius-control, 14px); background: var(--pi-bg); box-shadow: 0 20px 60px var(--pi-shadow-strong); overflow: hidden; }
     .settings-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px; border-bottom: var(--pi-divider-width, 1px) solid var(--pi-border); }
@@ -679,6 +845,17 @@ export class SettingsDialog extends LitElement {
     .settings-nav button.selected { border-color: var(--pi-accent); background: var(--pi-selection-bg); }
     .settings-nav small { color: var(--pi-muted); }
     .settings-content { min-width: 0; min-height: 0; overflow: auto; padding: 18px; }
+    .destination-shell { display: grid; grid-template-rows: auto minmax(0, 1fr); height: 100%; min-height: 0; background: var(--pi-bg); }
+    .destination-body { display: grid; grid-template-columns: minmax(14rem, 18rem) minmax(0, 1fr); min-height: 0; }
+    .destination-shell .settings-header { padding: 1.5rem 2rem; border-bottom-width: var(--pi-divider-width, 2px); }
+    .destination-shell .settings-nav { padding: 1rem; border-right-width: var(--pi-divider-width, 2px); background: var(--pi-bg); }
+    .destination-content { display: grid; align-content: start; gap: 2rem; padding: 2rem; scroll-behavior: smooth; }
+    .destination-section { min-width: 0; scroll-margin-top: 1rem; outline: none; }
+    .destination-section:focus-visible { outline: var(--pi-focus-ring-width, 2px) solid var(--pi-accent); outline-offset: .5rem; }
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .destination-shell { font-size: 1rem; }
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .destination-shell .settings-header,
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .destination-shell .settings-nav { border-color: var(--pi-border); }
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .destination-shell button { border-radius: 0; min-height: 2.75rem; }
 
     @media (max-width: 767px) {
       .backdrop { padding: 0; place-items: stretch; }
@@ -689,6 +866,11 @@ export class SettingsDialog extends LitElement {
       .settings-nav { display: flex; gap: 8px; padding: 8px; border-right: 0; border-bottom: var(--pi-divider-width, 1px) solid var(--pi-border); overflow-x: auto; overflow-y: hidden; }
       .settings-nav button { flex: 0 0 auto; width: auto; min-width: 128px; margin: 0; }
       .settings-content { padding: 14px 12px calc(18px + env(safe-area-inset-bottom)); }
+      .destination-body { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+      .destination-shell .settings-header { padding: max(1rem, env(safe-area-inset-top)) 1rem 1rem; }
+      .destination-shell .settings-nav { display: flex; gap: .5rem; padding: .75rem 1rem; border-right: 0; border-bottom: var(--pi-divider-width, 2px) solid var(--pi-border); overflow-x: auto; overflow-y: hidden; }
+      .destination-shell .settings-nav button { flex: 0 0 auto; min-width: 8rem; margin: 0; }
+      .destination-content { gap: 1.5rem; padding: 1rem; }
     }
   `;
 }

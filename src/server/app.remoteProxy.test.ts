@@ -2,6 +2,7 @@ import { Readable } from "node:stream";
 import { describe, expect, it, vi } from "vitest";
 import { RemoteMachineRequestError, type MachineClient } from "./machines/machineClient.js";
 import { PI_PACKAGE_MUTATION_PROXY_TIMEOUT_MS } from "../shared/federatedRoutes.js";
+import { MACHINE_REVISION_CONFLICT_ERROR, MACHINE_REVISION_HEADER } from "../shared/machineRevision.js";
 import { appTestContext, fakeRemoteClient, registerAppTestHooks } from "./app.testSupport.js";
 
 registerAppTestHooks();
@@ -23,6 +24,62 @@ describe("buildApp remote machine proxy routes", () => {
     expect(response.headers["content-type"]).toContain("application/json");
     expect(response.json()).toEqual([{ id: "p1", name: "Remote Project", path: "/repo", createdAt: "now" }]);
     expect(request).toHaveBeenCalledWith("GET", "/api/projects?active=true", undefined);
+  });
+
+  it("rejects a stale machine revision before forwarding a queued remote mutation", async () => {
+    const added = await appTestContext.app.inject({ method: "POST", url: "/api/machines", payload: { name: "Remote", baseUrl: "https://old.example.test/" } });
+    const remote = added.json<{ id: string; updatedAt: string }>();
+    const request = vi.fn<MachineClient["request"]>();
+    appTestContext.remoteClient = fakeRemoteClient({ request });
+
+    await appTestContext.app.inject({ method: "PATCH", url: `/api/machines/${remote.id}`, payload: { baseUrl: "https://new.example.test/" } });
+    const response = await appTestContext.app.inject({
+      method: "POST",
+      url: `/api/machines/${remote.id}/sessions`,
+      headers: { [MACHINE_REVISION_HEADER]: remote.updatedAt },
+      payload: { cwd: "/repo" },
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toMatchObject({ error: MACHINE_REVISION_CONFLICT_ERROR, machineId: remote.id });
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it("forwards a matching machine revision without leaking the gateway-only header", async () => {
+    const added = await appTestContext.app.inject({ method: "POST", url: "/api/machines", payload: { name: "Remote", baseUrl: "https://remote.example.test/" } });
+    const remote = added.json<{ id: string; updatedAt: string }>();
+    const request = vi.fn<MachineClient["request"]>(() => Promise.resolve({
+      statusCode: 200,
+      headers: { "content-type": "application/json" },
+      body: Readable.from([JSON.stringify({ accepted: true })]),
+    }));
+    appTestContext.remoteClient = fakeRemoteClient({ request });
+
+    const response = await appTestContext.app.inject({
+      method: "POST",
+      url: `/api/machines/${remote.id}/sessions`,
+      headers: { [MACHINE_REVISION_HEADER]: remote.updatedAt },
+      payload: { cwd: "/repo" },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(request).toHaveBeenCalledWith("POST", "/api/sessions", { cwd: "/repo" });
+  });
+
+  it("keeps older clients without a machine revision header compatible", async () => {
+    const added = await appTestContext.app.inject({ method: "POST", url: "/api/machines", payload: { name: "Remote", baseUrl: "https://remote.example.test/" } });
+    const remote = added.json<{ id: string }>();
+    const request = vi.fn<MachineClient["request"]>(() => Promise.resolve({
+      statusCode: 200,
+      headers: { "content-type": "application/json" },
+      body: Readable.from([JSON.stringify({ accepted: true })]),
+    }));
+    appTestContext.remoteClient = fakeRemoteClient({ request });
+
+    const response = await appTestContext.app.inject({ method: "POST", url: `/api/machines/${remote.id}/sessions`, payload: { cwd: "/repo" } });
+
+    expect(response.statusCode).toBe(200);
+    expect(request).toHaveBeenCalledWith("POST", "/api/sessions", { cwd: "/repo" });
   });
 
   it("preserves the force-refresh query when proxying update checks", async () => {

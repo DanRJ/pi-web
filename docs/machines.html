@@ -94,6 +94,7 @@
             <a href="#when-to-use">When to use it</a>
             <a href="#prepare-machines">Set up another runtime</a>
             <a href="#add-machine">Add a machine</a>
+            <a href="#configure-machine">Configure a machine</a>
             <a href="#what-is-proxied">What works remotely</a>
             <a href="#auth-credentials">Credentials</a>
             <a href="#plugins">Plugins</a>
@@ -201,6 +202,20 @@ PI WEB gateway you opened
                 Removing a remote machine only removes it from this gateway's registry. It does not stop the remote PI WEB
                 service or delete projects, workspaces, sessions, or credentials on the target machine.
               </div>
+            </section>
+
+            <section id="configure-machine">
+              <h2>Configure a machine</h2>
+              <p>
+                In <strong>Settings → Machines</strong>, select <strong>Configure</strong> on a remote machine to change its
+                name, base URL, or bearer token. Saving a connection edit keeps the current selected machine, project,
+                workspace, session, and tool in place, then refreshes the connection status and reported PI WEB version.
+              </p>
+              <p>
+                PI WEB never displays a stored bearer token. Leave the token field blank to keep the stored value, enter
+                a replacement to change it, or choose <strong>Clear stored token</strong> to remove it explicitly. The local
+                gateway has no remote connection record, so use its machine-scoped Settings instead of Configure.
+              </p>
             </section>
 
             <section id="what-is-proxied">

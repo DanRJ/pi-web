@@ -22,6 +22,24 @@ describe("buildApp machine routes", () => {
     expect(addResponse.json()).not.toHaveProperty("token");
   });
 
+  it("updates a remote machine while keeping a blank token as an explicit clear", async () => {
+    const added = await appTestContext.app.inject({ method: "POST", url: "/api/machines", payload: { name: "Remote", baseUrl: "https://remote.example.test/", token: "secret" } });
+    const remote = added.json<{ id: string }>();
+
+    const response = await appTestContext.app.inject({ method: "PATCH", url: `/api/machines/${encodeURIComponent(remote.id)}`, payload: { name: "Renamed", baseUrl: "https://new.example.test/", token: "" } });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ id: remote.id, name: "Renamed", baseUrl: "https://new.example.test" });
+    expect(response.json()).not.toHaveProperty("token");
+  });
+
+  it("rejects local-machine connection edits", async () => {
+    const response = await appTestContext.app.inject({ method: "PATCH", url: "/api/machines/local", payload: { name: "Not local" } });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toEqual({ error: "Local machine cannot be changed" });
+  });
+
   it("reports machine health for local and remote machines", async () => {
     const addResponse = await appTestContext.app.inject({ method: "POST", url: "/api/machines", payload: { name: "Remote", baseUrl: "https://remote.example.test/" } });
     const remote = addResponse.json<{ id: string }>();

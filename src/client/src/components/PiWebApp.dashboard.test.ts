@@ -9,6 +9,21 @@ import { WorkspacePanel, type WorkspacePanelEmptyState } from "./WorkspacePanel"
 afterEach(() => vi.unstubAllGlobals());
 
 describe("PiWebApp dashboard transitions", () => {
+  it("keeps the Configure dialog open when a remote edit fails", async () => {
+    const app = createApp();
+    const remote = { id: "remote", name: "Remote", kind: "remote" as const, baseUrl: "https://remote.example.test", createdAt: "now", updatedAt: "now" };
+    setState(app, { ...appState(), machines: [machine(), remote], selectedMachine: remote });
+    const updateMachine = vi.fn(() => Promise.resolve(undefined));
+    Reflect.set(app, "machines", { updateMachine });
+
+    callVoid(app, "openMachineDialog", remote);
+    await callAsync(app, "submitMachineDialog", { name: "Renamed", baseUrl: "https://remote.example.test" });
+
+    expect(updateMachine).toHaveBeenCalledWith(remote, { name: "Renamed", baseUrl: "https://remote.example.test" });
+    expect(projectAppState(app).machineDialogOpen).toBe(true);
+    expect(Reflect.get(app, "machineDialogMachine")).toEqual(remote);
+  });
+
   it("does not restore a workspace session for a fresh dashboard route", async () => {
     const app = createApp("?page=dashboard");
     const restoreRoute = vi.fn(() => Promise.resolve());
@@ -72,6 +87,21 @@ describe("PiWebApp dashboard transitions", () => {
 
     expect(Reflect.get(app, "topLevelPage")).toBe("workspace");
     expect(projectAppState(app).mainView).toBe("chat");
+  });
+
+  it("opens Modernist Settings at Agent from desktop Actions", async () => {
+    const app = createApp();
+    setState(app, { ...appState(), actionPaletteOpen: true });
+    Reflect.set(app, "topLevelPage", "dashboard");
+    Reflect.set(app, "activeThemeId", "themes:modernist-dark");
+    const openSettings = actions(app).find((action) => action.id === "core:settings.open");
+    if (openSettings === undefined) throw new Error("Open Settings action unavailable");
+
+    binding(findTemplate(app.render(), "<action-palette"), ".onRun")(openSettings);
+    await flush();
+
+    expect(Reflect.get(app, "settingsSection")).toBe("sessiond");
+    expect(Reflect.get(app, "topLevelPage")).toBe("dashboard");
   });
 
   it("renders one action palette in the workspace shell", () => {
@@ -220,6 +250,101 @@ describe("PiWebApp dashboard transitions", () => {
     const href = callString(app, "dashboardSessionHref", { ...card("workspace"), id: "session" }, "remote");
 
     expect(href).toBe("/nested/?keep=1&machine=remote&project=project&workspace=workspace&session=session&view=chat");
+  });
+
+  it("keeps the desktop dashboard mounted while Modernist Settings opens and closes", () => {
+    const app = createApp("?page=dashboard");
+    const state = appState();
+    const dashboardState = { dashboard: undefined, loading: false, error: undefined };
+    setState(app, state);
+    Reflect.set(app, "topLevelPage", "dashboard");
+    Reflect.set(app, "dashboardState", dashboardState);
+    Reflect.set(app, "activeThemeId", "themes:modernist-dark");
+
+    callVoid(app, "openSettings");
+
+    expect(Reflect.get(app, "settingsSection")).toBe("sessiond");
+    expect(Reflect.get(app, "topLevelPage")).toBe("dashboard");
+    expect(Reflect.get(app, "dashboardState")).toBe(dashboardState);
+    expect(templateMarkup(app.render())).toContain("<settings-dialog");
+    expect(templateMarkup(app.render())).toContain("<session-dashboard");
+
+    callVoid(app, "closeSettings");
+
+    expect(Reflect.get(app, "topLevelPage")).toBe("dashboard");
+    expect(Reflect.get(app, "dashboardState")).toBe(dashboardState);
+    expect(projectAppState(app)).toBe(state);
+  });
+
+  it("keeps the legacy Settings modal dashboard handoff unchanged", () => {
+    const app = createApp("?page=dashboard");
+    setState(app, appState());
+    Reflect.set(app, "topLevelPage", "dashboard");
+
+    callVoid(app, "openSettings");
+
+    expect(Reflect.get(app, "settingsSection")).toBe("general");
+    expect(Reflect.get(app, "topLevelPage")).toBe("workspace");
+  });
+
+  it("keeps an explicit General Settings section in Modernist", () => {
+    const app = createApp();
+    Reflect.set(app, "activeThemeId", "themes:modernist-dark");
+
+    callVoid(app, "openSettings", "general");
+
+    expect(Reflect.get(app, "settingsSection")).toBe("general");
+  });
+
+  it("keeps the mobile dashboard and its prior destination while Modernist Settings opens and closes", () => {
+    const app = createApp("?page=dashboard");
+    const state = appState();
+    setState(app, state);
+    Reflect.set(app, "topLevelPage", "dashboard");
+    Reflect.set(app, "activeThemeId", "themes:modernist-dark");
+    setMobileLayout(app);
+    Reflect.set(app, "mobileDestination", "sessions");
+
+    callVoid(app, "selectMobileDestination", "settings");
+
+    expect(Reflect.get(app, "settingsSection")).toBe("sessiond");
+    expect(Reflect.get(app, "topLevelPage")).toBe("dashboard");
+    expect(Reflect.get(app, "mobileDestination")).toBe("settings");
+    expect(templateMarkup(app.render())).toContain("<session-dashboard");
+
+    callVoid(app, "closeSettings");
+
+    expect(Reflect.get(app, "topLevelPage")).toBe("dashboard");
+    expect(Reflect.get(app, "mobileDestination")).toBe("sessions");
+    expect(projectAppState(app)).toBe(state);
+  });
+
+  it("keeps the mounted dashboard intact when browser Back closes Modernist Settings", async () => {
+    const app = createApp("?page=dashboard&settings=general");
+    const state = appState();
+    const dashboardState = { dashboard: undefined, loading: false, error: undefined };
+    setState(app, state);
+    Reflect.set(app, "topLevelPage", "dashboard");
+    Reflect.set(app, "dashboardState", dashboardState);
+    Reflect.set(app, "activeThemeId", "themes:modernist-dark");
+    const dashboard: unknown = Reflect.get(app, "dashboard");
+    if (!isDashboardController(dashboard)) throw new Error("Dashboard controller unavailable");
+    const refresh = vi.spyOn(dashboard, "refresh").mockResolvedValue();
+    const restoreRoute = vi.fn(() => Promise.resolve());
+    Reflect.set(app, "restoreRoute", restoreRoute);
+    window.location.href = "http://localhost/?page=dashboard";
+    window.location.search = "?page=dashboard";
+    const handler: unknown = Reflect.get(app, "onPopState");
+    if (!isVoidMethod(handler)) throw new Error("Popstate handler unavailable");
+
+    handler.call(app);
+    await flush();
+
+    expect(Reflect.get(app, "settingsSection")).toBeUndefined();
+    expect(Reflect.get(app, "topLevelPage")).toBe("dashboard");
+    expect(Reflect.get(app, "dashboardState")).toBe(dashboardState);
+    expect(refresh).not.toHaveBeenCalled();
+    expect(restoreRoute).not.toHaveBeenCalled();
   });
 
   it("returns from the dashboard through the selected mobile destination", () => {

@@ -27,6 +27,13 @@ describe("PiWebApp mobile shell", () => {
     expect(styles).toContain("app-mobile-destination-tabs { grid-column: 1; grid-row: 2; display: block; min-width: 0; }");
   });
 
+  it("overrides the high-specificity Settings desktop tracks with one mobile content column", () => {
+    const styles = mobileShellStyles();
+    expect(styles).toContain(".shell[data-settings-destination] { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }");
+    expect(styles).toContain(".shell[data-settings-destination] > settings-dialog { grid-column: 1; grid-row: 1; display: block; min-width: 0; min-height: 0; }");
+    expect(styles).toContain("app-mobile-destination-tabs { grid-column: 1; grid-row: 2; display: block; min-width: 0; }");
+  });
+
   it("keeps Tools visible in the first mobile grid row while tablet-only non-workspace views hide it", () => {
     const mobileStyles = mobileShellStyles();
     expect(mobileStyles).toContain(".shell.mobile-destination-tools > workspace-panel { grid-column: 1; grid-row: 1; display: flex; }");
@@ -71,6 +78,19 @@ describe("PiWebApp mobile shell", () => {
     expect(Reflect.get(app, "mobileDestination")).toBe("tools");
     expect(values(app.render())).toContain("shell chat-view mobile-destination-tools");
     expect(templateMarkup(app.render())).toContain("<workspace-panel");
+  });
+
+  it.each([
+    ["themes:classic", "dialog"],
+    ["themes:pi-web-dark", "dialog"],
+    ["themes:modernist-dark", "destination"],
+  ] as const)("passes %s Settings presentation semantics to the mobile destinations", (theme, settingsPresentation) => {
+    const app = createApp();
+    Reflect.set(app, "activeThemeId", theme);
+
+    const template = renderTemplate(app, "renderMobileDestinationTabs");
+
+    expect(propertyValue(template, ".settingsPresentation=")).toBe(settingsPresentation);
   });
 
   it("keeps the mounted chat surface when every bottom destination follows a Modernist tool", () => {
@@ -186,6 +206,25 @@ describe("PiWebApp mobile shell", () => {
     await flushFocus();
     expect(staleSettingsButton.control.focus).not.toHaveBeenCalled();
     expect(focusSelected).toHaveBeenCalledOnce();
+  });
+
+  it("closes a Modernist Settings destination before opening the model picker without restoring Settings focus", async () => {
+    vi.stubGlobal("HTMLElement", FakeHTMLElement);
+    const app = createApp();
+    const settingsButton = nestedSettingsButton();
+    setRenderRoot(app, settingsButton.host);
+    setState(app, { ...initialAppState(), selectedSession: session() });
+    Reflect.set(app, "activeThemeId", "themes:modernist-dark");
+    const openModelDialog = vi.fn(() => Promise.resolve());
+    Reflect.set(app, "openModelDialog", openModelDialog);
+
+    call(app, "openSettings");
+    call(app, "openSettingsModelPicker");
+    await flushFocus();
+
+    expect(Reflect.get(app, "settingsSection")).toBeUndefined();
+    expect(openModelDialog).toHaveBeenCalledOnce();
+    expect(settingsButton.control.focus).not.toHaveBeenCalled();
   });
 
   it("returns direct settings routes to a visible mobile destination or desktop main landmark", async () => {
@@ -310,6 +349,20 @@ function workspace() {
   return { id: "workspace-1", projectId: "project-1", path: "/repo", label: "Repo", isMain: true, isGitRepo: true, isGitWorktree: false };
 }
 
+function renderTemplate(app: PiWebApp, name: string): TemplateResult {
+  const method: unknown = Reflect.get(app, name);
+  if (!isUnknownMethod(method)) throw new Error(`Expected ${name} method`);
+  const template: unknown = method.call(app);
+  if (!isTemplate(template)) throw new Error(`Expected ${name} template`);
+  return template;
+}
+
+function propertyValue(template: TemplateResult, marker: string): unknown {
+  const index = strings(template).findIndex((part) => part.includes(marker));
+  if (index < 0) throw new Error(`Expected ${marker} binding`);
+  return values(template)[index];
+}
+
 function templateMarkup(template: TemplateResult): string {
   return `${strings(template).join("")}${values(template).map((value) => nestedMarkup(value)).join("")}`;
 }
@@ -336,6 +389,10 @@ function isTemplate(value: unknown): value is TemplateResult {
 }
 
 function isVoidMethod(value: unknown): value is { call(thisArg: unknown, ...args: unknown[]): void } {
+  return typeof value === "function";
+}
+
+function isUnknownMethod(value: unknown): value is { call(thisArg: unknown, ...args: unknown[]): unknown } {
   return typeof value === "function";
 }
 

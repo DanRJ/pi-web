@@ -13,6 +13,11 @@ export interface CreateMachineInput {
 
 export type UpdateMachineInput = Partial<CreateMachineInput>;
 
+export type RemoteMachineClientResolution =
+  | { status: "found"; client: MachineClient }
+  | { status: "missing" }
+  | { status: "stale"; currentRevision: string };
+
 export interface MachineServiceDependencies {
   localRuntime?: () => Promise<PiWebRuntimeResponse>;
   remoteClientFactory?: (machine: StoredMachine) => MachineClient;
@@ -27,6 +32,8 @@ const DEFAULT_HEALTH_CACHE_TTL_MS = 5_000;
 export class MachineService {
   private readonly healthCache = new Map<string, { expiresAt: number; health: MachineHealth }>();
   private readonly runtimeCache = new Map<string, { expiresAt: number; runtime: MachineRuntime }>();
+  /** Invalidates probes already in flight, not merely their current cache entries. */
+  private readonly probeGenerations = new Map<string, number>();
 
   constructor(private readonly store = new MachineStore(), private readonly deps: MachineServiceDependencies = {}) {}
 
@@ -55,20 +62,14 @@ export class MachineService {
     if (input.token !== undefined) patch.token = input.token;
     if (input.headers !== undefined) patch.headers = validateHeaders(input.headers);
     const stored = await this.store.update(id, patch);
-    if (stored !== undefined) {
-      this.healthCache.delete(id);
-      this.runtimeCache.delete(id);
-    }
+    if (stored !== undefined) this.invalidateProbeCache(id);
     return stored === undefined ? undefined : publicMachine(stored);
   }
 
   async remove(id: string): Promise<boolean> {
     if (id === "local") throw new Error("Local machine cannot be deleted");
     const removed = await this.store.remove(id);
-    if (removed) {
-      this.healthCache.delete(id);
-      this.runtimeCache.delete(id);
-    }
+    if (removed) this.invalidateProbeCache(id);
     return removed;
   }
 
@@ -78,8 +79,20 @@ export class MachineService {
   }
 
   async remoteClient(id: string): Promise<MachineClient | undefined> {
+    const resolved = await this.remoteClientAtRevision(id);
+    return resolved.status === "found" ? resolved.client : undefined;
+  }
+
+  /**
+   * Resolves a remote connection only when its public revision still matches.
+   * The comparison precedes client construction so a stale mutation can never
+   * select a replacement endpoint or token.
+   */
+  async remoteClientAtRevision(id: string, expectedRevision?: string): Promise<RemoteMachineClientResolution> {
     const machine = await this.storedRemote(id);
-    return machine === undefined ? undefined : this.clientFor(machine);
+    if (machine === undefined) return { status: "missing" };
+    if (expectedRevision !== undefined && expectedRevision !== machine.updatedAt) return { status: "stale", currentRevision: machine.updatedAt };
+    return { status: "found", client: this.clientFor(machine) };
   }
 
   async health(id: string): Promise<MachineHealth | undefined> {
@@ -87,9 +100,10 @@ export class MachineService {
     const now = this.now().getTime();
     if (cached !== undefined && cached.expiresAt > now) return cached.health;
 
+    const generation = this.probeGeneration(id);
     const health = id === "local" ? await this.localHealth() : await this.remoteHealth(id);
     if (health === undefined) return undefined;
-    this.healthCache.set(id, { expiresAt: now + (this.deps.healthCacheTtlMs ?? DEFAULT_HEALTH_CACHE_TTL_MS), health });
+    if (this.probeGeneration(id) === generation) this.healthCache.set(id, { expiresAt: now + (this.deps.healthCacheTtlMs ?? DEFAULT_HEALTH_CACHE_TTL_MS), health });
     return health;
   }
 
@@ -98,9 +112,10 @@ export class MachineService {
     const now = this.now().getTime();
     if (!refresh && cached !== undefined && cached.expiresAt > now) return cached.runtime;
 
+    const generation = this.probeGeneration(id);
     const runtime = id === "local" ? await this.localRuntime() : await this.remoteRuntime(id);
     if (runtime === undefined) return undefined;
-    this.runtimeCache.set(id, { expiresAt: now + (this.deps.runtimeCacheTtlMs ?? DEFAULT_HEALTH_CACHE_TTL_MS), runtime });
+    if (this.probeGeneration(id) === generation) this.runtimeCache.set(id, { expiresAt: now + (this.deps.runtimeCacheTtlMs ?? DEFAULT_HEALTH_CACHE_TTL_MS), runtime });
     return runtime;
   }
 
@@ -161,6 +176,16 @@ export class MachineService {
 
   private clientFor(machine: StoredMachine): MachineClient {
     return this.deps.remoteClientFactory?.(machine) ?? new RemoteMachineClient(machine);
+  }
+
+  private probeGeneration(id: string): number {
+    return this.probeGenerations.get(id) ?? 0;
+  }
+
+  private invalidateProbeCache(id: string): void {
+    this.probeGenerations.set(id, this.probeGeneration(id) + 1);
+    this.healthCache.delete(id);
+    this.runtimeCache.delete(id);
   }
 
   private now(): Date {

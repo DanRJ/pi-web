@@ -1,4 +1,5 @@
 import type { DeleteWorkspaceFileResponse, FileSuggestion, MoveWorkspaceFileOptions, PiPackageInstallRequest, PiPackageRemoveRequest, PiPackageScope, PiPackageUpdateRequest, PiWebConfigValues, PromptAttachment, RunTerminalCommandInput, SessionBulkMutationRef, SessionCleanupRequest, SessionRef, TerminalCommandRun, TerminalCommandRunFilter, WriteWorkspaceFileOptions } from "../../../shared/apiTypes";
+import { machineRevisionHeaders } from "../../../shared/machineRevision";
 import type { FederatedSessionDashboardResponse } from "../../../shared/sessionDashboard";
 import type { ExtensionUiResponse } from "../../../shared/extensionUi";
 import { resolveAppUrl } from "../appUrl";
@@ -115,9 +116,17 @@ export const piWebApi = {
   piWebRuntime: () => request("api/pi-web/runtime", parsePiWebRuntimeResponse),
 };
 
+export interface MachineUpdateInput {
+  name?: string;
+  baseUrl?: string;
+  /** Omit to keep the stored token; send an empty string to clear it. */
+  token?: string;
+}
+
 export const machinesApi = {
   machines: () => request("api/machines", parseMachinesResponse),
   addMachine: (input: { name: string; baseUrl: string; token?: string }) => request("api/machines", parseMachine, { method: "POST", body: JSON.stringify(input) }),
+  updateMachine: (machineId: string, input: MachineUpdateInput) => request(`api/machines/${encodeURIComponent(machineId)}`, parseMachine, { method: "PATCH", body: JSON.stringify(input) }),
   deleteMachine: (machineId: string) => request(`api/machines/${encodeURIComponent(machineId)}`, (value) => value, { method: "DELETE" }),
   health: (machineId: string) => request(`api/machines/${encodeURIComponent(machineId)}/health`, parseMachineHealth),
   runtime: (machineId: string, refresh = false) => request(`api/machines/${encodeURIComponent(machineId)}/runtime${refresh ? "?refresh=1" : ""}`, parseMachineRuntime, refresh ? { cache: "no-store" } : {}),
@@ -133,7 +142,12 @@ function pluginsPath(machineId?: string): string {
 
 export const configApi = {
   config: (machineId?: string) => request(configPath(machineId), parsePiWebConfigResponse),
-  saveConfig: (config: PiWebConfigValues, machineId?: string) => request(configPath(machineId), parsePiWebConfigResponse, { method: "PUT", body: JSON.stringify({ config }) }),
+  /** expectedMachineRevision is captured with the remote target before the write starts. */
+  saveConfig: (config: PiWebConfigValues, machineId?: string, expectedMachineRevision?: string) => request(configPath(machineId), parsePiWebConfigResponse, {
+    method: "PUT",
+    body: JSON.stringify({ config }),
+    ...(machineRevisionRequestInit(expectedMachineRevision)),
+  }),
 };
 
 export const pluginsApi = {
@@ -251,12 +265,12 @@ export const sessionsApi = {
     const query = params.toString();
     return request(`${machinePrefix(options?.machineId)}/auth/providers${query === "" ? "" : `?${query}`}`, parseAuthProvidersResponse);
   },
-  saveApiKey: (providerId: string, key: string, machineId = "local") => request(`${machinePrefix(machineId)}/auth/api-key`, parseAccepted, { method: "POST", body: JSON.stringify({ providerId, key }) }),
-  logoutProvider: (providerId: string, machineId = "local") => request(`${machinePrefix(machineId)}/auth/logout`, parseAccepted, { method: "POST", body: JSON.stringify({ providerId }) }),
-  startOAuthLogin: (providerId: string, machineId = "local") => request(`${machinePrefix(machineId)}/auth/oauth`, parseOAuthFlowState, { method: "POST", body: JSON.stringify({ providerId }) }),
+  saveApiKey: (providerId: string, key: string, machineId = "local", expectedMachineRevision?: string) => request(`${machinePrefix(machineId)}/auth/api-key`, parseAccepted, { method: "POST", body: JSON.stringify({ providerId, key }), ...(machineRevisionRequestInit(expectedMachineRevision)) }),
+  logoutProvider: (providerId: string, machineId = "local", expectedMachineRevision?: string) => request(`${machinePrefix(machineId)}/auth/logout`, parseAccepted, { method: "POST", body: JSON.stringify({ providerId }), ...(machineRevisionRequestInit(expectedMachineRevision)) }),
+  startOAuthLogin: (providerId: string, machineId = "local", expectedMachineRevision?: string) => request(`${machinePrefix(machineId)}/auth/oauth`, parseOAuthFlowState, { method: "POST", body: JSON.stringify({ providerId }), ...(machineRevisionRequestInit(expectedMachineRevision)) }),
   oauthFlow: (flowId: string, machineId = "local") => request(`${machinePrefix(machineId)}/auth/oauth/${encodeURIComponent(flowId)}`, parseOAuthFlowState),
-  respondOAuthFlow: (flowId: string, requestId: string, value: string, machineId = "local") => request(`${machinePrefix(machineId)}/auth/oauth/${encodeURIComponent(flowId)}/respond`, parseOAuthFlowState, { method: "POST", body: JSON.stringify({ requestId, value }) }),
-  cancelOAuthFlow: (flowId: string, machineId = "local") => request(`${machinePrefix(machineId)}/auth/oauth/${encodeURIComponent(flowId)}/cancel`, parseOAuthFlowState, { method: "POST" }),
+  respondOAuthFlow: (flowId: string, requestId: string, value: string, machineId = "local", expectedMachineRevision?: string) => request(`${machinePrefix(machineId)}/auth/oauth/${encodeURIComponent(flowId)}/respond`, parseOAuthFlowState, { method: "POST", body: JSON.stringify({ requestId, value }), ...(machineRevisionRequestInit(expectedMachineRevision)) }),
+  cancelOAuthFlow: (flowId: string, machineId = "local", expectedMachineRevision?: string) => request(`${machinePrefix(machineId)}/auth/oauth/${encodeURIComponent(flowId)}/cancel`, parseOAuthFlowState, { method: "POST", ...(machineRevisionRequestInit(expectedMachineRevision)) }),
 };
 
 export const terminalsApi = {
@@ -279,6 +293,11 @@ async function getOptionalTerminalCommandRun(runId: string, machineId: string): 
     throw new Error(apiErrorMessage(body) ?? response.statusText);
   }
   return parseTerminalCommandRun(await response.json());
+}
+
+function machineRevisionRequestInit(expectedMachineRevision: string | undefined): Pick<RequestInit, "headers"> {
+  const headers = machineRevisionHeaders(expectedMachineRevision);
+  return headers === undefined ? {} : { headers };
 }
 
 function terminalCommandRunFilterQuery(filter: TerminalCommandRunFilter | undefined): string {

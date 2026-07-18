@@ -49,6 +49,10 @@ The composer is never fixed or conditionally hidden. The bridge supplies a bound
 
 The [Modernist workspace tools](modernist-workspace-tools.md) architecture records the desktop, tablet, and mobile workbench composition, stable core panel ids, plugin full-surface boundary, and the controller-owned route, terminal, and Git-polling invariants.
 
+## Settings
+
+The [Modernist Settings architecture](modernist-settings.md) records the destination presentation, focus-return rules, selected-machine behavior, and remote connection editing contract.
+
 ## Dashboard
 
 The dashboard is a distinct top-level page rather than a workspace tool, panel, or mobile destination. It retains the Modernist structural language: Archivo, zero-radius controls, two-pixel rules, flat light/dark token surfaces, and a responsive three/two/one-column grid. Running, waiting, idle, and error states always include text or an icon in addition to visual treatment; errors use an ink rule and X rather than a red fill. The running spinner respects reduced-motion preferences.

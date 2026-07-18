@@ -38,6 +38,25 @@ describe("settings-dialog general settings machine targeting", () => {
     expect(getDialogProperty(dialog, "saving")).toBe(false);
   });
 
+  it("keeps a deferred gateway save locked across a machine change", async () => {
+    const save = deferred<PiWebConfigResponse>();
+    const saveSpy = vi.spyOn(configApi, "saveConfig").mockReturnValue(save.promise);
+    const dialog = new SettingsDialog();
+    dialog.machine = remoteMachine;
+
+    const first = callDialogPromise(dialog, "saveConfig", { host: "127.0.0.1" });
+    expect(getDialogProperty(dialog, "saving")).toBe(true);
+    dialog.machine = secondRemoteMachine;
+    callDialogUpdated(dialog, new Map([["machine", remoteMachine]]));
+    expect(getDialogProperty(dialog, "saving")).toBe(true);
+
+    await callDialogPromise(dialog, "saveConfig", { host: "0.0.0.0" });
+    expect(saveSpy).toHaveBeenCalledTimes(1);
+    save.resolve(configResponse({ host: "127.0.0.1" }));
+    await first;
+    expect(getDialogProperty(dialog, "saving")).toBe(false);
+  });
+
   it("loads file access and upload config from the selected machine", async () => {
     const config = configResponse({ pathAccess: { allowedPaths: ["/mnt/share"] }, uploads: { defaultFolder: "manual/uploads" } });
     const configSpy = vi.spyOn(configApi, "config").mockResolvedValue(config);
@@ -62,7 +81,7 @@ describe("settings-dialog general settings machine targeting", () => {
 
     await callDialogPromise(dialog, "saveMachineAccessConfig", patch);
 
-    expect(saveSpy.mock.calls).toEqual([[patch, "remote-a"]]);
+    expect(saveSpy.mock.calls).toEqual([[patch, "remote-a", remoteMachine.updatedAt]]);
     expect(getDialogProperty(dialog, "accessConfigResponse")).toBe(savedConfig);
     expect(getDialogProperty(dialog, "configResponse")).toBeUndefined();
     expect(getDialogProperty(dialog, "savedMessage")).toBe("Config saved.");
@@ -150,18 +169,38 @@ describe("settings-dialog general settings machine targeting", () => {
     expect(getDialogProperty(dialog, "accessLoading")).toBe(false);
   });
 
-  it("ignores stale file access save responses after the selected machine changes", async () => {
-    const save = deferred<PiWebConfigResponse>();
-    vi.spyOn(configApi, "saveConfig").mockReturnValue(save.promise);
+  it("ignores a deferred old-endpoint response after a same-ID connection patch", async () => {
+    const load = deferred<PiWebConfigResponse>();
+    vi.spyOn(configApi, "config").mockReturnValue(load.promise);
     const dialog = new SettingsDialog();
     dialog.machine = remoteMachine;
 
-    const savePromise = callDialogPromise(dialog, "saveMachineAccessConfig", { pathAccess: { allowedPaths: ["/mnt/share"] }, uploads: { defaultFolder: "manual" } });
-    expect(getDialogProperty(dialog, "saving")).toBe(true);
-
-    dialog.machine = secondRemoteMachine;
+    const loadPromise = callDialogPromise(dialog, "loadAccessConfigForTarget");
+    const patchedMachine = { ...remoteMachine, baseUrl: "https://new-lab.example.test", updatedAt: "2026-07-02T00:00:00.000Z" };
+    dialog.machine = patchedMachine;
     callDialogUpdated(dialog, new Map([["machine", remoteMachine]]));
-    save.resolve(configResponse({ pathAccess: { allowedPaths: ["/mnt/share"] }, uploads: { defaultFolder: "manual" } }));
+    load.resolve(configResponse({ pathAccess: { allowedPaths: ["/old-endpoint"] } }));
+    await loadPromise;
+
+    expect(getDialogProperty(dialog, "accessConfigResponse")).toBeUndefined();
+    expect(getDialogProperty(dialog, "accessLoading")).toBe(false);
+  });
+
+  it("keeps a deferred config write bound to its revision after an endpoint patch", async () => {
+    const save = deferred<PiWebConfigResponse>();
+    const saveSpy = vi.spyOn(configApi, "saveConfig").mockReturnValue(save.promise);
+    const dialog = new SettingsDialog();
+    const patch = { pathAccess: { allowedPaths: ["/mnt/share"] }, uploads: { defaultFolder: "manual" } };
+    dialog.machine = remoteMachine;
+
+    const savePromise = callDialogPromise(dialog, "saveMachineAccessConfig", patch);
+    expect(getDialogProperty(dialog, "saving")).toBe(true);
+    expect(saveSpy).toHaveBeenCalledWith(patch, remoteMachine.id, remoteMachine.updatedAt);
+
+    const patchedMachine = { ...remoteMachine, baseUrl: "https://new-lab.example.test", updatedAt: "2026-07-02T00:00:00.000Z" };
+    dialog.machine = patchedMachine;
+    callDialogUpdated(dialog, new Map([["machine", remoteMachine]]));
+    save.resolve(configResponse(patch));
     await savePromise;
 
     expect(getDialogProperty(dialog, "accessConfigResponse")).toBeUndefined();

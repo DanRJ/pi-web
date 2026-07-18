@@ -1,4 +1,4 @@
-import type { TemplateResult } from "lit";
+import { nothing, type TemplateResult } from "lit";
 import { describe, expect, it, vi } from "vitest";
 import { AppMobileDestinationTabs, nextDestination } from "./AppMobileDestinationTabs";
 
@@ -14,7 +14,36 @@ describe("AppMobileDestinationTabs", () => {
     expect(tabDestinations(template)).toEqual(["chat", "sessions", "tools", "settings"]);
     expect(templateMarkup(template)).not.toContain("?disabled=");
     expect(tabTemplates(template).some((tab) => templateStrings(tab).some((part) => part.includes("aria-current=")))).toBe(true);
-    expect(templateMarkup(tabTemplates(template).find((tab) => templateValues(tab)[0] === "settings") ?? template)).toContain("aria-haspopup=");
+    expect(settingsTabMarkup(template)).toContain("aria-haspopup=");
+    expect(templateValues(settingsTab(template))).toContain("dialog");
+  });
+
+  it("keeps every mobile destination button horizontal, centered, and visible at narrow widths", () => {
+    const styles = AppMobileDestinationTabs.styles.cssText;
+
+    expect(styles).toContain("button { display: flex; align-items: center; justify-content: center; gap: 0.25rem;");
+    expect(styles).toContain("min-width: 0; min-height: 2.75rem;");
+    expect(styles).toContain("white-space: nowrap;");
+    expect(styles).toContain("button[aria-current=\"page\"] { box-shadow:");
+    expect(styles).toContain("button:focus-visible { outline:");
+    expect(styles).toContain("@media (max-width: 359px) { button { gap: 0.1875rem; font-size: 0.625rem; }");
+  });
+
+  it("omits dialog semantics when Modernist presents Settings as a destination", () => {
+    const tabs = new AppMobileDestinationTabs();
+    tabs.settingsPresentation = "destination";
+
+    expect(settingsTabMarkup(tabs.render())).toContain("aria-haspopup=");
+    expect(templateValues(settingsTab(tabs.render()))).toContain(nothing);
+  });
+
+  it.each(["dialog", "destination"] as const)("keeps the legacy keyboard destination order for %s Settings presentation", (settingsPresentation) => {
+    const tabs = new AppMobileDestinationTabs();
+    tabs.settingsPresentation = settingsPresentation;
+
+    const template = tabs.render();
+    expect(tabDestinations(template)).toEqual(["chat", "sessions", "tools", "settings"]);
+    expect(nextDestination("settings", -1)).toBe("tools");
   });
 
   it("includes Tools when navigating with a keyboard", () => {
@@ -35,6 +64,16 @@ describe("AppMobileDestinationTabs", () => {
     expect(onSelect).toHaveBeenNthCalledWith(2, "settings");
   });
 });
+
+function settingsTabMarkup(template: TemplateResult): string {
+  return templateMarkup(settingsTab(template));
+}
+
+function settingsTab(template: TemplateResult): TemplateResult {
+  const tab = tabTemplates(template).find((candidate) => templateValues(candidate)[0] === "settings");
+  if (tab === undefined) throw new Error("Expected Settings tab");
+  return tab;
+}
 
 function callbackAfterDestination(template: TemplateResult, destination: string): () => void {
   const tab = tabTemplates(template).find((candidate) => templateValues(candidate)[0] === destination);

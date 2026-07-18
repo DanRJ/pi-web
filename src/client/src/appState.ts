@@ -72,12 +72,22 @@ export interface AppState {
   error: string;
 }
 
+export interface AuthMachineTarget {
+  id: string;
+  /** Complete public connection identity/revision captured when auth opens. */
+  requestKey: string;
+  kind: Machine["kind"];
+  baseUrl?: string | undefined;
+  /** Captured public connection revision for remote auth mutations. */
+  revision?: string | undefined;
+}
+
 export type AuthDialogState =
-  | { step: "method" }
-  | { step: "providers"; mode: "login"; authType?: "oauth" | "api_key"; providers: AuthProviderOption[] }
-  | { step: "apiKey"; provider: AuthProviderOption; value: string; saving?: boolean; error?: string }
-  | { step: "oauth"; flow: OAuthFlowState; responding?: boolean; inputValue?: string; error?: string }
-  | { step: "logout"; providers: AuthProviderOption[] };
+  | { step: "method"; target: AuthMachineTarget }
+  | { step: "providers"; target: AuthMachineTarget; mode: "login"; authType?: "oauth" | "api_key"; providers: AuthProviderOption[] }
+  | { step: "apiKey"; target: AuthMachineTarget; provider: AuthProviderOption; value: string; saving?: boolean; error?: string }
+  | { step: "oauth"; target: AuthMachineTarget; flow: OAuthFlowState; responding?: boolean; inputValue?: string; error?: string }
+  | { step: "logout"; target: AuthMachineTarget; providers: AuthProviderOption[] };
 
 export type WorkspaceScopedStateReset = Pick<AppState,
   | "sessions"

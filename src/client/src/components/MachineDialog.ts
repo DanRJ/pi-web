@@ -1,5 +1,6 @@
-import { LitElement, css, html } from "lit";
+import { LitElement, css, html, type PropertyValues } from "lit";
 import { customElement, property, query, state } from "lit/decorators.js";
+import type { Machine } from "../api";
 
 export interface MachineDialogSubmit {
   name: string;
@@ -9,6 +10,8 @@ export interface MachineDialogSubmit {
 
 @customElement("machine-dialog")
 export class MachineDialog extends LitElement {
+  /** Undefined adds a remote; a remote value edits it. Local is deliberately rejected. */
+  @property({ attribute: false }) machine: Machine | undefined;
   @property({ attribute: false }) onSubmit?: (input: MachineDialogSubmit) => void | Promise<void>;
   @property({ attribute: false }) onCancel?: () => void;
   @property() error = "";
@@ -16,6 +19,7 @@ export class MachineDialog extends LitElement {
   @state() private url = "";
   @state() private name = "";
   @state() private token = "";
+  @state() private tokenEdited = false;
   @state() private submitting = false;
   @query("input[name='baseUrl']") private urlInput?: HTMLInputElement;
   @query("input[name='name']") private nameInput?: HTMLInputElement;
@@ -23,8 +27,19 @@ export class MachineDialog extends LitElement {
   private nameEdited = false;
   private previousSuggestedName = "";
 
+  override willUpdate(changed: PropertyValues<this>): void {
+    if (!changed.has("machine")) return;
+    const machine = this.machine;
+    this.url = machine?.baseUrl ?? "";
+    this.name = machine?.name ?? "";
+    this.token = ""; // A stored bearer token is never sent back to the browser.
+    this.tokenEdited = false;
+    this.nameEdited = machine !== undefined;
+    this.previousSuggestedName = machine === undefined ? "" : suggestedMachineNameFromUrl(machine.baseUrl ?? "");
+  }
+
   override firstUpdated(): void {
-    this.urlInput?.focus();
+    (this.machine === undefined ? this.urlInput : this.nameInput)?.focus();
   }
 
   private handleUrlInput(event: InputEvent): void {
@@ -45,6 +60,12 @@ export class MachineDialog extends LitElement {
   private handleTokenInput(event: InputEvent): void {
     if (!(event.target instanceof HTMLInputElement)) return;
     this.token = event.target.value;
+    this.tokenEdited = true;
+  }
+
+  private clearStoredToken(): void {
+    this.token = "";
+    this.tokenEdited = true;
   }
 
   private handleKeyDown(event: KeyboardEvent): void {
@@ -79,14 +100,21 @@ export class MachineDialog extends LitElement {
   }
 
   private validInput(): MachineDialogSubmit | undefined {
+    if (this.machine?.kind === "local") return undefined;
     const baseUrl = this.url.trim();
     const name = this.name.trim();
     if (baseUrl === "" || name === "" || machineBaseUrlValidationMessage(baseUrl) !== undefined) return undefined;
     const token = this.token.trim();
-    return { name, baseUrl, ...(token === "" ? {} : { token }) };
+    return {
+      name,
+      baseUrl,
+      ...(token !== "" ? { token } : this.machine !== undefined && this.tokenEdited ? { token: "" } : {}),
+    };
   }
 
   override render() {
+    const isEdit = this.machine !== undefined;
+    const localEdit = this.machine?.kind === "local";
     const hasUrl = this.url.trim() !== "";
     const urlError = hasUrl ? machineBaseUrlValidationMessage(this.url) : undefined;
     const canSubmit = this.validInput() !== undefined && !this.submitting;
@@ -95,32 +123,35 @@ export class MachineDialog extends LitElement {
         <section @click=${(event: Event) => { event.stopPropagation(); }}>
           <form @submit=${(event: SubmitEvent) => { this.handleSubmit(event); }} @keydown=${(event: KeyboardEvent) => { this.handleKeyDown(event); }}>
             <header>
-              <strong>Add machine</strong>
+              <strong>${isEdit ? "Configure machine" : "Add machine"}</strong>
               <button type="button" @click=${() => { this.onCancel?.(); }} aria-label="Close">×</button>
             </header>
             <div class="body">
               ${this.error === "" ? null : html`<div class="dialog-error" role="alert">${this.error}</div>`}
-              <label>
-                Remote PI WEB URL
-                <input name="baseUrl" type="url" .value=${this.url} @input=${(event: InputEvent) => { this.handleUrlInput(event); }} placeholder="http://dev-box.local:8504" autocomplete="url" inputmode="url" autofocus />
-              </label>
-              <small class=${urlError === undefined ? "hint" : "field-error"}>${urlError ?? "Enter the reachable base URL first, including http:// or https://."}</small>
-              ${hasUrl ? html`
+              ${localEdit ? html`<p class="dialog-error" role="alert">The local gateway is configured in its machine-scoped settings and cannot be edited as a remote connection.</p>` : html`
                 <label>
-                  Machine name
-                  <input name="name" type="text" .value=${this.name} @input=${(event: InputEvent) => { this.handleNameInput(event); }} placeholder=${this.previousSuggestedName || "Dev Box"} autocomplete="off" />
+                  Remote PI WEB URL
+                  <input name="baseUrl" type="url" .value=${this.url} @input=${(event: InputEvent) => { this.handleUrlInput(event); }} placeholder="http://dev-box.local:8504" autocomplete="url" inputmode="url" autofocus />
                 </label>
-                <small class="hint">Suggested from the URL. Edit it to use a friendlier sidebar label.</small>
-                <label>
-                  Bearer token <span class="optional">optional</span>
-                  <input name="token" type="password" .value=${this.token} @input=${(event: InputEvent) => { this.handleTokenInput(event); }} placeholder="Leave blank if the remote machine does not require one" autocomplete="off" />
-                </label>
-                <small class="hint">Paste only the token value; PI WEB sends it as an Authorization: Bearer header.</small>
-              ` : html`<p class="hint intro">After you enter a URL, PI WEB will suggest a machine name and let you add an optional bearer token.</p>`}
+                <small class=${urlError === undefined ? "hint" : "field-error"}>${urlError ?? "Enter the reachable base URL first, including http:// or https://."}</small>
+                ${hasUrl ? html`
+                  <label>
+                    Machine name
+                    <input name="name" type="text" .value=${this.name} @input=${(event: InputEvent) => { this.handleNameInput(event); }} placeholder=${this.previousSuggestedName || "Dev Box"} autocomplete="off" />
+                  </label>
+                  <small class="hint">${isEdit ? "Update the sidebar label or endpoint without interrupting the selected workspace." : "Suggested from the URL. Edit it to use a friendlier sidebar label."}</small>
+                  <label>
+                    Bearer token <span class="optional">optional</span>
+                    <input name="token" type="password" .value=${this.token} @input=${(event: InputEvent) => { this.handleTokenInput(event); }} placeholder=${isEdit ? "Leave blank to keep the stored token" : "Leave blank if the remote machine does not require one"} autocomplete="off" />
+                  </label>
+                  ${isEdit ? html`<button class="text-button" type="button" @click=${() => { this.clearStoredToken(); }}>Clear stored token</button>` : null}
+                  <small class="hint">${isEdit ? "The stored token is never shown. Enter a replacement, leave this blank to keep it, or clear it explicitly." : "Paste only the token value; PI WEB sends it as an Authorization: Bearer header."}</small>
+                ` : html`<p class="hint intro">After you enter a URL, PI WEB will suggest a machine name and let you add an optional bearer token.</p>`}
+              `}
             </div>
             <footer>
               <button type="button" @click=${() => { this.onCancel?.(); }}>Cancel</button>
-              <button class="primary" type="submit" ?disabled=${!canSubmit}>${this.submitting ? "Adding…" : "Add machine"}</button>
+              ${localEdit ? null : html`<button class="primary" type="submit" ?disabled=${!canSubmit}>${this.submitting ? (isEdit ? "Saving…" : "Adding…") : (isEdit ? "Save changes" : "Add machine")}</button>`}
             </footer>
           </form>
         </section>

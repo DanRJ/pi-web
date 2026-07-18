@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { api as defaultApi, type AuthProviderOption, type OAuthFlowState, type SessionInfo, type SessionStatus } from "../api";
-import { initialAppState, type AppState } from "../appState";
+import { initialAppState, type AppState, type AuthMachineTarget } from "../appState";
 import { AuthController, parseAuthSlashCommand } from "./authController";
 
 describe("parseAuthSlashCommand", () => {
@@ -203,14 +203,122 @@ describe("AuthController", () => {
 
     expect(getState().authDialog).toMatchObject({ step: "apiKey", value: "sk-live", saving: false, error: "Error: Denied" });
   });
+
+  it("discards a deferred provider response after switching from machine A to B", async () => {
+    const providers = deferred<{ providers: AuthProviderOption[] }>();
+    const { controller, getState, patchState } = createController(
+      { selectedMachine: remoteMachine("a") },
+      { authProviders: () => providers.promise },
+    );
+
+    await controller.openLogin();
+    const loading = controller.chooseLoginMethod("api_key");
+    patchState({ selectedMachine: remoteMachine("b") });
+    controller.handleMachineTargetChange();
+    providers.resolve({ providers: [authProvider("openai", "api_key")] });
+    await loading;
+
+    expect(getState().authDialog).toBeUndefined();
+  });
+
+  it("keeps API key requests bound to machine A when selection changes to B", async () => {
+    const save = deferred<{ accepted: true }>();
+    const calls: string[] = [];
+    const provider = authProvider("openai", "api_key");
+    const { controller, getState, patchState } = createController(
+      { selectedMachine: remoteMachine("a"), authDialog: { step: "apiKey", provider, value: "key" } },
+      { saveApiKey: (_provider, _key, machineId) => { calls.push(machineId ?? ""); return save.promise; } },
+    );
+
+    const saving = controller.saveApiKey();
+    patchState({ selectedMachine: remoteMachine("b") });
+    controller.handleMachineTargetChange();
+    save.resolve({ accepted: true });
+    await saving;
+
+    expect(calls).toEqual(["a"]);
+    expect(getState().authDialog).toBeUndefined();
+  });
+
+  it("keeps a deferred auth write bound to the captured revision after an endpoint patch", async () => {
+    const save = deferred<{ accepted: true }>();
+    const revisions: (string | undefined)[] = [];
+    const provider = authProvider("openai", "api_key");
+    const original = remoteMachine("a");
+    const { controller, getState, patchState } = createController(
+      { selectedMachine: original, authDialog: { step: "apiKey", provider, value: "key" } },
+      { saveApiKey: (_provider, _key, _machineId, revision) => { revisions.push(revision); return save.promise; } },
+    );
+
+    const pending = controller.saveApiKey();
+    patchState({ selectedMachine: { ...original, baseUrl: "https://new.example", updatedAt: "2026-02-01T00:00:00.000Z" } });
+    controller.handleMachineTargetChange();
+    save.resolve({ accepted: true });
+    await pending;
+
+    expect(revisions).toEqual(["2026-01-01T00:00:00.000Z"]);
+    expect(getState().authDialog).toBeUndefined();
+  });
+
+  it("keeps logout requests bound to machine A when selection changes to B", async () => {
+    const logout = deferred<{ accepted: true }>();
+    const calls: string[] = [];
+    const provider = authProvider("openai", "api_key");
+    const { controller, getState, patchState } = createController(
+      { selectedMachine: remoteMachine("a"), authDialog: { step: "logout", providers: [provider] } },
+      { logoutProvider: (_provider, machineId) => { calls.push(machineId ?? ""); return logout.promise; } },
+    );
+
+    const pending = controller.logoutProvider(provider.id);
+    patchState({ selectedMachine: remoteMachine("b") });
+    controller.handleMachineTargetChange();
+    logout.resolve({ accepted: true });
+    await pending;
+
+    expect(calls).toEqual(["a"]);
+    expect(getState().authDialog).toBeUndefined();
+  });
+
+  it("discards a deferred OAuth continuation after switching from machine A to B", async () => {
+    const continuation = deferred<OAuthFlowState>();
+    const flow = oauthFlow({ prompt: { requestId: "request-1", message: "Paste callback", kind: "manual" } });
+    const { controller, getState, patchState } = createController(
+      { selectedMachine: remoteMachine("a"), authDialog: { step: "oauth", flow, inputValue: "callback" } },
+      { respondOAuthFlow: () => continuation.promise },
+    );
+
+    const pending = controller.respondOAuth();
+    patchState({ selectedMachine: remoteMachine("b") });
+    controller.handleMachineTargetChange();
+    continuation.resolve(oauthFlow({ status: "complete" }));
+    await pending;
+
+    expect(getState().authDialog).toBeUndefined();
+  });
 });
 
+type AuthDialogInput =
+  | { step: "method" }
+  | Omit<Extract<NonNullable<AppState["authDialog"]>, { step: "providers" }>, "target">
+  | Omit<Extract<NonNullable<AppState["authDialog"]>, { step: "apiKey" }>, "target">
+  | Omit<Extract<NonNullable<AppState["authDialog"]>, { step: "oauth" }>, "target">
+  | Omit<Extract<NonNullable<AppState["authDialog"]>, { step: "logout" }>, "target">;
+
 function createController(
-  statePatch: Partial<AppState>,
+  statePatch: Omit<Partial<AppState>, "authDialog"> & { authDialog?: AuthDialogInput },
   apiPatch: Partial<typeof defaultApi> = {},
   applyStatus: (status: SessionStatus) => void = () => undefined,
 ) {
-  let state: AppState = { ...initialAppState(), ...statePatch };
+  const machine = statePatch.selectedMachine;
+  const target: AuthMachineTarget = {
+    id: machine?.id ?? "local",
+    kind: machine?.kind ?? "local",
+    ...(machine?.baseUrl === undefined ? {} : { baseUrl: machine.baseUrl }),
+    ...(machine?.kind === "remote" ? { revision: machine.updatedAt } : {}),
+    requestKey: JSON.stringify(machine === undefined ? ["local"] : [machine.id, machine.kind, machine.name, machine.baseUrl ?? "", machine.createdAt, machine.updatedAt]),
+  };
+  const authDialog = authDialogWithTarget(statePatch.authDialog, target);
+  let state: AppState = { ...initialAppState(), ...statePatch, authDialog };
   const api = { ...defaultApi, ...apiPatch };
   const controller = new AuthController(
     () => state,
@@ -218,12 +326,24 @@ function createController(
     applyStatus,
     { api },
   );
-  return { controller, getState: () => state };
+  return { controller, getState: () => state, patchState: (patch: Partial<AppState>) => { state = { ...state, ...patch }; } };
+}
+
+function authDialogWithTarget(dialog: AuthDialogInput | undefined, target: AuthMachineTarget): AppState["authDialog"] {
+  if (dialog === undefined) return undefined;
+  if (dialog.step === "method") return { step: "method", target };
+  return { ...dialog, target };
 }
 
 async function flushMicrotasks(): Promise<void> {
   await Promise.resolve();
   await Promise.resolve();
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((complete) => { resolve = complete; });
+  return { promise, resolve };
 }
 
 function remoteMachine(id: string): NonNullable<AppState["selectedMachine"]> {

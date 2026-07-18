@@ -13,9 +13,19 @@ const remoteMachine: Machine = {
 };
 
 describe("selected-machine settings target helpers", () => {
-  it("uses the selected machine when present and falls back to the local gateway", () => {
-    expect(settingsMachineTarget(undefined)).toEqual({ id: "local", name: "local", kind: "local" });
-    expect(settingsMachineTarget(remoteMachine)).toEqual({ id: "remote-a", name: "Lab Mac", kind: "remote" });
+  it("uses the selected machine request identity and falls back to the local gateway", () => {
+    expect(settingsMachineTarget(undefined)).toMatchObject({ id: "local", name: "local", kind: "local" });
+    const target = settingsMachineTarget(remoteMachine);
+    expect(target).toMatchObject({ id: "remote-a", name: "Lab Mac", kind: "remote" });
+    expect(target.requestKey).toBe(JSON.stringify([remoteMachine.id, remoteMachine.updatedAt, remoteMachine.baseUrl]));
+  });
+
+  it("changes the request identity when a same-ID connection is patched", () => {
+    const before = settingsMachineTarget(remoteMachine);
+    const after = settingsMachineTarget({ ...remoteMachine, updatedAt: "2026-07-02T00:00:00.000Z" });
+
+    expect(after.id).toBe(before.id);
+    expect(after.requestKey).not.toBe(before.requestKey);
   });
 
   it("labels local and remote settings targets factually", () => {

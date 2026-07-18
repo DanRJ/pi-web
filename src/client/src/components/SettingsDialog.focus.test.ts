@@ -12,6 +12,18 @@ describe("SettingsDialog focus handoff", () => {
     expect(focusCloseControl).toHaveBeenCalledOnce();
   });
 
+  it("does not enter modal focus flow when presented as a destination", () => {
+    const dialog = new SettingsDialog();
+    const focusCloseControl = vi.fn();
+    dialog.presentation = "destination";
+    Object.defineProperty(dialog, "renderRoot", { configurable: true, value: { querySelector: () => ({ focus: focusCloseControl }) } });
+
+    dialog.focusInitialControl();
+
+    expect(focusCloseControl).not.toHaveBeenCalled();
+    expect(SettingsDialog.elementProperties.get("presentation")).toMatchObject({ reflect: true });
+  });
+
   it("cycles Tab and Shift+Tab within the modal controls", () => {
     const close = new SettingsDialog();
     const section = new SettingsDialog();

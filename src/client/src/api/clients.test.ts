@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PI_WEB_CAPABILITIES } from "../../../shared/capabilities";
+import { MACHINE_REVISION_HEADER } from "../../../shared/machineRevision";
 import type { PiWebConfigValues, TerminalCommandRun, Workspace } from "../../../shared/apiTypes";
 import { configApi, dashboardApi, filesApi, machinesApi, piPackagesApi, piWebApi, pluginsApi, sessionsApi, terminalsApi, workspacesApi } from "./clients";
 
@@ -91,6 +92,16 @@ describe("machine-scoped runtime API", () => {
     expect(fetchCall(fetchMock, 0)[1]?.cache).toBe("no-store");
   });
 
+  it("patches an encoded remote id with only the requested connection fields", async () => {
+    const response = { id: "remote /?", name: "Lab", kind: "remote", baseUrl: "https://lab.example.test", createdAt: "now", updatedAt: "now" };
+    const fetchMock = stubJsonFetch(response);
+
+    await machinesApi.updateMachine("remote /?", { name: "Lab", token: "" });
+
+    expect(fetchCall(fetchMock, 0)[0]).toBe("https://pi.example.test/api/machines/remote%20%2F%3F");
+    expect(fetchCall(fetchMock, 0)[1]).toMatchObject({ method: "PATCH", body: JSON.stringify({ name: "Lab", token: "" }) });
+  });
+
   it("reads machine runtime through the gateway route", async () => {
     const response = { machineId: "remote a", ok: true, checkedAt: "now", capabilities: [PI_WEB_CAPABILITIES.sessionsDeleteArchived] };
     const fetchMock = stubSequenceFetch([jsonResponse(response), jsonResponse(response)]);
@@ -124,6 +135,31 @@ describe("settings config and plugin APIs", () => {
     ]);
     expect(fetchCall(fetchMock, 1)[1]?.method).toBe("PUT");
     expect(JSON.parse(requestBody(fetchCall(fetchMock, 1)[1]))).toEqual({ config: { spawnSessions: true } });
+    expect(new Headers(fetchCall(fetchMock, 1)[1]?.headers).get(MACHINE_REVISION_HEADER)).toBeNull();
+  });
+
+  it("sends the captured remote revision on machine-scoped config and auth mutations only", async () => {
+    const revision = "2026-07-01T00:00:00.000Z";
+    const oauth = { flowId: "flow-1", providerId: "openai", providerName: "OpenAI", status: "running", progress: [] };
+    const fetchMock = stubSequenceFetch([
+      jsonResponse(piWebConfigResponse({ spawnSessions: true })),
+      jsonResponse({ accepted: true }),
+      jsonResponse({ accepted: true }),
+      jsonResponse(oauth),
+      jsonResponse(oauth),
+      jsonResponse(oauth),
+    ]);
+
+    await configApi.saveConfig({ spawnSessions: true }, "remote a", revision);
+    await sessionsApi.saveApiKey("openai", "key", "remote a", revision);
+    await sessionsApi.logoutProvider("openai", "remote a", revision);
+    await sessionsApi.startOAuthLogin("openai", "remote a", revision);
+    await sessionsApi.respondOAuthFlow("flow-1", "request-1", "code", "remote a", revision);
+    await sessionsApi.cancelOAuthFlow("flow-1", "remote a", revision);
+
+    for (let index = 0; index < 6; index += 1) {
+      expect(new Headers(fetchCall(fetchMock, index)[1]?.headers).get(MACHINE_REVISION_HEADER)).toBe(revision);
+    }
   });
 
   it("uses machine-scoped config and plugin routes when a machine id is provided", async () => {
