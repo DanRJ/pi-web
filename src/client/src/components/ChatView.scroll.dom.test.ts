@@ -34,7 +34,7 @@ describe("ChatView Jump to latest", () => {
     expect(Reflect.get(view, "showJumpToLatest")).toBe(false);
   });
 
-  it.each(["touch", "pen"] as const)("keeps the focused composer and activates exactly once for a %s Jump to latest", async (pointerType) => {
+  it.each(["touch", "pen"] as const)("keeps the focused composer and activates exactly once for a %s Jump to latest while keyboard focus mode is active", async (pointerType) => {
     const composer = document.createElement("textarea");
     let composerFocused = false;
     const onComposerFocusChange = vi.fn((focused: boolean) => { composerFocused = focused; });
@@ -43,6 +43,7 @@ describe("ChatView Jump to latest", () => {
     document.body.append(composer);
 
     const view = await mountedView();
+    view.mobileKeyboardFocusActive = true;
     const chat = chatViewport(view, 300, 1000, 400);
     const scrollTo = vi.fn();
     Object.defineProperty(chat, "scrollTo", { configurable: true, value: scrollTo });
@@ -64,6 +65,39 @@ describe("ChatView Jump to latest", () => {
     expect(document.activeElement).toBe(composer);
 
     button.dispatchEvent(pointerEvent("pointerup", pointerType));
+    button.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, composed: true }));
+    expect(scrollTo).toHaveBeenCalledOnce();
+  });
+
+  it.each(["touch", "pen"] as const)("allows native focus transfer without refocusing the composer for a %s Jump to latest after Android dismisses the keyboard", async (pointerType) => {
+    const composer = document.createElement("textarea");
+    const onComposerFocusChange = vi.fn();
+    composer.addEventListener("focus", () => { onComposerFocusChange(true); });
+    composer.addEventListener("blur", () => { onComposerFocusChange(false); });
+    document.body.append(composer);
+
+    const view = await mountedView();
+    const chat = chatViewport(view, 300, 1000, 400);
+    const scrollTo = vi.fn();
+    Object.defineProperty(chat, "scrollTo", { configurable: true, value: scrollTo });
+    vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: false })));
+    refreshJump(view);
+    await view.updateComplete;
+
+    composer.focus();
+    const button = view.shadowRoot?.querySelector<HTMLButtonElement>(".jump-to-latest");
+    if (button === null || button === undefined) throw new Error("Expected Jump to latest button");
+    const pointerDown = pointerEvent("pointerdown", pointerType);
+
+    expect(button.dispatchEvent(pointerDown)).toBe(true);
+    expect(pointerDown.defaultPrevented).toBe(false);
+    // jsdom does not run the browser's pointer-down focus default action.
+    button.focus();
+    expect(onComposerFocusChange).toHaveBeenCalledTimes(2);
+    expect(onComposerFocusChange).toHaveBeenLastCalledWith(false);
+    expect(document.activeElement).not.toBe(composer);
+    expect(view.shadowRoot?.activeElement).toBe(button);
+
     button.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, composed: true }));
     expect(scrollTo).toHaveBeenCalledOnce();
   });

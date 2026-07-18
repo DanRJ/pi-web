@@ -119,6 +119,8 @@ export class ChatView extends LitElement {
   /** The server's pending count confirms that Stop clears a server queue. */
   @property({ type: Boolean }) clearsServerQueue = false;
   @property({ type: Boolean }) canClearServerQueue = false;
+  /** The app shell has confirmed that the mobile IME currently owns the viewport. */
+  @property({ type: Boolean }) mobileKeyboardFocusActive = false;
   @property({ attribute: false }) onClearServerQueue?: () => void;
   @property({ attribute: false }) onLoadMore?: () => void;
   @query(".chat") private chat?: HTMLDivElement;
@@ -751,13 +753,15 @@ export class ChatView extends LitElement {
   }
 
   /**
-   * On mobile, a button pointer-down normally takes focus from the composer
-   * before its click. That collapses the IME and can remove this overlay before
-   * the browser dispatches the click. Keep native mouse and keyboard focus
-   * behavior intact; prevented touch/pen pointer-down still produces one click.
+   * While the app shell confirms that the mobile IME owns the viewport, a
+   * button pointer-down normally takes focus from the composer before its
+   * click. That collapses the IME and can remove this overlay before the
+   * browser dispatches the click. Once Android has dismissed the IME, the
+   * composer can remain focused, so preserve focus only for active keyboard
+   * focus mode. Native mouse and keyboard behavior remains intact.
    */
   private readonly preserveComposerFocusOnJumpPointerDown = (event: PointerEvent): void => {
-    if (event.pointerType === "touch" || event.pointerType === "pen") event.preventDefault();
+    if (this.mobileKeyboardFocusActive && (event.pointerType === "touch" || event.pointerType === "pen")) event.preventDefault();
   };
 
   private jumpToLatest = (): void => {
