@@ -17,6 +17,11 @@ describe("ChatView image rendering", () => {
     expect(templateStaticMarkup(rendered)).toContain('loading="lazy"');
     expect(templateValuesAfterMarker(rendered, "src=")).toEqual(["data:image/png;base64,QUJD"]);
 
+    if (!Reflect.set(view, "pinnedToBottom", false)) throw new Error("Could not set ChatView.pinnedToBottom");
+    if (!Reflect.set(view, "showJumpToLatest", true)) throw new Error("Could not set ChatView.showJumpToLatest");
+    expect(() => { onLoad(new Event("load")); }).not.toThrow();
+    expect(Reflect.get(view, "showJumpToLatest")).toBe(false);
+
     if (!Reflect.set(view, "pinnedToBottom", true)) throw new Error("Could not set ChatView.pinnedToBottom");
     onLoad(new Event("load"));
     if (!Reflect.set(view, "pinnedToBottom", false)) throw new Error("Could not set ChatView.pinnedToBottom");

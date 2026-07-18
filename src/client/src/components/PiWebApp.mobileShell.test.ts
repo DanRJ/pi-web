@@ -19,6 +19,53 @@ describe("PiWebApp mobile shell", () => {
     expect(markup.indexOf("<chat-view")).toBeLessThan(markup.indexOf("<app-mobile-destination-tabs"));
   });
 
+  it("enters keyboard focus mode only for focused Chat with a keyboard-sized visual viewport, then restores mounted tabs on destination change", () => {
+    const app = createApp();
+    setMobileLayout(app);
+    setState(app, { ...initialAppState(), selectedSession: session() });
+    const blurInput = vi.fn();
+    Object.defineProperty(app, "promptEditor", { configurable: true, value: { blurInput } });
+
+    call(app, "handleVisualViewportSnapshot", { hasVisualViewport: true, width: 390, height: 800, offsetTop: 0, scale: 1 });
+    call(app, "handlePromptFocusChange", true);
+    call(app, "handleVisualViewportSnapshot", { hasVisualViewport: true, width: 390, height: 640, offsetTop: 84, scale: 1 });
+    expect(Reflect.get(app, "mobileKeyboardFocus")).toMatchObject({ active: true });
+    expect(values(app.render())).toContain("shell chat-view mobile-destination-chat mobile-keyboard-focus");
+    expect(propertyValue(renderTemplate(app, "renderMobileDestinationTabs"), "?hidden=")).toBe(true);
+
+    call(app, "selectMobileDestination", "tools");
+    expect(blurInput).toHaveBeenCalledOnce();
+    expect(Reflect.get(app, "mobileKeyboardFocus")).toMatchObject({ active: false });
+    expect(propertyValue(renderTemplate(app, "renderMobileDestinationTabs"), "?hidden=")).toBe(false);
+  });
+
+  it("passes keyboard focus mode, not lingering composer DOM focus, to ChatView after Android Back restores the viewport", () => {
+    const app = createApp();
+    setMobileLayout(app);
+    const state = { ...initialAppState(), selectedSession: session() };
+    setState(app, state);
+
+    call(app, "handleVisualViewportSnapshot", { hasVisualViewport: true, width: 390, height: 800, offsetTop: 0, scale: 1 });
+    call(app, "handlePromptFocusChange", true);
+    call(app, "handleVisualViewportSnapshot", { hasVisualViewport: true, width: 390, height: 640, offsetTop: 0, scale: 1 });
+    expect(Reflect.get(app, "mobileKeyboardFocus")).toMatchObject({ active: true });
+    expect(propertyValue(renderChatView(app, state), ".mobileKeyboardFocusActive=")).toBe(true);
+
+    // Android Back can restore the viewport while CodeMirror still reports focus.
+    call(app, "handleVisualViewportSnapshot", { hasVisualViewport: true, width: 390, height: 800, offsetTop: 0, scale: 1 });
+    expect(Reflect.get(app, "composerFocused")).toBe(true);
+    expect(Reflect.get(app, "mobileKeyboardFocus")).toMatchObject({ active: false });
+    expect(propertyValue(renderChatView(app, state), ".mobileKeyboardFocusActive=")).toBe(false);
+  });
+
+  it("keeps semantic tab hiding and only hides duplicate status in keyboard mode", () => {
+    expect(appStyles.cssText).toContain("app-mobile-destination-tabs[hidden] { display: none !important; }");
+    expect(mobileShellStyles()).toContain(".shell.mobile-keyboard-focus status-bar,");
+    expect(mobileShellStyles()).not.toContain(".shell.mobile-keyboard-focus app-session-header { display: none; }");
+    expect(appStyles.cssText).toContain("--pi-app-safe-area-bottom: env(safe-area-inset-bottom);");
+    expect(appStyles.cssText).toContain("height: var(--pi-visible-viewport-bottom, var(--pi-visible-viewport-height, 100dvh));");
+  });
+
   it("defines the dashboard mobile shell as one full-width column with bottom destination tabs", () => {
     // jsdom does not calculate CSS Grid layout, so assert the mobile rule structure instead.
     const styles = mobileShellStyles();
@@ -354,6 +401,17 @@ function renderTemplate(app: PiWebApp, name: string): TemplateResult {
   if (!isUnknownMethod(method)) throw new Error(`Expected ${name} method`);
   const template: unknown = method.call(app);
   if (!isTemplate(template)) throw new Error(`Expected ${name} template`);
+  return template;
+}
+
+// PiWebApp is intentionally unmounted here; inspect the narrow app-to-child property binding.
+function renderChatView(app: PiWebApp, state: AppState): TemplateResult {
+  const method: unknown = Reflect.get(app, "renderChatView");
+  if (!isUnknownMethod(method)) throw new Error("Expected renderChatView method");
+  const selectedSession = state.selectedSession;
+  if (selectedSession === undefined) throw new Error("Expected selected session");
+  const template: unknown = method.call(app, state, selectedSession);
+  if (!isTemplate(template)) throw new Error("Expected ChatView template");
   return template;
 }
 

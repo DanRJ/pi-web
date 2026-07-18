@@ -24,11 +24,14 @@ class FakeEventTarget {
 }
 
 class FakeVisualViewport extends FakeEventTarget implements VisualViewportLike {
+  width = 390;
   height = 500;
   offsetTop = 0;
+  scale = 1;
 }
 
 class FakeWindow extends FakeEventTarget implements VisualViewportWindow {
+  innerWidth = 390;
   innerHeight = 800;
   visualViewport: VisualViewportLike | undefined;
 }
@@ -111,6 +114,23 @@ describe("VisualViewportBridge", () => {
     expect(environment.style().getPropertyValue(VISIBLE_VIEWPORT_HEIGHT_PROPERTY)).toBe("500px");
     expect(environment.style().getPropertyValue(VISIBLE_VIEWPORT_BOTTOM_PROPERTY)).toBe("584px");
     expect(environment.style().getPropertyValue(MOBILE_EDITOR_MAX_HEIGHT_PROPERTY)).toBe("175px");
+  });
+
+  it("publishes typed real-viewport snapshots without changing iOS CSS bottom coordinates", () => {
+    const viewport = new FakeVisualViewport();
+    viewport.offsetTop = 84;
+    const environment = new FakeEnvironment({ visualViewport: viewport });
+    const bridge = new VisualViewportBridge(environment);
+    const snapshots: unknown[] = [];
+    bridge.setSnapshotListener((snapshot) => { snapshots.push(snapshot); });
+
+    bridge.connect();
+    environment.runFrame();
+
+    expect(snapshots).toEqual([{ hasVisualViewport: true, width: 390, height: 500, offsetTop: 84, scale: 1 }]);
+    expect(environment.style().getPropertyValue(VISIBLE_VIEWPORT_BOTTOM_PROPERTY)).toBe("584px");
+    bridge.disconnect();
+    expect(snapshots.at(-1)).toBeUndefined();
   });
 
   it("coalesces window and visual viewport resize/scroll notifications into one frame", () => {

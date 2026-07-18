@@ -3,6 +3,7 @@ import type { AppState } from "../appState";
 import { createPwaDisplayModeMedia, detectPwaDisplayMode } from "../pwaDisplayMode";
 import { ViewportPositionRepairer } from "./viewportPositionRepair";
 import { VisualViewportBridge, type ViewportBridge } from "./visualViewportBridge";
+import type { VisualViewportSnapshot } from "./mobileKeyboardFocus";
 
 export const MOBILE_NAVIGATION_MEDIA_QUERY = "(max-width: 767px)";
 
@@ -27,6 +28,7 @@ export interface AppShellControllerOptions {
   viewportPositionRepairer?: ViewportPositionRepairer | undefined;
   visualViewportBridge?: ViewportBridge | undefined;
   onMobileNavigationLayoutChange?: ((isMobile: boolean) => void) | undefined;
+  onVisualViewportSnapshotChange?: ((snapshot: VisualViewportSnapshot | undefined) => void) | undefined;
 }
 
 export class AppShellController implements ReactiveController {
@@ -44,6 +46,7 @@ export class AppShellController implements ReactiveController {
     this.pwaDisplayModeMedia = options.pwaDisplayModeMedia ?? createPwaDisplayModeMedia();
     this.viewportPositionRepairer = options.viewportPositionRepairer ?? new ViewportPositionRepairer();
     this.visualViewportBridge = options.visualViewportBridge ?? new VisualViewportBridge();
+    this.visualViewportBridge.setSnapshotListener(options.onVisualViewportSnapshotChange);
     this.onMobileNavigationLayoutChange = options.onMobileNavigationLayoutChange;
     this.isMobileNavigationLayout = this.mobileNavigationMedia?.matches ?? false;
     this.isPwaDisplayMode = detectPwaDisplayMode(this.pwaDisplayModeMedia);

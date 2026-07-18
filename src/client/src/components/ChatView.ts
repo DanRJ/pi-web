@@ -7,7 +7,8 @@ import { groupChatMessages, summarizeChatGroup, type ChatGroup } from "../chatGr
 import { writeClipboardText } from "../clipboard";
 import { capturePrependScrollAnchor, PREPEND_RESTORE_SETTLE_FRAMES, restorePrependScrollAnchor, type PrependScrollAnchor } from "../chatScrollAnchoring";
 import { shouldRequestEarlierMessages } from "../chatHistoryLoading";
-import { ChatScrollController, distanceFromScrollBottom, findFirstVisibleArticle, isNearScrollBottom, type ChatAnchorScrollPosition, type ChatScrollRestoreResult } from "../chatScrollPosition";
+import { ChatScrollController, distanceFromScrollBottom, findFirstVisibleArticle, isNearScrollBottom, shouldShowJumpToLatest, type ChatAnchorScrollPosition, type ChatScrollRestoreResult } from "../chatScrollPosition";
+import { sessionStatusPresentation } from "../sessionStatusPresentation";
 import type { ExtensionUiNotification, ExtensionUiRequest, ExtensionUiResolution, ExtensionUiResponse, QueuedSessionMessage, SessionActivity, SessionStatus } from "../api";
 import type { ChatLine, ChatPart } from "./shared";
 import { chatStyles } from "./shared";
@@ -19,19 +20,6 @@ import type { ExtensionUiSubmitResult } from "./ExtensionUiCards";
 
 const messageTimestampFormatter = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "medium" });
 
-const partialStreamNoticeBodies = [
-  "You opened this chat while the assistant was already replying. The complete answer will appear shortly.",
-  "We joined mid-sentence. Holding the curtain until the full reply is ready.",
-  "The assistant started before this tab arrived. We’ll show the full answer when it lands.",
-  "Catching the reply in one piece — no spoilers, no half-answers.",
-  "The tokens are still assembling themselves. Full answer incoming.",
-  "We arrived fashionably late to this response. The complete version will appear soon.",
-] as const;
-
-function randomPartialStreamNoticeBody(): string {
-  return partialStreamNoticeBodies[Math.floor(Math.random() * partialStreamNoticeBodies.length)] ?? partialStreamNoticeBodies[0];
-}
-
 function clampPercent(value: number): number {
   return clampNumber(value, 0, 100);
 }
@@ -39,6 +27,10 @@ function clampPercent(value: number): number {
 function clampNumber(value: number, min: number, max: number): number {
   if (!Number.isFinite(value)) return min;
   return Math.min(max, Math.max(min, value));
+}
+
+function isChatScrollKey(key: string): boolean {
+  return key === "ArrowUp" || key === "ArrowDown" || key === "PageUp" || key === "PageDown" || key === "Home" || key === "End" || key === " " || key === "Spacebar";
 }
 
 export interface QueuedMessageLane {
@@ -113,6 +105,8 @@ export class ChatView extends LitElement {
   @property({ type: Boolean }) isReceivingPartialStream = false;
   @property({ type: Boolean }) isSendingPrompt = false;
   @property({ type: Boolean }) isCompacting = false;
+  /** A command or extension card needs an answer before runtime work can continue. */
+  @property({ type: Boolean }) waitingForUser = false;
   @property({ type: Number }) pendingMessageCount = 0;
   @property({ attribute: false }) clientQueuedMessages: QueuedSessionMessage[] = [];
   @property({ attribute: false }) extensionUiRequests: ExtensionUiRequest[] = [];
@@ -125,10 +119,13 @@ export class ChatView extends LitElement {
   /** The server's pending count confirms that Stop clears a server queue. */
   @property({ type: Boolean }) clearsServerQueue = false;
   @property({ type: Boolean }) canClearServerQueue = false;
+  /** The app shell has confirmed that the mobile IME currently owns the viewport. */
+  @property({ type: Boolean }) mobileKeyboardFocusActive = false;
   @property({ attribute: false }) onClearServerQueue?: () => void;
   @property({ attribute: false }) onLoadMore?: () => void;
   @query(".chat") private chat?: HTMLDivElement;
   @state() private pinnedToBottom = true;
+  @state() private showJumpToLatest = false;
   @state() private expandedMetaKey: string | undefined;
   @state() private copiedMessageKey: string | undefined;
   @state() private currentConversationIndex: number | undefined;
@@ -144,21 +141,28 @@ export class ChatView extends LitElement {
   private groupedMessagesCache: ChatGroup[] = [];
   private readonly messageMetaCache = new WeakMap<ChatLine, string>();
   private readonly messageCopyTextCache = new WeakMap<ChatLine, string>();
-  private partialStreamNoticeBody: string | undefined;
   private lastScrollTop = 0;
   private lastClientHeight = 0;
   private touchStartY: number | undefined;
+  /** Scroll positions recorded at explicit pointer/keyboard scroll starts. */
+  private pointerScrollStart: number | undefined;
+  private keyboardScrollStart: number | undefined;
+  private followingLatestUntilBottom = false;
   private pendingScrollRestoreSessionId: string | undefined;
   private pendingScrollRestorePosition: ChatAnchorScrollPosition | undefined;
   private restoreScrollFrame: number | undefined;
   private prependRestoreToken = 0;
   @state() private loadMoreRequested = false;
   private readonly onViewportResize = () => {
-    if (this.pinnedToBottom) this.scrollToBottom();
+    if (this.followingLatestUntilBottom) this.continueFollowingLatest();
+    else if (this.pinnedToBottom) this.scrollToBottom();
     else this.lastClientHeight = this.chat?.clientHeight ?? 0;
+    this.refreshJumpToLatest();
   };
   private readonly onImageLoad = (): void => {
-    if (this.pinnedToBottom) this.scrollToBottom();
+    if (this.followingLatestUntilBottom) this.continueFollowingLatest();
+    else if (this.pinnedToBottom) this.scrollToBottom();
+    this.refreshJumpToLatest();
   };
   private readonly onPageHide = () => {
     this.saveScrollPosition();
@@ -176,6 +180,7 @@ export class ChatView extends LitElement {
 
   protected override firstUpdated(): void {
     this.lastClientHeight = this.chat?.clientHeight ?? 0;
+    this.refreshJumpToLatest();
   }
 
   override disconnectedCallback(): void {
@@ -204,6 +209,10 @@ export class ChatView extends LitElement {
     this.suppressLoadMoreRequests = false;
     this.pendingScrollRestoreSessionId = undefined;
     this.pendingScrollRestorePosition = undefined;
+    this.showJumpToLatest = false;
+    this.followingLatestUntilBottom = false;
+    this.pointerScrollStart = undefined;
+    this.keyboardScrollStart = undefined;
     this.prependRestoreToken += 1;
     if (this.restoreScrollFrame !== undefined) {
       cancelAnimationFrame(this.restoreScrollFrame);
@@ -216,8 +225,9 @@ export class ChatView extends LitElement {
       this.savePreviousSessionScrollPosition(changed.get("sessionId"));
       this.prepareSessionUiState();
     }
-    if (changed.has("isReceivingPartialStream") || (changed.has("sessionId") && this.isReceivingPartialStream)) this.syncPartialStreamNoticeBody();
-    if (changed.has("messages")) this.pinnedToBottom = this.pinnedToBottom && (this.didChatHeightChange() || this.isNearBottom());
+    // A smooth Latest transition has an explicit bottom intent. Transcript and
+    // layout updates must not replace it with a transient mid-scroll position.
+    if (changed.has("messages") && !this.followingLatestUntilBottom) this.pinnedToBottom = this.pinnedToBottom && (this.didChatHeightChange() || this.isNearBottom());
   }
 
   protected override update(changed: Map<string, unknown>): void {
@@ -230,18 +240,24 @@ export class ChatView extends LitElement {
     if (changed.has("loadingMore") && !this.loadingMore) this.loadMoreRequested = false;
     if (changed.has("hasMore") && !this.hasMore) this.loadMoreRequested = false;
     if (changed.has("sessionId")) this.restoreScrollPosition();
-    if (!changed.has("sessionId") && changed.has("messages") && this.pinnedToBottom) this.scrollToBottom();
+    if (!changed.has("sessionId") && changed.has("messages")) {
+      if (this.followingLatestUntilBottom) this.continueFollowingLatest();
+      else if (this.pinnedToBottom) this.scrollToBottom();
+    }
     if (changed.has("messages") || changed.has("messageStart") || changed.has("messageTotal") || changed.has("hasMore") || changed.has("loadingMore")) this.scheduleConversationRailUpdate();
     if (changed.has("messages") || changed.has("messageStart") || changed.has("hasMore") || changed.has("loadingMore")) this.continuePendingScrollRestore();
     if (changed.has("messages") || changed.has("hasMore") || changed.has("loadingMore")) this.requestLoadMoreIfNeeded();
+    if (changed.has("messages") || changed.has("messageStart") || changed.has("messageEnd") || changed.has("hasMore") || changed.has("loadingMore") || changed.has("isSendingPrompt") || changed.has("isReceivingPartialStream") || changed.has("isCompacting") || changed.has("status") || changed.has("activity")) this.refreshJumpToLatest();
   }
 
   override render() {
     const groups = this.groupedMessages();
+    const liveStrip = this.renderLiveStrip();
+    const hasLiveStrip = liveStrip !== null;
     return html`
-      <div class="chat-wrap">
+      <div class=${this.showJumpToLatest ? "chat-wrap has-jump-to-latest" : "chat-wrap"}>
         ${this.renderConversationRail()}
-        <div class="chat" @scroll=${() => { this.onScroll(); }} @wheel=${(event: WheelEvent) => { this.onWheel(event); }} @touchstart=${(event: TouchEvent) => { this.onTouchStart(event); }} @touchmove=${(event: TouchEvent) => { this.onTouchMove(event); }}>
+        <div class=${`chat${hasLiveStrip ? " has-live-strip" : ""}${this.showJumpToLatest ? " has-jump-to-latest" : ""}`} @scroll=${() => { this.onScroll(); }} @wheel=${(event: WheelEvent) => { this.onWheel(event); }} @pointerdown=${(event: PointerEvent) => { this.onPointerDown(event); }} @pointerup=${this.onPointerUp} @pointercancel=${this.onPointerUp} @keydown=${(event: KeyboardEvent) => { this.onKeydown(event); }} @keyup=${(event: KeyboardEvent) => { this.onKeyup(event); }} @touchstart=${(event: TouchEvent) => { this.onTouchStart(event); }} @touchmove=${(event: TouchEvent) => { this.onTouchMove(event); }}>
           ${this.renderHistoryBoundary()}
           ${repeat(
             groups,
@@ -256,7 +272,8 @@ export class ChatView extends LitElement {
           <extension-ui-cards .requests=${this.extensionUiRequests} .resolutions=${this.extensionUiResolutions} .notifications=${this.extensionUiNotifications} .onRespond=${this.onExtensionUiRespond}></extension-ui-cards>
           ${this.renderSessionActivity()}
         </div>
-        ${this.renderActivityDock()}
+        ${liveStrip}
+        ${this.renderJumpToLatest()}
       </div>
     `;
   }
@@ -276,29 +293,47 @@ export class ChatView extends LitElement {
   private isSessionLive(): boolean {
     return this.isSendingPrompt
       || this.status?.isStreaming === true
+      || this.isCompacting
       || this.status?.isCompacting === true
       || this.status?.isBashRunning === true
       || this.activity?.phase === "active";
   }
 
-  private renderActivityDock() {
-    if (this.isSendingPrompt) {
-      return html`
-        <div class="activity-dock active" aria-live="polite">
-          <span class="dot"></span>
-          <span class="activity-text">Sending your message…</span>
-        </div>
-      `;
-    }
-    const state = this.activityState();
-    if (state === undefined) return null;
-    const runningTool = this.runningToolActivity();
-    const active = state !== "idle" || this.activity?.phase === "active" || runningTool !== undefined;
+  private renderLiveStrip() {
+    const presentation = sessionStatusPresentation({
+      status: this.status,
+      activity: this.activity,
+      waitingForUser: this.waitingForUser,
+      isSendingPrompt: this.isSendingPrompt,
+    });
+    // Waiting is authoritative over stale runtime activity: show the same one
+    // state as the shared header presenter rather than conflicting work text.
+    if (presentation.kind === "waiting") return html`
+      <div class="live-strip active" aria-live="polite"><span class="dot"></span><span class="activity-text">${presentation.label}</span></div>
+    `;
+    if (this.isReceivingPartialStream) return html`
+      <div class="live-strip active" aria-live="polite"><span class="dot"></span><span class="activity-text">Catching up</span></div>
+    `;
+    if (this.isCompacting && this.status?.isCompacting !== true) return html`
+      <div class="live-strip active" aria-live="polite"><span class="dot"></span><span class="activity-text">Compacting</span></div>
+    `;
+    const showsCurrentWork = this.isSendingPrompt || this.isCompacting || this.status?.isStreaming === true || this.activity?.phase === "active";
+    if (presentation.kind === "idle" || (presentation.kind === "working" && !showsCurrentWork)) return null;
+    if (presentation.kind === "error" && presentation.detail === undefined) return null;
+    const text = presentation.detail === undefined ? presentation.label : `${presentation.label}: ${presentation.detail}`;
     return html`
-      <div class=${active ? "activity-dock active" : "activity-dock"} aria-live="polite">
-        <span class="dot"></span>
-        <span class="activity-text">${runningTool ?? this.activityText(state)}</span>
+      <div class=${presentation.kind === "error" ? "live-strip error" : "live-strip active"} aria-live="polite">
+        <span class="dot"></span><span class="activity-text">${text}</span>
       </div>
+    `;
+  }
+
+  private renderJumpToLatest() {
+    if (!this.showJumpToLatest) return null;
+    return html`
+      <button type="button" class="jump-to-latest" aria-label="Jump to latest message" title="Jump to latest message" @pointerdown=${this.preserveComposerFocusOnJumpPointerDown} @click=${this.jumpToLatest}>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v13m0 0-5-5m5 5 5-5M5 20h14"></path></svg><span>Latest</span>
+      </button>
     `;
   }
 
@@ -346,54 +381,11 @@ export class ChatView extends LitElement {
   }
 
   private renderSessionActivity() {
-    if (this.isReceivingPartialStream) return html`
-      <aside class="session-activity receiving" aria-live="polite">
-        <strong>Catching up…</strong>
-        <span>${this.currentPartialStreamNoticeBody()}</span>
-      </aside>
-    `;
-    if (!this.isCompacting) return null;
-    return html`
-      <aside class="session-activity compacting" aria-live="polite">
-        <strong>Compacting history…</strong>
-        <span>The agent is summarizing earlier context. New prompts will be queued until compaction finishes.</span>
-        ${this.pendingMessageCount > 0 ? html`<small>${this.pendingMessageCount} queued ${this.pendingMessageCount === 1 ? "message" : "messages"}</small>` : null}
-      </aside>
-    `;
+    // Live state belongs in the compact strip. Keeping it out of the transcript
+    // avoids a second Catching up/Compacting card obscuring the latest message.
+    return null;
   }
 
-  private syncPartialStreamNoticeBody(): void {
-    this.partialStreamNoticeBody = this.isReceivingPartialStream ? randomPartialStreamNoticeBody() : undefined;
-  }
-
-  private currentPartialStreamNoticeBody(): string {
-    this.partialStreamNoticeBody ??= randomPartialStreamNoticeBody();
-    return this.partialStreamNoticeBody;
-  }
-
-  private runningToolActivity(): string | undefined {
-    const technicalGroup = [...this.groupedMessages()].reverse().find((group) => group.kind === "group");
-    if (technicalGroup?.kind !== "group") return undefined;
-    const runningTool = presentChatEvents(technicalGroup.messages).rows.find((row) => row.status === "running");
-    return runningTool === undefined ? undefined : `${runningTool.label} running`;
-  }
-
-  private activityState(): string | undefined {
-    const status = this.status;
-    if (status === undefined) return this.activity?.label;
-    if (status.isCompacting) return "compacting";
-    if (status.isBashRunning) return "bash";
-    if (status.isStreaming) return "running";
-    if (status.pendingMessageCount > 0) return "queued";
-    return "idle";
-  }
-
-  private activityText(state: string): string {
-    const activity = this.activity;
-    if (activity === undefined) return state;
-    if (state !== "idle" && activity.phase === "idle") return state;
-    return activity.detail !== undefined && activity.detail !== "" ? `${activity.label}: ${activity.detail}` : activity.label;
-  }
 
   private renderConversationRail() {
     if (!this.messages.length || this.messageTotal <= 0) return null;
@@ -620,14 +612,50 @@ export class ChatView extends LitElement {
   }
 
   private onScroll() {
+    this.cancelLatestFollowForExplicitScrollAway();
     this.requestLoadMoreIfNeeded();
     this.updatePinnedToBottomFromScroll();
+    this.refreshJumpToLatest();
     this.scheduleConversationRailUpdate();
     if (!this.suppressScrollSave) this.scheduleScrollPositionSave();
   }
 
   private onWheel(event: WheelEvent) {
-    if (event.deltaY < 0 && this.canScrollUp()) this.pinnedToBottom = false;
+    if (event.deltaY < 0 && this.canScrollUp()) this.cancelLatestFollow();
+  }
+
+  private onPointerDown(event: PointerEvent): void {
+    if (!event.isPrimary) return;
+    this.pointerScrollStart = this.chat?.scrollTop;
+  }
+
+  private readonly onPointerUp = (): void => {
+    this.pointerScrollStart = undefined;
+  };
+
+  private onKeydown(event: KeyboardEvent): void {
+    if (!isChatScrollKey(event.key)) return;
+    this.keyboardScrollStart = this.chat?.scrollTop;
+  }
+
+  private onKeyup(event: KeyboardEvent): void {
+    if (isChatScrollKey(event.key)) this.keyboardScrollStart = undefined;
+  }
+
+  private cancelLatestFollowForExplicitScrollAway(): void {
+    const chat = this.chat;
+    if (chat === undefined || !this.followingLatestUntilBottom) return;
+    const movedAwayFromPointerStart = this.pointerScrollStart !== undefined && chat.scrollTop < this.pointerScrollStart;
+    const movedAwayFromKeyboardStart = this.keyboardScrollStart !== undefined && chat.scrollTop < this.keyboardScrollStart;
+    if (!movedAwayFromPointerStart && !movedAwayFromKeyboardStart) return;
+    this.cancelLatestFollow();
+  }
+
+  private cancelLatestFollow(): void {
+    this.followingLatestUntilBottom = false;
+    this.pinnedToBottom = false;
+    this.pointerScrollStart = undefined;
+    this.keyboardScrollStart = undefined;
   }
 
   private onTouchStart(event: TouchEvent) {
@@ -636,7 +664,7 @@ export class ChatView extends LitElement {
 
   private onTouchMove(event: TouchEvent) {
     const y = event.touches[0]?.clientY;
-    if (this.touchStartY !== undefined && y !== undefined && y > this.touchStartY && this.canScrollUp()) this.pinnedToBottom = false;
+    if (this.touchStartY !== undefined && y !== undefined && y > this.touchStartY && this.canScrollUp()) this.cancelLatestFollow();
   }
 
   private updatePinnedToBottomFromScroll() {
@@ -647,10 +675,16 @@ export class ChatView extends LitElement {
     const scrollingUp = chat.scrollTop < this.lastScrollTop;
     if (heightChanged && wasPinnedToBottom) {
       this.lastClientHeight = chat.clientHeight;
-      this.scrollToBottom();
+      if (this.followingLatestUntilBottom) this.continueFollowingLatest();
+      else this.scrollToBottom();
       return;
     }
-    if (this.isAtBottom()) this.pinnedToBottom = true;
+    if (this.followingLatestUntilBottom) {
+      // Do not treat a programmatic smooth-scroll/layout seam as reader intent.
+      // Wheel/touch upward intent explicitly cancels this mode instead.
+      if (this.isAtBottom()) this.followingLatestUntilBottom = false;
+      this.pinnedToBottom = true;
+    } else if (this.isAtBottom()) this.pinnedToBottom = true;
     else if (scrollingUp) this.pinnedToBottom = false;
     else this.pinnedToBottom = this.isNearBottom();
     this.lastScrollTop = chat.scrollTop;
@@ -709,6 +743,61 @@ export class ChatView extends LitElement {
     return chat !== undefined && chat.scrollTop > 0;
   }
 
+  private refreshJumpToLatest(): void {
+    const chat = this.chat;
+    if (!chat) {
+      this.showJumpToLatest = false;
+      return;
+    }
+    this.showJumpToLatest = shouldShowJumpToLatest(distanceFromScrollBottom(chat), chat.clientHeight, this.showJumpToLatest);
+  }
+
+  /**
+   * While the app shell confirms that the mobile IME owns the viewport, a
+   * button pointer-down normally takes focus from the composer before its
+   * click. That collapses the IME and can remove this overlay before the
+   * browser dispatches the click. Once Android has dismissed the IME, the
+   * composer can remain focused, so preserve focus only for active keyboard
+   * focus mode. Native mouse and keyboard behavior remains intact.
+   */
+  private readonly preserveComposerFocusOnJumpPointerDown = (event: PointerEvent): void => {
+    if (this.mobileKeyboardFocusActive && (event.pointerType === "touch" || event.pointerType === "pen")) event.preventDefault();
+  };
+
+  private jumpToLatest = (): void => {
+    const chat = this.chat;
+    if (chat === undefined) return;
+    this.scrollController.clearScheduledSave();
+    // Persist the explicit intent synchronously; the smooth animation may not
+    // finish before a session switch or page lifecycle save.
+    this.scrollController.saveBottomPosition(this.sessionId);
+    this.pendingScrollRestoreSessionId = undefined;
+    this.pendingScrollRestorePosition = undefined;
+    this.cancelPrependRestore();
+    this.pinnedToBottom = true;
+    this.showJumpToLatest = false;
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    this.followingLatestUntilBottom = !reducedMotion;
+    if (typeof chat.scrollTo === "function") chat.scrollTo({ top: chat.scrollHeight, behavior: reducedMotion ? "auto" : "smooth" });
+    else {
+      chat.scrollTop = chat.scrollHeight;
+      this.followingLatestUntilBottom = false;
+    }
+    this.lastScrollTop = chat.scrollTop;
+    this.lastClientHeight = chat.clientHeight;
+  };
+
+  /** Updates the smooth destination when live content grows before it arrives. */
+  private continueFollowingLatest(): void {
+    const chat = this.chat;
+    if (chat === undefined) return;
+    if (typeof chat.scrollTo === "function") chat.scrollTo({ top: chat.scrollHeight, behavior: "smooth" });
+    else {
+      chat.scrollTop = chat.scrollHeight;
+      this.followingLatestUntilBottom = false;
+    }
+  }
+
   private scrollToBottom() {
     if (this.scrollToBottomFrame !== undefined) return;
     this.scrollToBottomFrame = requestAnimationFrame(() => {
@@ -719,6 +808,7 @@ export class ChatView extends LitElement {
         chat.scrollTop = chat.scrollHeight;
         this.lastScrollTop = chat.scrollTop;
         this.lastClientHeight = chat.clientHeight;
+        this.refreshJumpToLatest();
       });
     });
   }
@@ -787,6 +877,7 @@ export class ChatView extends LitElement {
     if (chat === undefined) return;
     this.lastScrollTop = chat.scrollTop;
     this.lastClientHeight = chat.clientHeight;
+    this.refreshJumpToLatest();
   }
 
   private cancelPrependRestore(): void {
@@ -812,6 +903,7 @@ export class ChatView extends LitElement {
       if (!chat || token !== this.prependRestoreToken) return;
       restorePrependScrollAnchor(chat, anchor, anchor.markerId === undefined ? undefined : this.scrollMarkerAt(anchor.markerId));
       this.lastScrollTop = chat.scrollTop;
+      this.refreshJumpToLatest();
       frames += 1;
       // Formatted markdown/code layout can settle after Lit's first render. Re-apply
       // the marker anchor briefly so late height changes above the viewport do not
@@ -831,6 +923,10 @@ export class ChatView extends LitElement {
 
   saveScrollPosition(sessionId = this.sessionId) {
     if (!sessionId) return;
+    if (this.followingLatestUntilBottom) {
+      this.scrollController.saveBottomPosition(sessionId);
+      return;
+    }
     this.scrollController.savePosition(sessionId, this.chat, this.scrollAnchorElements());
   }
 

@@ -41,6 +41,7 @@ export type ChatScrollRestoreResult =
 const SCROLL_STORAGE_PREFIX = "pi-web:chat-scroll:";
 const DEFAULT_SAVE_DELAY_MS = 180;
 const DEFAULT_NEAR_BOTTOM_THRESHOLD = 48;
+const DEFAULT_JUMP_SHOW_MIN_DISTANCE = 160;
 const DEFAULT_BOTTOM_SAVE_THRESHOLD = 2;
 
 const browserScrollStorage: ChatScrollStorage = {
@@ -133,6 +134,17 @@ export class ChatScrollController {
     return { status: "restored" };
   }
 
+  /** Records an explicit Latest choice before a smooth scroll can complete. */
+  saveBottomPosition(sessionId: string): void {
+    if (sessionId === "") return;
+    try {
+      const position: ChatBottomScrollPosition = { mode: "bottom" };
+      this.storage.setItem(chatScrollStorageKey(sessionId), JSON.stringify(position));
+    } catch {
+      // Storage is optional; jumping to the latest transcript still works.
+    }
+  }
+
   readPosition(sessionId: string): ChatScrollPosition | undefined {
     if (sessionId === "") return undefined;
     try {
@@ -177,6 +189,17 @@ export function distanceFromScrollBottom(scroller: Pick<ChatScrollViewport, "scr
 
 export function isNearScrollBottom(scroller: Pick<ChatScrollViewport, "scrollHeight" | "scrollTop" | "clientHeight">, threshold = DEFAULT_NEAR_BOTTOM_THRESHOLD): boolean {
   return distanceFromScrollBottom(scroller) < threshold;
+}
+
+/**
+ * Hysteresis for the transcript's Jump to latest control. It appears only once
+ * the reader is meaningfully away from the tail, but remains visible until they
+ * return to the existing near-bottom threshold.
+ */
+export function shouldShowJumpToLatest(distanceFromBottom: number, clientHeight: number, currentlyVisible: boolean): boolean {
+  if (currentlyVisible && distanceFromBottom <= DEFAULT_NEAR_BOTTOM_THRESHOLD) return false;
+  if (!currentlyVisible && distanceFromBottom > Math.max(DEFAULT_JUMP_SHOW_MIN_DISTANCE, clientHeight * 0.25)) return true;
+  return currentlyVisible;
 }
 
 export function captureScrollPosition(scroller: ChatScrollViewport, anchor: ChatScrollElement): ChatAnchorScrollPosition {
