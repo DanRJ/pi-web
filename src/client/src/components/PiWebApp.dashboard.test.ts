@@ -89,6 +89,21 @@ describe("PiWebApp dashboard transitions", () => {
     expect(projectAppState(app).mainView).toBe("chat");
   });
 
+  it("opens Modernist Settings at Agent from desktop Actions", async () => {
+    const app = createApp();
+    setState(app, { ...appState(), actionPaletteOpen: true });
+    Reflect.set(app, "topLevelPage", "dashboard");
+    Reflect.set(app, "activeThemeId", "themes:modernist-dark");
+    const openSettings = actions(app).find((action) => action.id === "core:settings.open");
+    if (openSettings === undefined) throw new Error("Open Settings action unavailable");
+
+    binding(findTemplate(app.render(), "<action-palette"), ".onRun")(openSettings);
+    await flush();
+
+    expect(Reflect.get(app, "settingsSection")).toBe("sessiond");
+    expect(Reflect.get(app, "topLevelPage")).toBe("dashboard");
+  });
+
   it("renders one action palette in the workspace shell", () => {
     const app = createApp();
     setState(app, { ...appState(), actionPaletteOpen: true });
@@ -248,6 +263,7 @@ describe("PiWebApp dashboard transitions", () => {
 
     callVoid(app, "openSettings");
 
+    expect(Reflect.get(app, "settingsSection")).toBe("sessiond");
     expect(Reflect.get(app, "topLevelPage")).toBe("dashboard");
     expect(Reflect.get(app, "dashboardState")).toBe(dashboardState);
     expect(templateMarkup(app.render())).toContain("<settings-dialog");
@@ -267,7 +283,17 @@ describe("PiWebApp dashboard transitions", () => {
 
     callVoid(app, "openSettings");
 
+    expect(Reflect.get(app, "settingsSection")).toBe("general");
     expect(Reflect.get(app, "topLevelPage")).toBe("workspace");
+  });
+
+  it("keeps an explicit General Settings section in Modernist", () => {
+    const app = createApp();
+    Reflect.set(app, "activeThemeId", "themes:modernist-dark");
+
+    callVoid(app, "openSettings", "general");
+
+    expect(Reflect.get(app, "settingsSection")).toBe("general");
   });
 
   it("keeps the mobile dashboard and its prior destination while Modernist Settings opens and closes", () => {
@@ -281,6 +307,7 @@ describe("PiWebApp dashboard transitions", () => {
 
     callVoid(app, "selectMobileDestination", "settings");
 
+    expect(Reflect.get(app, "settingsSection")).toBe("sessiond");
     expect(Reflect.get(app, "topLevelPage")).toBe("dashboard");
     expect(Reflect.get(app, "mobileDestination")).toBe("settings");
     expect(templateMarkup(app.render())).toContain("<session-dashboard");

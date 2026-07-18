@@ -988,12 +988,13 @@ export class PiWebApp extends LitElement {
     return "chat";
   }
 
-  private openSettings(section: SettingsSection = "general"): void {
+  private openSettings(section?: SettingsSection): void {
+    const resolvedSection = section ?? (this.isModernistSettingsDestination() ? "sessiond" : "general");
     // The legacy modal keeps its existing dashboard-to-workspace handoff.
     if (this.topLevelPage === "dashboard" && !this.isModernistSettingsDestination()) this.leaveDashboard();
     this.settingsFocusReturnTarget = deepActiveElement(this.renderRoot);
-    this.reconcileSettingsRoute(section, { focusDialog: !this.isModernistSettingsDestination() });
-    writeSettingsSection(section);
+    this.reconcileSettingsRoute(resolvedSection, { focusDialog: !this.isModernistSettingsDestination() });
+    writeSettingsSection(resolvedSection);
   }
 
   private closeSettings(options: { restoreFocus?: boolean } = {}): void {
