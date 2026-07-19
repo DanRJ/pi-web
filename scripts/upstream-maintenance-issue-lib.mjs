@@ -80,4 +80,3 @@ export async function collectOpenIssues(fetchPage) {
   } while (path !== null);
   return issues;
 }
-
