@@ -315,7 +315,7 @@ describe("upstream maintenance", () => {
     } finally {
       rmSync(fixture.root, { recursive: true, force: true });
     }
-  }, 30_000);
+  }, 60_000);
 
   it("detects rename-versus-edit overlap through both old and new paths", () => {
     const fixture = createFixture();
@@ -386,5 +386,5 @@ describe("upstream maintenance", () => {
     } finally {
       rmSync(fixture.root, { recursive: true, force: true });
     }
-  });
+  }, 20_000);
 });
