@@ -4,7 +4,7 @@ PI WEB is a fork of `jmfederico/pi-web`. Upstream review is an evidence-gatherin
 
 ## Exact policy
 
-- The baseline is commit `a857fe4ef333fac5c01319bd2f375fd732588b51`, the released upstream `v1.202607.1` line.
+- The baseline is commit `d5650aef5bc75649bfc8e5cbf5633352dd4381a6`, integrating upstream through eight commits after the `v1.202607.1` release.
 - The expected fork identity is `origin = https://github.com/DanRJ/pi-web.git`; the expected upstream identity is `upstream = https://github.com/jmfederico/pi-web.git`.
 - Both tracked comparison refs are exactly `refs/heads/main`.
 - The checker fetches only those explicit main refs and upstream tags. It uses `--no-write-fetch-head`; tags live only in `refs/pi-web-maintenance/upstream/tags/*` in a disposable bare repository.
@@ -37,7 +37,7 @@ The readiness endpoint is part of the long-lived session daemon. After installin
 
 ## Current observed snapshot
 
-At the policy baseline review, the observed comparison was **63 fork-only commits / 49 upstream-only commits / 27 shared changed paths**. The upstream release recommendation was to assess the released `v1.202607.1` line first, then analyze newer commits individually. This is a recorded observation, not a moving result; run the checker for current SHAs and counts.
+At the `d5650aef5bc75649bfc8e5cbf5633352dd4381a6` integration review, the observed comparison was **16 fork-only commits / 64 upstream-only commits / 54 shared changed paths**. The integrated scope included upstream `v1.202607.1` and its next eight commits. This is a recorded observation, not a moving result; run the checker for current SHAs and counts.
 
 ## Maintainer checklist
 
