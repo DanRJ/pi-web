@@ -39,6 +39,8 @@ describe("Calm Cockpit rendered controls", () => {
     expect(title?.textContent).toContain(longTitle);
     expect(title?.getAttribute("title")).toBe(session(longTitle).path);
     expect(stop?.getAttribute("aria-label")).toBe("Stop session work");
+    expect(AppSessionHeader.styles.cssText).toContain("width: 100%; max-width: 100%; min-width: 0; overflow: hidden;");
+    expect(AppSessionHeader.styles.cssText).toContain(":host-context(:root[data-pi-web-theme^=\"themes:modernist-\"]) .rename-control { display: none; }");
   });
 
   it.each(["themes:classic", "themes:pi-web-dark", "themes:modernist-light", "themes:modernist-dark"])("keeps %s mobile header controls at a 2.75rem touch target", async (theme) => {

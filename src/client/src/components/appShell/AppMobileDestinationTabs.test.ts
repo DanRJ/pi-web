@@ -21,9 +21,10 @@ describe("AppMobileDestinationTabs", () => {
   it("keeps every mobile destination button horizontal, centered, and visible at narrow widths", () => {
     const styles = AppMobileDestinationTabs.styles.cssText;
 
-    expect(styles).toContain("button { display: flex; align-items: center; justify-content: center; gap: 0.25rem;");
-    expect(styles).toContain("min-width: 0; min-height: 2.75rem;");
+    expect(styles).toContain(".destinations { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); width: 100%; max-width: 100%; min-width: 0;");
+    expect(styles).toContain("button { box-sizing: border-box; display: flex; align-items: center; justify-content: center; gap: 0.25rem; width: 100%; max-width: 100%; min-width: 0; min-height: 2.75rem; overflow: hidden;");
     expect(styles).toContain("white-space: nowrap;");
+    expect(styles).toContain("button span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }");
     expect(styles).toContain("button[aria-current=\"page\"] { box-shadow:");
     expect(styles).toContain("button:focus-visible { outline:");
     expect(styles).toContain("@media (max-width: 359px) { button { gap: 0.1875rem; font-size: 0.625rem; }");

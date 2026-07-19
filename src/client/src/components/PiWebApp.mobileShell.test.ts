@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SessionInfo } from "../api";
 import { initialAppState, type AppState } from "../appState";
 import { PiWebApp } from "./PiWebApp";
-import { appStyles } from "./shared";
+import { appStyles, chatStyles, formattedTextStyles, promptEditorStyles, workspacePanelStyles } from "./shared";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -72,6 +72,18 @@ describe("PiWebApp mobile shell", () => {
     expect(styles).toContain(".shell.dashboard-page { grid-template-columns: minmax(0, 1fr); }");
     expect(styles).toContain(".shell.dashboard-page main { grid-column: 1; grid-row: 1; display: flex; }");
     expect(styles).toContain("app-mobile-destination-tabs { grid-column: 1; grid-row: 2; display: block; min-width: 0; }");
+  });
+
+  it("contains every mobile surface and lets the Modernist composer reflow above the destination grid", () => {
+    expect(appStyles.cssText).toContain("width: 100%; max-width: 100vw; min-width: 0;");
+    expect(appStyles.cssText).toContain("width: 100%; max-width: 100%; height: 100%; min-width: 0; min-height: 0; overflow: hidden;");
+    expect(mobileShellStyles()).toContain(".shell > app-mobile-destination-tabs,");
+    expect(mobileShellStyles()).toContain(".shell > workspace-panel { max-width: 100%; min-width: 0; }");
+    expect(chatStyles.cssText).toContain("width: 100%; max-width: 100%; min-width: 0;");
+    expect(workspacePanelStyles.cssText).toContain("width: 100%; max-width: 100%; min-width: 0;");
+    expect(formattedTextStyles.cssText).toContain("max-width: 100%; min-width: 0; overflow: hidden;");
+    expect(promptEditorStyles.cssText).toContain("@container (max-width: 26rem)");
+    expect(promptEditorStyles.cssText).toContain("flex-wrap: wrap;");
   });
 
   it("overrides the high-specificity Settings desktop tracks with one mobile content column", () => {

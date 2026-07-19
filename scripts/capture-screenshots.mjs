@@ -162,7 +162,93 @@ async function captureDefaultApp(cdp, appUrl, viewport, outputPath) {
   await navigate(cdp, appUrl.href, 15_000);
   await waitForApp(cdp);
   await sleep(700);
+  if (viewport.mobile) await verifyMobileLayout(cdp);
   await capturePng(cdp, outputPath);
+}
+
+async function verifyMobileLayout(cdp) {
+  const result = await evaluate(cdp, `(async () => {
+    const app = document.querySelector("pi-web-app");
+    const root = app?.shadowRoot;
+    const shell = root?.querySelector(".shell");
+    const tabs = root?.querySelector("app-mobile-destination-tabs");
+    if (!app || !root || !(shell instanceof HTMLElement) || !tabs?.shadowRoot) throw new Error("Mobile shell and destination tabs were not available");
+    const theme = document.documentElement.dataset.piWebTheme ?? "";
+    if (!theme.startsWith("themes:modernist-")) throw new Error("Expected a Modernist theme, received " + theme);
+    const nextFrame = () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const issues = [];
+    const measurements = [];
+    const checkRect = (rect, label, viewportWidth) => {
+      if (rect.width <= 0 || rect.height <= 0) issues.push(label + ": surface is not visible");
+      if (rect.left < -0.5 || rect.right > viewportWidth + 0.5) issues.push(label + ": surface is outside the viewport");
+    };
+    const checkScroll = (element, label) => {
+      if (element.scrollWidth > element.clientWidth + 1) issues.push(label + ": scroll width " + element.scrollWidth + " exceeds client width " + element.clientWidth);
+    };
+    const surfaceSelectors = { chat: "main", sessions: ".mobile-navigation-panel", tools: "workspace-panel", settings: "settings-dialog" };
+    for (const destination of ["chat", "sessions", "tools", "settings"]) {
+      const button = tabs.shadowRoot.querySelector('button[data-destination="' + destination + '"]');
+      if (!(button instanceof HTMLButtonElement)) {
+        issues.push(destination + ": destination button missing");
+        continue;
+      }
+      button.click();
+      await app.updateComplete;
+      await tabs.updateComplete;
+      await nextFrame();
+      const documentWidth = document.documentElement.scrollWidth;
+      const viewportWidth = document.documentElement.clientWidth;
+      const surface = root.querySelector(surfaceSelectors[destination]);
+      measurements.push({ destination, documentWidth, viewportWidth, shellWidth: shell.getBoundingClientRect().width, surfaceWidth: surface?.getBoundingClientRect().width });
+      if (documentWidth > viewportWidth) issues.push(destination + ": document width " + documentWidth + " exceeds viewport " + viewportWidth);
+      checkRect(shell.getBoundingClientRect(), destination + " shell", viewportWidth);
+      checkScroll(shell, destination + " shell");
+      if (!(surface instanceof HTMLElement)) issues.push(destination + ": active surface missing");
+      else {
+        checkRect(surface.getBoundingClientRect(), destination + " surface", viewportWidth);
+        checkScroll(surface, destination + " surface");
+      }
+      if (destination === "chat") {
+        const header = root.querySelector("app-session-header");
+        const prompt = root.querySelector("prompt-editor");
+        const headerContent = header?.shadowRoot?.querySelector("header");
+        const promptFooter = prompt?.shadowRoot?.querySelector("footer");
+        const promptActions = prompt?.shadowRoot?.querySelector(".modernist-actions");
+        for (const [element, label] of [[header, "session header"], [headerContent, "session controls"], [prompt, "composer"], [promptFooter, "composer footer"], [promptActions, "composer actions"]]) {
+          if (!(element instanceof HTMLElement)) issues.push(label + ": missing");
+          else {
+            checkRect(element.getBoundingClientRect(), label, viewportWidth);
+            checkScroll(element, label);
+          }
+        }
+        const actionButtons = [...(prompt?.shadowRoot?.querySelectorAll(".modernist-actions button") ?? [])].filter((element) => element.getClientRects().length > 0);
+        for (const action of actionButtons) {
+          const rect = action.getBoundingClientRect();
+          if (rect.width < 43.5 || rect.height < 43.5) issues.push("composer action is smaller than 44px: " + action.getAttribute("aria-label"));
+          checkRect(rect, "composer action", viewportWidth);
+        }
+      }
+    }
+    const buttons = [...tabs.shadowRoot.querySelectorAll("button")];
+    const rects = buttons.map((button) => button.getBoundingClientRect());
+    const widths = rects.map((rect) => rect.width);
+    if (buttons.length !== 4) issues.push("expected four destination buttons, found " + buttons.length);
+    if (widths.length === 4 && Math.max(...widths) - Math.min(...widths) > 1) issues.push("destination tracks are not equal width: " + widths.join(", "));
+    for (const rect of rects) {
+      checkRect(rect, "destination button", innerWidth);
+      if (rect.height < 43.5) issues.push("destination button is shorter than 44px");
+    }
+    const chatButton = tabs.shadowRoot.querySelector('button[data-destination="chat"]');
+    if (chatButton instanceof HTMLButtonElement) {
+      chatButton.click();
+      await app.updateComplete;
+      await tabs.updateComplete;
+      await nextFrame();
+    }
+    return { issues, measurements, tabWidths: widths };
+  })()`);
+  if (result?.issues?.length > 0) throw new Error(`Mobile layout verification failed: ${JSON.stringify(result)}`);
+  console.log(`Verified mobile containment, composer controls, and four equal destination tracks: ${JSON.stringify(result)}`);
 }
 
 async function selectPreviewImage(cdp) {

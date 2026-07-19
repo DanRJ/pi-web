@@ -44,16 +44,17 @@ describe("PromptEditor Modernist controls", () => {
     expect(candidate.call(editor, new Map([["status", status({ thinkingLevel: "high" })]]))).toBe(true);
   });
 
-  it("gives Modernist one nonwrapping 44px row, with an explicit extra-narrow fallback", () => {
+  it("gives Modernist 44px controls with a narrow mobile reflow", () => {
     // This structural contract protects CodeMirror from being remounted or
-    // squeezed by a long model name while the keyboard viewport is reduced.
+    // widened by a long model name while the keyboard viewport is reduced.
     expect(promptEditorStyles.cssText).toContain(".modernist-composer { display: none; }");
     expect(promptEditorStyles.cssText).toContain(".legacy-composer { display: none; }");
     expect(promptEditorStyles.cssText).toContain(".modernist-actions { grid-template-columns: minmax(0, 1fr) max-content; gap: 0.5rem; align-items: center; overflow: hidden; }");
     expect(promptEditorStyles.cssText).toContain(".action-context { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 0.5rem; min-width: 0; }");
     expect(promptEditorStyles.cssText).toContain("@container (max-width: 38rem)");
     expect(promptEditorStyles.cssText).toContain(".action-button { width: 2.75rem; height: 2.75rem; min-width: 2.75rem; padding: 0; }");
-    expect(promptEditorStyles.cssText).toContain("@container (max-width: 22rem)");
+    expect(promptEditorStyles.cssText).toContain(".action-execution { display: flex; min-width: 0; max-width: 100%; flex-wrap: wrap;");
+    expect(promptEditorStyles.cssText).toContain("@container (max-width: 26rem)");
     expect(promptEditorStyles.cssText).toContain(".actions { grid-template-columns: minmax(0, 1fr); }");
     expect(promptEditorStyles.cssText).toContain(".markdown-editor .cm-content { min-height: 38px; padding: 8px 44px 8px 8px;");
   });

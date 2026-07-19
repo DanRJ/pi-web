@@ -62,10 +62,11 @@ export class AppSessionHeader extends LitElement {
   }
 
   static override styles = css`
-    :host { display: block; flex: 0 0 auto; color: var(--pi-text); font-family: var(--pi-body-font-family, system-ui, sans-serif); }
-    header { display: flex; align-items: center; justify-content: space-between; gap: var(--pi-space-3, 0.75rem); min-width: 0; padding: var(--pi-space-3, 0.75rem) var(--pi-space-4, 1rem); border-bottom: var(--pi-divider-width, 1px) solid var(--pi-border-muted); background: var(--pi-bg); }
+    :host { display: block; flex: 0 0 auto; width: 100%; max-width: 100%; min-width: 0; overflow: hidden; color: var(--pi-text); font-family: var(--pi-body-font-family, system-ui, sans-serif); }
+    header { box-sizing: border-box; display: flex; align-items: center; justify-content: space-between; gap: var(--pi-space-3, 0.75rem); width: 100%; max-width: 100%; min-width: 0; padding: var(--pi-space-3, 0.75rem) var(--pi-space-4, 1rem); border-bottom: var(--pi-divider-width, 1px) solid var(--pi-border-muted); background: var(--pi-bg); overflow: hidden; }
     .session-context, .session-actions { min-width: 0; display: flex; align-items: center; gap: var(--pi-space-2, 0.5rem); }
-    .session-context { overflow: hidden; }
+    .session-context { flex: 1 1 auto; overflow: hidden; }
+    .session-actions { flex: 0 0 auto; }
     strong { min-width: 0; overflow: hidden; font-family: var(--pi-heading-font-family, inherit); font-size: 0.9375rem; font-weight: var(--pi-heading-font-weight, 700); letter-spacing: -0.015em; text-overflow: ellipsis; white-space: nowrap; }
     .session-detail { min-width: 0; max-width: 16rem; overflow: hidden; border: 1px solid var(--pi-border-muted); color: var(--pi-muted); padding: 0.1875rem 0.5rem; font-size: 0.75rem; text-overflow: ellipsis; white-space: nowrap; }
     .status-badge { display: inline-flex; align-items: center; gap: 0.375rem; border: 1px solid var(--pi-text); color: var(--pi-text); padding: 0.1875rem 0.5rem; font-family: var(--pi-heading-font-family, inherit); font-size: 0.6875rem; font-weight: 600; letter-spacing: 0.03em; text-transform: uppercase; white-space: nowrap; }
@@ -93,6 +94,7 @@ export class AppSessionHeader extends LitElement {
       /* Modernist's compact header keeps the real stop control reachable above
          the destination tabs without changing legacy theme density. */
       :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .session-stop-control { display: inline-grid; }
+      :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .rename-control { display: none; }
       /* All theme variants use a 44px-equivalent touch target on mobile. */
       button { min-width: 2.75rem; min-height: 2.75rem; height: 2.75rem; }
     }
