@@ -11,6 +11,7 @@ import { FileExplorerController } from "../controllers/fileExplorerController";
 import { GitController } from "../controllers/gitController";
 import { MachineController } from "../controllers/machineController";
 import { ProjectController } from "../controllers/projectController";
+import { ProjectActivityOwnershipCoordinator } from "../controllers/projectActivityOwnershipCoordinator";
 import { PiWebStatusController } from "../controllers/piWebStatusController";
 import { SessionController } from "../controllers/sessionController";
 import { WorkspaceController, canDeleteWorkspace } from "../controllers/workspaceController";
@@ -106,9 +107,20 @@ export class PiWebApp extends LitElement {
     () => { this.updateUrl(); },
     new SessionStorageSessionSelectionMemory(),
   );
+  private readonly projectActivityOwnership = new ProjectActivityOwnershipCoordinator(
+    () => this.state,
+    (patch) => { this.setState(patch); },
+    {
+      api: workspacesApi,
+      onError: ({ machineId, projectId, error }) => {
+        console.warn(`Failed to discover project activity ownership for ${projectId} on ${machineId}`, error);
+      },
+    },
+  );
   private readonly activity = new ActivityController(
     () => this.state,
     (patch) => { this.setState(patch); },
+    { onActivityApplied: (machineId) => { void this.projectActivityOwnership.handleActivityApplied(machineId); } },
   );
   private readonly auth = new AuthController(
     () => this.state,
@@ -126,6 +138,7 @@ export class PiWebApp extends LitElement {
     () => this.state,
     (patch) => { this.setState(patch); },
     this.workspaces,
+    { onProjectsApplied: (machineId) => { void this.projectActivityOwnership.handleProjectsApplied(machineId); } },
   );
   private readonly machines = new MachineController(
     () => this.state,
@@ -877,6 +890,7 @@ export class PiWebApp extends LitElement {
 
   private handleMachineChange(previous: AppState, next: AppState): void {
     if ((previous.selectedMachine?.id ?? "local") === (next.selectedMachine?.id ?? "local")) return;
+    this.projectActivityOwnership.handleSelectedMachineChanged();
     const pendingMachineId = this.pendingRemoteRouteRestore?.machineId ?? "local";
     if (pendingMachineId !== (next.selectedMachine?.id ?? "local")) this.clearPendingRemoteRouteRestore();
     this.sessions.clearActiveSession();
