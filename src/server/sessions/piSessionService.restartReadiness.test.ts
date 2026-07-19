@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { PiSessionService } from "./piSessionService.js";
-import { CapturingSessionEventHub, fakeRuntime, runtimeCreator, sessionGateway } from "./piSessionService.testSupport.js";
+import { CapturingSessionEventHub, fakeRuntime, runtimeCreator, sessionGateway, testModelRuntime } from "./piSessionService.testSupport.js";
 
 const TEST_AGENT_DIR = "/tmp/pi-web-test-agent";
 
@@ -36,6 +36,7 @@ async function startedService(state: { isStreaming?: boolean; isCompacting?: boo
   const runtime = fakeRuntime("session-1", state);
   const service = new PiSessionService(new CapturingSessionEventHub(), {
     agentDir: TEST_AGENT_DIR,
+    modelRuntime: testModelRuntime,
     createAgentRuntime: runtimeCreator(runtime.runtime),
     sessionManager: sessionGateway([]),
     heartbeatIntervalMs: 60_000,

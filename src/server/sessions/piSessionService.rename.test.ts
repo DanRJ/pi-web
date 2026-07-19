@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { CapturingSessionEventHub, emptyArchiveStore, fakeRuntime, runtimeCreator, sessionGateway, sessionRecord, sessionRef } from "./piSessionService.testSupport.js";
+import { CapturingSessionEventHub, emptyArchiveStore, fakeRuntime, runtimeCreator, sessionGateway, sessionRecord, sessionRef, testModelRuntime } from "./piSessionService.testSupport.js";
 import { PiSessionService, SessionRenameArchivedError, SessionRenameNotFoundError } from "./piSessionService.js";
 import { appendPersistedSessionName } from "./sessionNamePersistence.js";
 
@@ -12,7 +12,7 @@ describe("PiSessionService.rename", () => {
   it("renames an active busy runtime without interrupting work", async () => {
     const hub = new CapturingSessionEventHub();
     const fake = fakeRuntime("active", { isStreaming: true });
-    const service = new PiSessionService(hub, { agentDir: TEST_AGENT_DIR, createAgentRuntime: runtimeCreator(fake.runtime), sessionManager: sessionGateway([]), archiveStore: emptyArchiveStore(), heartbeatIntervalMs: 60_000 });
+    const service = new PiSessionService(hub, { agentDir: TEST_AGENT_DIR, modelRuntime: testModelRuntime, createAgentRuntime: runtimeCreator(fake.runtime), sessionManager: sessionGateway([]), archiveStore: emptyArchiveStore(), heartbeatIntervalMs: 60_000 });
     try {
       await service.start("/workspace");
       await expect(service.rename(sessionRef("active"), "Working title")).resolves.toEqual({ sessionId: "active", name: "Working title" });
@@ -33,6 +33,7 @@ describe("PiSessionService.rename", () => {
     const record = { ...sessionRecord("dormant"), path };
     const service = new PiSessionService(hub, {
       agentDir: TEST_AGENT_DIR,
+      modelRuntime: testModelRuntime,
       sessionManager: { create: () => { throw new Error("not used"); }, list: () => Promise.resolve([record]), open, },
       archiveStore: emptyArchiveStore(),
       heartbeatIntervalMs: 60_000,
@@ -56,6 +57,7 @@ describe("PiSessionService.rename", () => {
     const firstAppend = new Promise<void>((resolve) => { releaseFirstAppend = resolve; });
     const service = new PiSessionService(hub, {
       agentDir: TEST_AGENT_DIR,
+      modelRuntime: testModelRuntime,
       sessionManager: sessionGateway([sessionRecord("dormant")]),
       archiveStore: emptyArchiveStore(),
       appendPersistedSessionName: ({ name }) => {
@@ -109,6 +111,7 @@ describe("PiSessionService.rename", () => {
     };
     const service = new PiSessionService(hub, {
       agentDir: TEST_AGENT_DIR,
+      modelRuntime: testModelRuntime,
       sessionManager: { create: () => { throw new Error("not used"); }, list: () => Promise.resolve(archived ? [] : [record]), open: vi.fn() },
       archiveStore,
       appendPersistedSessionName: async (input) => {
@@ -146,6 +149,7 @@ describe("PiSessionService.rename", () => {
     const append = vi.fn();
     const service = new PiSessionService(new CapturingSessionEventHub(), {
       agentDir: TEST_AGENT_DIR,
+      modelRuntime: testModelRuntime,
       sessionManager: sessionGateway([sessionRecord("dormant")]),
       archiveStore: emptyArchiveStore(),
       createAgentRuntime: async () => { signalOpen?.(); await openGate; return fake.runtime; },
@@ -175,6 +179,7 @@ describe("PiSessionService.rename", () => {
     const appendStarted = new Promise<void>((resolve) => { signalAppend = resolve; });
     const service = new PiSessionService(new CapturingSessionEventHub(), {
       agentDir: TEST_AGENT_DIR,
+      modelRuntime: testModelRuntime,
       sessionManager: sessionGateway([sessionRecord("dormant")]),
       archiveStore: emptyArchiveStore(),
       createAgentRuntime: () => { fake.session.sessionName = committedName; return Promise.resolve(fake.runtime); },
@@ -199,6 +204,7 @@ describe("PiSessionService.rename", () => {
     const append = vi.fn(() => Promise.reject(new Error("disk full")));
     const service = new PiSessionService(hub, {
       agentDir: TEST_AGENT_DIR,
+      modelRuntime: testModelRuntime,
       sessionManager: { create: () => { throw new Error("not used"); }, list: () => Promise.resolve([sessionRecord("present")]), open: vi.fn() },
       archiveStore: { ...emptyArchiveStore(), get: (id) => Promise.resolve(id === "archived" ? { sessionId: id, cwd: "/workspace", archivedAt: "2026-01-01T00:00:00.000Z" } : undefined) },
       appendPersistedSessionName: append,

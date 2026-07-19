@@ -53,7 +53,7 @@ export class AppMobileMainTabs extends LitElement {
               <button class=${this.tabClass(tab)} title=${tab.label} aria-label=${this.tabAriaLabel(tab)} aria-pressed=${String(selected)} @click=${() => { this.onSelect?.(tab.id); }}>
                 ${this.renderTabMark(tab, fallbackLabels)}
                 <span class="tab-label">${tab.label}</span>
-                ${this.isEmptyBadge(tab.badge) ? null : html`<span class="tab-badge">${tab.badge}</span>`}
+                ${this.renderBadge(tab.badge)}
               </button>
             `;
           })}
@@ -79,8 +79,9 @@ export class AppMobileMainTabs extends LitElement {
     return badge === "" ? tab.label : `${tab.label}, ${badge}`;
   }
 
-  private isEmptyBadge(badge: unknown): boolean {
-    return badge === undefined || badge === "";
+  private renderBadge(badge: unknown) {
+    if (badge === undefined || badge === "") return null;
+    return html`<span class="tab-badge">${badge}</span>`;
   }
 
   private renderTabMark(tab: AppMobileMainTab, fallbackLabels: Map<AppState["mainView"], string>) {
@@ -168,7 +169,7 @@ export class AppMobileMainTabs extends LitElement {
     button:focus-visible { outline: var(--pi-focus-ring-width, 2px) solid var(--pi-accent); outline-offset: var(--pi-focus-ring-offset, 2px); }
     @media (max-width: 767px) {
       .mobile-tabs { gap: 4px; padding: 6px 8px; }
-      .mobile-tabs button { min-width: 40px; height: 36px; justify-content: center; gap: 4px; padding: 0 8px; }
+      .mobile-tabs button { min-width: 44px; height: 44px; justify-content: center; gap: 4px; padding: 0 8px; }
       .mobile-tabs .navigation-tab { display: inline-flex; }
       .tab-fallback { display: inline-block; }
       .tab-label { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; border: 0; }

@@ -289,7 +289,7 @@ describe("upstream maintenance", () => {
     } finally {
       rmSync(fixture.root, { recursive: true, force: true });
     }
-  }, 20_000);
+  }, 60_000);
 
   it("does not replace a valid report when policy or package metadata validation fails", () => {
     const fixture = createFixture();

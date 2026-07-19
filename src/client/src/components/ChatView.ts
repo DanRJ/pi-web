@@ -9,7 +9,23 @@ import { capturePrependScrollAnchor, PREPEND_RESTORE_SETTLE_FRAMES, restorePrepe
 import { shouldRequestEarlierMessages } from "../chatHistoryLoading";
 import { ChatScrollController, distanceFromScrollBottom, findFirstVisibleArticle, isNearScrollBottom, shouldShowJumpToLatest, type ChatAnchorScrollPosition, type ChatScrollRestoreResult } from "../chatScrollPosition";
 import { sessionStatusPresentation } from "../sessionStatusPresentation";
-import type { ExtensionUiNotification, ExtensionUiRequest, ExtensionUiResolution, ExtensionUiResponse, QueuedSessionMessage, SessionActivity, SessionStatus } from "../api";
+import type { ExtensionUiNotification, ExtensionUiRequest, ExtensionUiResolution, ExtensionUiResponse, QueuedSessionMessage, SessionActivity, SessionStatus, SessionWarningSeverity } from "../api";
+import {
+  notificationAnnouncementLabel,
+  notificationDismissLabel,
+  notificationFocusTargetAfterDismiss,
+  notificationInboxOverflowLabel,
+  notificationInboxTotalCount,
+  notificationMessageTruncationLabel,
+  notificationSeverityLabel,
+  notificationTargetKey,
+  notificationTrayHeading,
+  notificationTrayIsCollapsed,
+  setNotificationTrayCollapsed,
+  type NotificationFocusTarget,
+  type SelectedSessionNotificationView,
+  type SessionNotificationTarget,
+} from "../sessionNotifications";
 import type { ChatLine, ChatPart } from "./shared";
 import { chatStyles } from "./shared";
 import "./ConversationMeter";
@@ -19,6 +35,38 @@ import "./ExtensionUiCards";
 import type { ExtensionUiSubmitResult } from "./ExtensionUiCards";
 
 const messageTimestampFormatter = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "medium" });
+const notificationTimestampFormatter = new Intl.DateTimeFormat(undefined, { timeStyle: "short" });
+
+function warningSeverityIcon(severity: SessionWarningSeverity): string {
+  if (severity === "error") return "⛔";
+  if (severity === "info") return "ℹ️";
+  return "⚠️";
+}
+
+function renderNotificationDisclosureIcon(collapsed: boolean) {
+  return html`
+    <svg class=${`notification-icon notification-disclosure-icon${collapsed ? "" : " expanded"}`} viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="m9 18 6-6-6-6"></path>
+    </svg>
+  `;
+}
+
+function renderNotificationCloseIcon() {
+  return html`
+    <svg class="notification-icon notification-close-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M6 6l12 12"></path>
+      <path d="M18 6 6 18"></path>
+    </svg>
+  `;
+}
+
+function isSessionNotificationTarget(value: unknown): value is SessionNotificationTarget {
+  return typeof value === "object"
+    && value !== null
+    && typeof Reflect.get(value, "machineId") === "string"
+    && typeof Reflect.get(value, "cwd") === "string"
+    && typeof Reflect.get(value, "sessionId") === "string";
+}
 
 function clampPercent(value: number): number {
   return clampNumber(value, 0, 100);
@@ -37,6 +85,11 @@ export interface QueuedMessageLane {
   heading: "Steering" | "Follow-ups";
   kind: QueuedSessionMessage["kind"];
   messages: QueuedSessionMessage[];
+}
+
+interface PendingNotificationFocus {
+  chatKey: string;
+  focusTarget: NotificationFocusTarget;
 }
 
 export interface QueuedMessageSection {
@@ -71,6 +124,75 @@ function queuedMessageLanes(messages: QueuedSessionMessage[]): QueuedMessageLane
   return lanes.filter((lane) => lane.messages.length > 0);
 }
 
+export type ChatImagePart = Extract<ChatPart, { type: "image" }>;
+
+/** Derive the `<img>` source URL and alt text for a rendered image part. */
+export function chatImagePartSource(part: ChatImagePart): { src: string; alt: string } {
+  return { src: `data:${part.mimeType};base64,${part.data}`, alt: "attached image" };
+}
+
+/** The message-header label used when a tool message renders as an image output. */
+export function chatToolOutputLabel(toolName?: string): string {
+  return toolName === undefined || toolName === "" ? "tool output" : `${toolName} output`;
+}
+
+/** The stable scroll-anchor/render key for a top-level message at `index`. */
+export function chatMessageAnchorKey(index: number): string {
+  return `m:${String(index)}`;
+}
+
+/** The stable scroll-anchor/render key for a collapsed event group starting at `startIndex`. */
+export function chatGroupAnchorKey(startIndex: number): string {
+  return `g:${String(startIndex)}`;
+}
+
+/** The stable scroll-anchor key for an event inside a group at `index`. */
+export function chatEventAnchorKey(index: number): string {
+  return `e:${String(index)}`;
+}
+
+/** The stable scroll-marker id emitted before an event group ending at `endIndex`. */
+export function chatGroupScrollMarkerId(endIndex: number): string {
+  return `g:${String(endIndex)}`;
+}
+
+/** The CSS class list for an event-group `<details>`, distinguishing the live tail. */
+export function chatMessageGroupClassName(defaultOpen: boolean): string {
+  return defaultOpen ? "msg event-group live" : "msg event-group";
+}
+
+/** The disclosure summary label for an event group, distinguishing the live tail. */
+export function chatMessageGroupLabel(defaultOpen: boolean): string {
+  return defaultOpen ? "live events" : "events";
+}
+
+/** Whether a queued-message section shows the server clear-queue action. */
+export function chatQueuedSectionShowsClearAction(section: QueuedMessageSection, canClearServerQueue: boolean, hasClearHandler: boolean): boolean {
+  return section.source === "server" && canClearServerQueue && hasClearHandler;
+}
+
+/** A rendered session-warning row derived from live status warnings. */
+export interface ChatSessionWarningRow {
+  severity: SessionWarningSeverity;
+  severityClass: string;
+  message: string;
+  source?: string;
+  path?: string;
+  dismissId?: string;
+}
+
+/** Derive one severity-tagged warning row per live status warning, in order. */
+export function chatSessionWarningRows(status: SessionStatus | undefined): ChatSessionWarningRow[] {
+  return (status?.warnings ?? []).map((warning) => ({
+    severity: warning.severity,
+    severityClass: `session-warning ${warning.severity}`,
+    message: warning.message,
+    ...(warning.source === undefined ? {} : { source: warning.source }),
+    ...(warning.path === undefined ? {} : { path: warning.path }),
+    ...(warning.dismiss === undefined ? {} : { dismissId: warning.dismiss.id }),
+  }));
+}
+
 export function chatMessageMetadataLabel(message: ChatLine): string {
   const timestamp = message.meta?.timestamp;
   const time = timestamp === undefined ? undefined : formatMessageTimestamp(timestamp);
@@ -102,8 +224,8 @@ export class ChatView extends LitElement {
   @property({ type: Number }) messageTotal = 0;
   @property({ type: Boolean }) hasMore = false;
   @property({ type: Boolean }) loadingMore = false;
-  @property({ type: Boolean }) isReceivingPartialStream = false;
   @property({ type: Boolean }) isSendingPrompt = false;
+  @property({ type: Boolean }) isReceivingPartialStream = false;
   @property({ type: Boolean }) isCompacting = false;
   /** A command or extension card needs an answer before runtime work can continue. */
   @property({ type: Boolean }) waitingForUser = false;
@@ -118,17 +240,26 @@ export class ChatView extends LitElement {
   @property({ type: Boolean }) canStop = false;
   /** The server's pending count confirms that Stop clears a server queue. */
   @property({ type: Boolean }) clearsServerQueue = false;
+  @property({ attribute: false }) notificationInbox?: SelectedSessionNotificationView;
   @property({ type: Boolean }) canClearServerQueue = false;
   /** The app shell has confirmed that the mobile IME currently owns the viewport. */
   @property({ type: Boolean }) mobileKeyboardFocusActive = false;
   @property({ attribute: false }) onClearServerQueue?: () => void;
+  @property({ attribute: false }) onDismissWarning?: (dismissId: string) => void;
+  @property({ attribute: false }) onDismissNotification?: (notificationId: string) => void;
+  @property({ attribute: false }) onDismissAllNotifications?: () => void;
   @property({ attribute: false }) onLoadMore?: () => void;
   @query(".chat") private chat?: HTMLDivElement;
+  @query("dialog.image-zoom") private imageZoomDialog?: HTMLDialogElement;
   @state() private pinnedToBottom = true;
   @state() private showJumpToLatest = false;
+  @state() private zoomedImage: { src: string; alt: string } | undefined = undefined;
   @state() private expandedMetaKey: string | undefined;
   @state() private copiedMessageKey: string | undefined;
   @state() private currentConversationIndex: number | undefined;
+  @state() private collapsedNotificationTargetKeys: ReadonlySet<string> = new Set();
+  @state() private retainedEmptyNotificationTrayTargetKey: string | undefined;
+  private pendingNotificationFocus: PendingNotificationFocus | undefined;
   private readonly disclosures = new ChatDisclosureController();
   private readonly scrollController = new ChatScrollController();
   private suppressScrollSave = false;
@@ -163,6 +294,15 @@ export class ChatView extends LitElement {
     if (this.followingLatestUntilBottom) this.continueFollowingLatest();
     else if (this.pinnedToBottom) this.scrollToBottom();
     this.refreshJumpToLatest();
+  };
+  private readonly openImageZoom = (src: string, alt: string): void => {
+    this.zoomedImage = { src, alt };
+  };
+  private readonly closeImageZoom = (): void => {
+    if (this.zoomedImage !== undefined) this.zoomedImage = undefined;
+  };
+  private readonly onImageZoomDialogClick = (event: MouseEvent): void => {
+    if (event.target === this.imageZoomDialog) this.closeImageZoom();
   };
   private readonly onPageHide = () => {
     this.saveScrollPosition();
@@ -204,6 +344,8 @@ export class ChatView extends LitElement {
 
   private prepareSessionUiState(): void {
     this.disclosures.syncSession(this.sessionId);
+    this.pendingNotificationFocus = undefined;
+    this.retainedEmptyNotificationTrayTargetKey = undefined;
     this.scrollController.clearScheduledSave();
     this.suppressScrollSave = false;
     this.suppressLoadMoreRequests = false;
@@ -224,6 +366,9 @@ export class ChatView extends LitElement {
     if (changed.has("sessionId")) {
       this.savePreviousSessionScrollPosition(changed.get("sessionId"));
       this.prepareSessionUiState();
+    } else if (changed.has("notificationInbox") && this.notificationTargetChanged(changed.get("notificationInbox"))) {
+      this.pendingNotificationFocus = undefined;
+      this.retainedEmptyNotificationTrayTargetKey = undefined;
     }
     // A smooth Latest transition has an explicit bottom intent. Transcript and
     // layout updates must not replace it with a transient mid-scroll position.
@@ -248,6 +393,21 @@ export class ChatView extends LitElement {
     if (changed.has("messages") || changed.has("messageStart") || changed.has("hasMore") || changed.has("loadingMore")) this.continuePendingScrollRestore();
     if (changed.has("messages") || changed.has("hasMore") || changed.has("loadingMore")) this.requestLoadMoreIfNeeded();
     if (changed.has("messages") || changed.has("messageStart") || changed.has("messageEnd") || changed.has("hasMore") || changed.has("loadingMore") || changed.has("isSendingPrompt") || changed.has("isReceivingPartialStream") || changed.has("isCompacting") || changed.has("status") || changed.has("activity")) this.refreshJumpToLatest();
+    if (changed.has("notificationInbox") && this.pendingNotificationFocus !== undefined) this.focusPendingNotificationTarget();
+    if (changed.has("zoomedImage")) this.syncImageZoomDialog();
+  }
+
+  private syncImageZoomDialog(): void {
+    const dialog = this.imageZoomDialog;
+    if (dialog === undefined) return;
+    if (this.zoomedImage !== undefined && !dialog.open) dialog.showModal();
+    else if (this.zoomedImage === undefined && dialog.open) dialog.close();
+  }
+
+  private notificationTargetChanged(previous: unknown): boolean {
+    const currentInbox = this.notificationInbox;
+    if (!isSessionNotificationTarget(previous) || currentInbox === undefined) return previous !== currentInbox;
+    return notificationTargetKey(previous) !== notificationTargetKey(currentInbox);
   }
 
   override render() {
@@ -255,6 +415,8 @@ export class ChatView extends LitElement {
     const liveStrip = this.renderLiveStrip();
     const hasLiveStrip = liveStrip !== null;
     return html`
+      ${this.renderTopNotices()}
+      ${this.renderNotificationLiveRegions()}
       <div class=${this.showJumpToLatest ? "chat-wrap has-jump-to-latest" : "chat-wrap"}>
         ${this.renderConversationRail()}
         <div class=${`chat${hasLiveStrip ? " has-live-strip" : ""}${this.showJumpToLatest ? " has-jump-to-latest" : ""}`} @scroll=${() => { this.onScroll(); }} @wheel=${(event: WheelEvent) => { this.onWheel(event); }} @pointerdown=${(event: PointerEvent) => { this.onPointerDown(event); }} @pointerup=${this.onPointerUp} @pointercancel=${this.onPointerUp} @keydown=${(event: KeyboardEvent) => { this.onKeydown(event); }} @keyup=${(event: KeyboardEvent) => { this.onKeyup(event); }} @touchstart=${(event: TouchEvent) => { this.onTouchStart(event); }} @touchmove=${(event: TouchEvent) => { this.onTouchMove(event); }}>
@@ -275,6 +437,189 @@ export class ChatView extends LitElement {
         ${liveStrip}
         ${this.renderJumpToLatest()}
       </div>
+      ${this.renderImageZoom()}
+    `;
+  }
+
+  private renderTopNotices() {
+    const warnings = this.renderWarnings();
+    const notifications = this.renderNotificationTray();
+    if (warnings === null && notifications === null) return null;
+    return html`<div class="top-notices">${warnings}${notifications}</div>`;
+  }
+
+  private renderNotificationTray() {
+    const inbox = this.notificationInbox;
+    if (inbox?.sessionId !== this.sessionId) return null;
+    const chatKey = notificationTargetKey(inbox);
+    const hasPendingOverlay = inbox.pendingDismissedIds.size > 0 || inbox.dismissAllPending;
+    const retainsFocusTarget = this.retainedEmptyNotificationTrayTargetKey === chatKey;
+    const totalCount = notificationInboxTotalCount(inbox);
+    if (totalCount === 0 && !hasPendingOverlay && !retainsFocusTarget) return null;
+    const collapsed = notificationTrayIsCollapsed(this.collapsedNotificationTargetKeys, inbox);
+    const toggleLabel = collapsed ? "Expand notifications" : "Collapse notifications";
+    return html`
+      <section class=${`notification-tray${collapsed ? " collapsed" : ""}`} role="region" aria-labelledby="session-notifications-heading" @focusout=${(event: FocusEvent) => { this.releaseEmptyNotificationTray(event); }}>
+        <header class="notification-header" data-notification-focus="header" tabindex="-1">
+          <strong class="notification-heading" id="session-notifications-heading">${notificationTrayHeading(inbox)}</strong>
+          <div class="notification-header-actions">
+            <button
+              type="button"
+              class="notification-control notification-clear"
+              aria-label="Clear all notifications"
+              title="Clear all notifications"
+              ?disabled=${inbox.dismissAllPending || totalCount === 0 || this.onDismissAllNotifications === undefined}
+              @click=${() => { this.dismissAllNotifications(); }}
+            >Clear</button>
+            <button
+              type="button"
+              class="notification-control notification-toggle"
+              aria-label=${toggleLabel}
+              title=${toggleLabel}
+              aria-expanded=${String(!collapsed)}
+              aria-controls="session-notification-list"
+              @click=${() => { this.toggleNotificationTray(inbox, collapsed); }}
+            >${renderNotificationDisclosureIcon(collapsed)}</button>
+          </div>
+        </header>
+        <div class="notification-list" id="session-notification-list" ?hidden=${collapsed}>
+          ${inbox.discardedCount === 0 ? null : html`
+            <p class="notification-overflow">${notificationInboxOverflowLabel(inbox.discardedCount)}</p>
+          `}
+          ${inbox.notifications.map((notification) => {
+            const label = notificationSeverityLabel(notification.severity);
+            const truncationLabel = notificationMessageTruncationLabel(notification);
+            return html`
+              <article class=${`notification-row ${notification.severity}`} data-notification-id=${notification.id} tabindex="-1">
+                <div class="notification-metadata">
+                  <strong class="notification-severity">${label}</strong>
+                  <span aria-hidden="true">·</span>
+                  <time datetime=${notification.receivedAt}>${notificationTimestampFormatter.format(new Date(notification.receivedAt))}</time>
+                </div>
+                <p class="notification-message" dir="auto">${notification.message}</p>
+                ${truncationLabel === undefined ? null : html`<p class="notification-truncated">${truncationLabel}</p>`}
+                <button
+                  type="button"
+                  class="notification-row-dismiss"
+                  aria-label=${notificationDismissLabel(notification)}
+                  title="Dismiss notification"
+                  ?disabled=${inbox.pendingDismissedIds.has(notification.id) || inbox.dismissAllPending || this.onDismissNotification === undefined}
+                  @click=${() => { this.dismissNotification(notification.id); }}
+                >${renderNotificationCloseIcon()}</button>
+              </article>
+            `;
+          })}
+        </div>
+      </section>
+    `;
+  }
+
+  private renderNotificationLiveRegions() {
+    const announcements = this.notificationInbox?.sessionId === this.sessionId ? this.notificationInbox.announcements : [];
+    const polite = announcements.filter((announcement) => announcement.severity !== "error");
+    const assertive = announcements.filter((announcement) => announcement.severity === "error");
+    return html`
+      <div class="visually-hidden notification-live" aria-live="polite" aria-atomic="false">${repeat(polite, (announcement) => announcement.id, (announcement) => html`<span data-announcement-id=${announcement.id}>${notificationAnnouncementLabel(announcement)}</span>`)}</div>
+      <div class="visually-hidden notification-live" aria-live="assertive" aria-atomic="false">${repeat(assertive, (announcement) => announcement.id, (announcement) => html`<span data-announcement-id=${announcement.id}>${notificationAnnouncementLabel(announcement)}</span>`)}</div>
+    `;
+  }
+
+  private toggleNotificationTray(inbox: SelectedSessionNotificationView, collapsed: boolean): void {
+    this.collapsedNotificationTargetKeys = setNotificationTrayCollapsed(this.collapsedNotificationTargetKeys, inbox, !collapsed);
+  }
+
+  private dismissNotification(notificationId: string): void {
+    const inbox = this.notificationInbox;
+    if (inbox === undefined || this.onDismissNotification === undefined) return;
+    const focusTarget = notificationFocusTargetAfterDismiss(inbox.notifications, notificationId);
+    const chatKey = notificationTargetKey(inbox);
+    this.pendingNotificationFocus = { chatKey, focusTarget };
+    if (focusTarget.kind === "header") this.retainedEmptyNotificationTrayTargetKey = chatKey;
+    this.onDismissNotification(notificationId);
+  }
+
+  private dismissAllNotifications(): void {
+    const inbox = this.notificationInbox;
+    if (inbox === undefined || this.onDismissAllNotifications === undefined) return;
+    const chatKey = notificationTargetKey(inbox);
+    this.pendingNotificationFocus = { chatKey, focusTarget: { kind: "header" } };
+    this.retainedEmptyNotificationTrayTargetKey = chatKey;
+    this.onDismissAllNotifications();
+  }
+
+  private releaseEmptyNotificationTray(event: FocusEvent): void {
+    const tray = event.currentTarget;
+    const next = event.relatedTarget;
+    if (tray instanceof HTMLElement && next instanceof Node && tray.contains(next)) return;
+    // Removing the activated row can emit focusout before updated() moves focus.
+    if (this.pendingNotificationFocus !== undefined) return;
+    const inbox = this.notificationInbox;
+    if (inbox !== undefined
+      && this.retainedEmptyNotificationTrayTargetKey === notificationTargetKey(inbox)
+      && notificationInboxTotalCount(inbox) === 0) this.retainedEmptyNotificationTrayTargetKey = undefined;
+  }
+
+  private focusPendingNotificationTarget(): void {
+    const pending = this.pendingNotificationFocus;
+    this.pendingNotificationFocus = undefined;
+    const inbox = this.notificationInbox;
+    if (pending === undefined || inbox === undefined || notificationTargetKey(inbox) !== pending.chatKey) return;
+    const target = pending.focusTarget;
+    if (target.kind === "header") {
+      this.renderRoot.querySelector<HTMLElement>("[data-notification-focus='header']")?.focus();
+      return;
+    }
+    const row = Array.from(this.renderRoot.querySelectorAll<HTMLElement>("[data-notification-id]"))
+      .find((candidate) => candidate.dataset["notificationId"] === target.notificationId);
+    if (row !== undefined) {
+      row.focus();
+      return;
+    }
+    if (notificationInboxTotalCount(inbox) === 0) this.retainedEmptyNotificationTrayTargetKey = pending.chatKey;
+    this.renderRoot.querySelector<HTMLElement>("[data-notification-focus='header']")?.focus();
+  }
+
+  private renderWarnings() {
+    const rows = chatSessionWarningRows(this.status);
+    if (rows.length === 0) return null;
+    return html`
+      <aside class="session-warnings" role="alert" aria-live="polite">
+        ${rows.map((row) => {
+          const dismissId = row.dismissId;
+          return html`
+          <div class=${row.severityClass}>
+            <div class="session-warning-head">
+              <span class="session-warning-icon" aria-hidden="true">${warningSeverityIcon(row.severity)}</span>
+              ${row.source === undefined ? null : html`<span class="session-warning-source">${row.source}</span>`}
+            </div>
+            <div class="session-warning-body">
+              <p class="session-warning-message">${row.message}</p>
+              ${row.path === undefined ? null : html`<p class="session-warning-path">${row.path}</p>`}
+            </div>
+            ${dismissId === undefined ? null : html`
+              <button
+                type="button"
+                class="session-warning-dismiss"
+                title="Don't show this warning again"
+                aria-label="Dismiss warning"
+                @click=${() => { this.onDismissWarning?.(dismissId); }}
+              >×</button>
+            `}
+          </div>
+        `;
+        })}
+      </aside>
+    `;
+  }
+
+  private renderImageZoom() {
+    return html`
+      <dialog class="image-zoom" @click=${this.onImageZoomDialogClick} @close=${this.closeImageZoom} @cancel=${this.closeImageZoom}>
+        ${this.zoomedImage === undefined ? null : html`
+          <button type="button" class="image-zoom-close" aria-label="Close image" @click=${this.closeImageZoom}>×</button>
+          <img class="image-zoom-full" src=${this.zoomedImage.src} alt=${this.zoomedImage.alt} />
+        `}
+      </dialog>
     `;
   }
 
@@ -343,7 +688,7 @@ export class ChatView extends LitElement {
   }
 
   private renderQueuedMessageList(section: QueuedMessageSection) {
-    const canClear = section.source === "server" && this.canClearServerQueue && this.onClearServerQueue !== undefined;
+    const canClear = chatQueuedSectionShowsClearAction(section, this.canClearServerQueue, this.onClearServerQueue !== undefined);
     return html`
       <aside class="queued-messages" aria-label=${section.heading} aria-live="polite">
         <div class="queued-header">
@@ -385,7 +730,6 @@ export class ChatView extends LitElement {
     // avoids a second Catching up/Compacting card obscuring the latest message.
     return null;
   }
-
 
   private renderConversationRail() {
     if (!this.messages.length || this.messageTotal <= 0) return null;
@@ -445,7 +789,7 @@ export class ChatView extends LitElement {
   }
 
   private renderToolImageOutput(message: ChatLine, index: number, toolName?: string) {
-    const label = toolName === undefined || toolName === "" ? "tool output" : `${toolName} output`;
+    const label = chatToolOutputLabel(toolName);
     return html`
       ${this.renderScrollMarker(this.messageScrollMarkerId(index))}
       <article class="msg tool-image-output" data-index=${index} data-scroll-anchor-id=${this.messageAnchorKey(index)}>
@@ -466,10 +810,10 @@ export class ChatView extends LitElement {
     const live = defaultOpen && (presentation.status === "running" || presentation.status === "pending");
     return html`
       ${this.renderScrollMarker(this.groupScrollMarkerId(endIndex))}
-      <details class=${live ? "msg event-group live" : "msg event-group"} data-event-status=${presentation.status} data-index=${startIndex} data-scroll-anchor-id=${this.groupAnchorKey(startIndex)} ?open=${open} @toggle=${(event: Event) => { this.onGroupToggle(disclosureKey, event, defaultOpen); }}>
+      <details class=${chatMessageGroupClassName(live)} data-event-status=${presentation.status} data-index=${startIndex} data-scroll-anchor-id=${this.groupAnchorKey(startIndex)} ?open=${open} @toggle=${(event: Event) => { this.onGroupToggle(disclosureKey, event, defaultOpen); }}>
         <summary>
           <span class="event-icon" aria-hidden="true">${presentation.icon}</span>
-          <b class="label">${live ? "live events" : "events"}</b>
+          <b class="label">${chatMessageGroupLabel(live)}</b>
           <span class="event-summary">${presentation.text}</span>
           <span class="event-detail">${summarizeChatGroup(messages)}</span>
         </summary>
@@ -593,7 +937,10 @@ export class ChatView extends LitElement {
         <small>read ${part.path}</small>
       </div>
     `;
-    if (part.type === "image") return html`<img class="part chat-image" src=${`data:${part.mimeType};base64,${part.data}`} alt="attached image" loading="lazy" @load=${this.onImageLoad} />`;
+    if (part.type === "image") {
+      const { src, alt } = chatImagePartSource(part);
+      return html`<img class="part chat-image" src=${src} alt=${alt} loading="lazy" role="button" tabindex="0" title="Click to enlarge" @load=${this.onImageLoad} @click=${() => { this.openImageZoom(src, alt); }} @keydown=${(event: KeyboardEvent) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); this.openImageZoom(src, alt); } }} />`;
+    }
     if (part.type === "toolCall") return html`<div class="part tool-line">▶ ${part.toolName}<span class="summary">${part.summary}</span></div>`;
     if (part.type === "toolExecution") return html`<tool-execution-view class="part" .execution=${part}></tool-execution-view>`;
     if (part.type === "toolResult") return html`
@@ -861,10 +1208,10 @@ export class ChatView extends LitElement {
   }
 
   private shouldFallbackToBottomForMissingAnchor(): boolean {
-    // While catching up to a stream, history can temporarily omit the in-flight
-    // assistant message that a previous scroll save anchored to. Keep retrying
-    // until the final refreshed transcript has a chance to render that anchor.
-    return !this.hasMore && !this.isReceivingPartialStream;
+    // Only fall back to the bottom once the full history is loaded; while earlier
+    // pages can still load, a missing scroll anchor should keep retrying rather
+    // than jump the user to the bottom.
+    return !this.hasMore;
   }
 
   private updatePinnedToBottomAfterRestore(status: Exclude<ChatScrollRestoreResult["status"], "missing">): void {
@@ -998,27 +1345,27 @@ export class ChatView extends LitElement {
   }
 
   private messageAnchorKey(index: number): string {
-    return `m:${String(index)}`;
+    return chatMessageAnchorKey(index);
   }
 
   private groupRenderKey(startIndex: number): string {
-    return `g:${String(startIndex)}`;
+    return chatGroupAnchorKey(startIndex);
   }
 
   private groupAnchorKey(startIndex: number): string {
-    return `g:${String(startIndex)}`;
+    return chatGroupAnchorKey(startIndex);
   }
 
   private eventAnchorKey(index: number): string {
-    return `e:${String(index)}`;
+    return chatEventAnchorKey(index);
   }
 
   private messageScrollMarkerId(index: number): string {
-    return `m:${String(index)}`;
+    return chatMessageAnchorKey(index);
   }
 
   private groupScrollMarkerId(endIndex: number): string {
-    return `g:${String(endIndex)}`;
+    return chatGroupScrollMarkerId(endIndex);
   }
 
   static override styles = chatStyles;

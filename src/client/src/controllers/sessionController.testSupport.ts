@@ -5,7 +5,7 @@ import type { SessionUiEvent } from "../sessionSocket";
 import type { SessionEventSocket } from "./sessionController";
 
 export { api as defaultApi } from "../api";
-export type { MessagePage, PromptAttachment, SessionActivity, SessionInfo, SessionRef, SessionStatus, Workspace } from "../api";
+export type { MessagePage, PromptAttachment, SessionActivity, SessionInfo, SessionRef, SessionStatus, SessionStreamSnapshot, Workspace } from "../api";
 export type { AppState } from "../appState";
 
 export class MemoryStorage implements Storage {
@@ -56,11 +56,19 @@ export class EmitSocket implements SessionEventSocket {
   readonly connectedSessionIds: string[] = [];
   private handler: ((event: SessionUiEvent) => void) | undefined;
   private reconnectHandler: (() => void) | undefined;
+  private onInitialOpen: (() => void) | undefined;
 
-  connect(session: SessionRef, onEvent: (event: SessionUiEvent) => void, onReconnect?: () => void): void {
+  connect(
+    session: SessionRef,
+    onEvent: (event: SessionUiEvent) => void,
+    onReconnect?: () => void,
+    _machineId?: string,
+    onInitialOpen?: () => void,
+  ): void {
     this.connectedSessionIds.push(session.id);
     this.handler = onEvent;
     this.reconnectHandler = onReconnect;
+    this.onInitialOpen = onInitialOpen;
   }
 
   setHandler(onEvent: (event: SessionUiEvent) => void): void {
@@ -75,9 +83,14 @@ export class EmitSocket implements SessionEventSocket {
     this.reconnectHandler?.();
   }
 
+  open(): void {
+    this.onInitialOpen?.();
+  }
+
   close(): void {
     this.handler = undefined;
     this.reconnectHandler = undefined;
+    this.onInitialOpen = undefined;
   }
 }
 
