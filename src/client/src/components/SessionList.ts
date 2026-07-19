@@ -268,7 +268,7 @@ export class SessionList extends LitElement implements KeyboardNavigableSection 
                   <button class="danger" title=${this.canDeleteArchived ? "Permanently delete archived session" : this.archivedDeleteUnavailableMessage} ?disabled=${!this.canDeleteArchived} @click=${() => { this.openMenuSessionId = undefined; this.confirmDeleteArchived(session); }}>Delete archived session</button>
                 `
                 : html`
-                    <button title=${this.canRename ? "Rename session" : this.renameUnavailableMessage} ?disabled=${!this.canRename} @click=${(event: MouseEvent) => { if (event.currentTarget instanceof HTMLElement) this.onRename?.(session, event.currentTarget); }}>Rename</button>
+                    <button title=${this.canRename ? "Rename session" : this.renameUnavailableMessage} ?disabled=${!this.canRename} @click=${(event: MouseEvent) => { this.renameSession(session, event); }}>Rename</button>
                     ${this.canRename ? null : html`<small class="capability-hint">${this.renameUnavailableMessage}</small>`}
                   `}
                   ${canDeleteTransient
@@ -286,6 +286,15 @@ export class SessionList extends LitElement implements KeyboardNavigableSection 
         </div>
       </div>
     `;
+  }
+
+  private renameSession(session: SessionInfo, event: MouseEvent): void {
+    const renameButton = event.currentTarget;
+    const opener = renameButton instanceof HTMLElement
+      ? (typeof renameButton.closest === "function" ? renameButton.closest(".action-menu")?.querySelector<HTMLElement>(".action-menu-toggle") : undefined) ?? renameButton
+      : undefined;
+    this.openMenuSessionId = undefined;
+    if (opener !== undefined) this.onRename?.(session, opener);
   }
 
   private handleSessionKeydown(event: KeyboardEvent, session: SessionInfo, scope: SessionSelectionScope): void {
