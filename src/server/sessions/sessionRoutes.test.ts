@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { MessagePage, SessionBulkArchiveResponse, SessionBulkDeleteArchivedResponse, SessionBulkMutationRef, SessionCleanupExecuteResponse, SessionCleanupPreviewResponse, SessionStatus } from "../../shared/apiTypes.js";
 import type { ExtensionUiPendingResponse, ExtensionUiResponse, ExtensionUiRespondResponse } from "../../shared/extensionUi.js";
 import { SessionEventHub } from "../realtime/sessionEventHub.js";
-import { PiSessionService, type PiSessionManagerGateway } from "./piSessionService.js";
+import { PiSessionService, SessionRenameArchivedError, SessionRenameNotFoundError, type PiSessionManagerGateway } from "./piSessionService.js";
 import type { SessionRouteLookup, SessionRouteService } from "./sessionService.js";
 import { registerSessionRoutes } from "./sessionRoutes.js";
 import type { NormalizedSessionCleanupRequest } from "./sessionCleanup.js";
@@ -241,6 +241,73 @@ describe("session routes", () => {
     }
   });
 
+  it("renames a session with normalized workspace context and name", async () => {
+    const routeApp = Fastify({ logger: false });
+    await routeApp.register(fastifyWebsocket);
+    const eventHub = new SessionEventHub();
+    const routeService = new CapturingRouteSessionService();
+    registerSessionRoutes(routeApp, routeService, eventHub);
+
+    try {
+      const requestCwd = resolve("/repo");
+      const response = await routeApp.inject({ method: "PUT", url: "/sessions/session-1/name", payload: { cwd: requestCwd, name: "  Ship\r\nthis  " } });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toEqual({ sessionId: "session-1", name: "Ship this" });
+      expect(routeService.renameCalls).toEqual([{ ref: { id: "session-1", cwd: requestCwd }, name: "Ship this" }]);
+    } finally {
+      await routeService.dispose();
+      await routeApp.close();
+    }
+  });
+
+  it("rejects malformed, missing, and archived session rename requests with contract statuses", async () => {
+    const routeApp = Fastify({ logger: false });
+    await routeApp.register(fastifyWebsocket);
+    const eventHub = new SessionEventHub();
+    const routeService = new CapturingRouteSessionService();
+    registerSessionRoutes(routeApp, routeService, eventHub);
+
+    try {
+      const missingName = await routeApp.inject({ method: "PUT", url: "/sessions/session-1/name", payload: { cwd: "/repo" } });
+      const malformedName = await routeApp.inject({ method: "PUT", url: "/sessions/session-1/name", payload: { cwd: "/repo", name: 1 } });
+      routeService.renameError = new SessionRenameNotFoundError();
+      const missing = await routeApp.inject({ method: "PUT", url: "/sessions/missing/name", payload: { cwd: "/repo", name: "Name" } });
+      routeService.renameError = new SessionRenameArchivedError();
+      const archived = await routeApp.inject({ method: "PUT", url: "/sessions/archived/name", payload: { cwd: "/repo", name: "Name" } });
+      routeService.renameError = new Error("disk full");
+      const operational = await routeApp.inject({ method: "PUT", url: "/sessions/session-1/name", payload: { cwd: "/repo", name: "Name" } });
+
+      expect(missingName.statusCode).toBe(400);
+      expect(malformedName.statusCode).toBe(400);
+      expect(missing.statusCode).toBe(404);
+      expect(archived.statusCode).toBe(409);
+      expect(operational.statusCode).toBe(500);
+      expect(routeService.renameCalls).toHaveLength(3);
+    } finally {
+      await routeService.dispose();
+      await routeApp.close();
+    }
+  });
+
+  it("normalizes a blank rename to an explicit clear", async () => {
+    const routeApp = Fastify({ logger: false });
+    await routeApp.register(fastifyWebsocket);
+    const eventHub = new SessionEventHub();
+    const routeService = new CapturingRouteSessionService();
+    registerSessionRoutes(routeApp, routeService, eventHub);
+
+    try {
+      const response = await routeApp.inject({ method: "PUT", url: "/sessions/session-1/name", payload: { cwd: "/repo", name: "  \r\n " } });
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toEqual({ sessionId: "session-1" });
+      expect(routeService.renameCalls).toEqual([{ ref: { id: "session-1", cwd: resolve("/repo") }, name: undefined }]);
+    } finally {
+      await routeService.dispose();
+      await routeApp.close();
+    }
+  });
+
   it("clears a session queue with workspace context and returns fresh status", async () => {
     const routeApp = Fastify({ logger: false });
     await routeApp.register(fastifyWebsocket);
@@ -378,6 +445,7 @@ class CapturingRouteSessionService implements SessionRouteService {
   readonly calls: unknown[] = [];
   readonly reloadCalls: SessionRouteLookup[] = [];
   readonly clearQueueCalls: SessionRouteLookup[] = [];
+  readonly renameCalls: { ref: { id: string; cwd: string }; name: string | undefined }[] = [];
   messagesResponse: unknown[] | MessagePage = [];
   readonly cleanupPreviewCalls: NormalizedSessionCleanupRequest[] = [];
   readonly cleanupCalls: NormalizedSessionCleanupRequest[] = [];
@@ -385,6 +453,7 @@ class CapturingRouteSessionService implements SessionRouteService {
   readonly bulkDeleteCalls: SessionBulkMutationRef[][] = [];
   reloadError: Error | undefined;
   clearQueueError: Error | undefined;
+  renameError: Error | undefined;
   extensionUiPendingError: Error | undefined;
   extensionUiRespondError: Error | undefined;
   extensionUiPendingResponse: ExtensionUiPendingResponse = { requests: [] };
@@ -434,6 +503,12 @@ class CapturingRouteSessionService implements SessionRouteService {
     this.extensionUiResponses.push({ lookup, response });
     if (this.extensionUiRespondError !== undefined) return Promise.reject(this.extensionUiRespondError);
     return Promise.resolve(this.extensionUiRespondResponse);
+  }
+
+  rename(ref: { id: string; cwd: string }, name: string | undefined): Promise<{ sessionId: string; name?: string }> {
+    this.renameCalls.push({ ref, name });
+    if (this.renameError !== undefined) return Promise.reject(this.renameError);
+    return Promise.resolve(name === undefined ? { sessionId: ref.id } : { sessionId: ref.id, name });
   }
 
   clearQueue(lookup: SessionRouteLookup): Promise<SessionStatus> {

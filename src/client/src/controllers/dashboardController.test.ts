@@ -187,6 +187,16 @@ describe("DashboardController", () => {
     }
   });
 
+  it("applies and clears a machine-scoped name through the realtime mutation path", () => {
+    let state: DashboardControllerState = { dashboard: snapshot("s1"), loading: false, error: undefined };
+    const controller = new DashboardController(() => state, (next) => { state = next; }, { load: () => Promise.resolve(snapshot("s1")) });
+
+    controller.applySessionName("local", "s1", "Deploy release");
+    expect(availableMachine(state).sessions[0]?.name).toBe("Deploy release");
+    controller.applySessionName("local", "s1");
+    expect(availableMachine(state).sessions[0]?.name).toBeUndefined();
+  });
+
   it("debounces created-session refreshes", () => {
     vi.useFakeTimers();
     let state: DashboardControllerState = { dashboard: snapshot("s1"), loading: false, error: undefined };

@@ -77,6 +77,36 @@ describe("AppSessionHeader", () => {
     expect(AppSessionHeader.styles.cssText).toContain("button { min-width: 2.75rem; min-height: 2.75rem; height: 2.75rem; }");
   });
 
+  it("omits Rename when the effective runtime lacks the capability", () => {
+    const header = new AppSessionHeader();
+    header.session = session();
+
+    const markup = templateMarkup(header.render());
+    expect(markup).not.toContain("rename-control");
+    expect(markup).not.toContain("Rename unavailable");
+  });
+
+  it("enables Rename for an unarchived session and explains restore-first for archived sessions", () => {
+    const header = new AppSessionHeader();
+    const onRename = vi.fn();
+    header.session = session();
+    header.canRename = true;
+    header.onRename = onRename;
+
+    class TestHTMLElement { readonly testElement = true; }
+    vi.stubGlobal("HTMLElement", TestHTMLElement);
+    const rename = callbackAfterMarker(header.render(), 'class="rename-control"');
+    rename({ currentTarget: new HTMLElement() });
+    vi.unstubAllGlobals();
+    expect(onRename).toHaveBeenCalledOnce();
+
+    header.session = { ...session(), archived: true };
+    const archived = templateMarkup(header.render());
+    expect(archived).toContain('class="rename-control"');
+    expect(archived).toContain("Restore this session before renaming.");
+    expect(archived).toContain("disabled");
+  });
+
   it("does not duplicate navigation, Actions, or settings controls", () => {
     const header = new AppSessionHeader();
     header.session = session();
@@ -114,7 +144,7 @@ function status(overrides: Partial<SessionStatus> = {}): SessionStatus {
   };
 }
 
-function callbackAfterMarker(template: TemplateResult | null, marker: string): () => void {
+function callbackAfterMarker(template: TemplateResult | null, marker: string): (event?: unknown) => void {
   const markedTemplate = templateWithMarker(template, marker);
   if (markedTemplate === undefined) throw new Error(`Expected template containing ${marker}`);
   const strings = templateStrings(markedTemplate);
@@ -176,6 +206,6 @@ function isTemplateResult(value: unknown): value is TemplateResult {
   return typeof value === "object" && value !== null && Array.isArray(Reflect.get(value, "strings"));
 }
 
-function isVoidCallback(value: unknown): value is () => void {
+function isVoidCallback(value: unknown): value is (event?: unknown) => void {
   return typeof value === "function";
 }

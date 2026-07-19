@@ -4,6 +4,7 @@ import type {
   SessionBulkArchiveResponse,
   SessionBulkDeleteArchivedResponse,
   SessionBulkMutationRef,
+  SessionRenameResponse,
 } from "../../shared/apiTypes.js";
 import type {
   ClientArchiveSessionsResponse,
@@ -38,6 +39,7 @@ export interface SessionRouteService {
   messages(ref: SessionRouteLookup, page?: { before?: number; limit?: number }): Promise<unknown[] | ClientMessagePage>;
   status(ref: SessionRouteLookup): Promise<ClientSessionStatus>;
   clearQueue(ref: SessionRouteLookup): Promise<ClientSessionStatus>;
+  rename(ref: SessionRouteRef, name: string | undefined): Promise<SessionRenameResponse>;
   availableModels(ref: SessionRouteLookup): Promise<ClientSessionModel[]>;
   setModel(ref: SessionRouteLookup, provider: string, modelId: string): Promise<ClientSessionStatus>;
   cycleModel(ref: SessionRouteLookup, direction: "forward" | "backward"): Promise<ClientSessionStatus>;

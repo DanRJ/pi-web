@@ -20,6 +20,9 @@ export class AppSessionHeader extends LitElement {
   @property({ type: Boolean }) canStop = false;
   /** Abort only clears the server-owned queue when the parent confirms it. */
   @property({ type: Boolean }) clearsServerQueue = false;
+  @property({ type: Boolean }) canRename = false;
+  @property({ type: String }) renameUnavailableMessage = "Update and restart Pi-Web on this machine to rename sessions.";
+  @property({ attribute: false }) onRename?: (opener: HTMLElement) => void;
   @property({ attribute: false }) onStop?: () => void;
   @property({ attribute: false }) onToggleTheme?: () => void;
 
@@ -45,6 +48,9 @@ export class AppSessionHeader extends LitElement {
           <span class=${`status-badge ${shellStatus.kind}`} role="status" title=${shellStatus.detail ?? shellStatus.label} aria-label=${shellStatus.detail === undefined ? shellStatus.label : `${shellStatus.label}: ${shellStatus.detail}`}>
             ${statusIcon(shellStatus.kind)}<span class="status-label-full">${shellStatus.label}</span><span class="status-label-short">${shellStatus.shortLabel}</span>
           </span>
+          ${!this.canRename ? null : session.archived === true
+            ? html`<button type="button" class="rename-control" aria-label="Rename session" title="Restore this session before renaming." disabled>Rename</button><span class="rename-unavailable">Restore this session before renaming.</span>`
+            : html`<button type="button" class="rename-control" aria-label="Rename session" title="Rename session" @click=${(event: MouseEvent) => { if (event.currentTarget instanceof HTMLElement) this.onRename?.(event.currentTarget); }}>Rename</button>`}
           ${this.canStop ? (this.clearsServerQueue
             ? html`<button type="button" class="session-stop-control" aria-label="Stop session work and clear queued server messages" title="Stop work and clear queued server messages" @click=${() => { this.onStop?.(); }}>Stop</button>`
             : html`<button type="button" class="session-stop-control" aria-label="Stop session work" title="Stop session work" @click=${() => { this.onStop?.(); }}>Stop</button>`)
@@ -71,13 +77,17 @@ export class AppSessionHeader extends LitElement {
     button { display: inline-grid; place-items: center; min-width: 2.25rem; height: 2.25rem; border: 1px solid var(--pi-border); border-radius: var(--pi-radius-control, 0.5rem); background: var(--pi-surface); color: var(--pi-text); padding: 0.375rem; cursor: pointer; font: 600 0.75rem var(--pi-control-font-family, system-ui, sans-serif); }
     button:hover { background: var(--pi-surface-hover); }
     button:focus-visible { outline: var(--pi-focus-ring-width, 2px) solid var(--pi-accent); outline-offset: var(--pi-focus-ring-offset, 2px); }
-    .session-stop-control { padding-inline: 0.5625rem; white-space: nowrap; border-color: var(--pi-danger); color: var(--pi-danger); }
+    .session-stop-control, .rename-control { padding-inline: 0.5625rem; white-space: nowrap; }
+    .session-stop-control { border-color: var(--pi-danger); color: var(--pi-danger); }
+    .rename-unavailable { color: var(--pi-muted); font-size: .75rem; white-space: nowrap; }
     svg { width: 1rem; height: 1rem; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
     @keyframes spin { to { transform: rotate(360deg); } }
     @media (prefers-reduced-motion: reduce) { .status-badge.working .status-icon, .status-badge.shell .status-icon, .status-badge.tool .status-icon, .status-badge.compacting .status-icon { animation: none; } }
     @media (max-width: 767px) {
       header { padding: var(--pi-space-2, 0.5rem) var(--pi-space-3, 0.75rem); }
       .session-detail, .session-stop-control { display: none; }
+      .rename-unavailable { display: none; }
+      .rename-control { display: inline-grid; }
       .status-label-full { display: none; }
       .status-label-short { display: inline; }
       /* Modernist's compact header keeps the real stop control reachable above

@@ -2,6 +2,7 @@ import { LitElement, css, html, nothing } from "lit";
 import { customElement, property, query, state } from "lit/decorators.js";
 import type { Project, Workspace } from "../api";
 import type { FederatedSessionDashboardResponse, LocalSessionDashboardSessionSummary, SessionDashboardMachineOutcome } from "../../../shared/sessionDashboard";
+import { PI_WEB_CAPABILITIES } from "../../../shared/capabilities";
 import "./DashboardNewSessionChooser";
 import type { DashboardNewSessionChooser } from "./DashboardNewSessionChooser";
 
@@ -15,6 +16,7 @@ export class SessionDashboard extends LitElement {
   @property({ type: String }) selectionError = "";
   @property({ attribute: false }) hrefForSession: (session: LocalSessionDashboardSessionSummary, machineId: string) => string = () => "#";
   @property({ attribute: false }) onOpenSession?: (session: LocalSessionDashboardSessionSummary, machineId: string) => void | Promise<void>;
+  @property({ attribute: false }) onRenameSession?: (session: LocalSessionDashboardSessionSummary, machineId: string, opener: HTMLElement) => void;
   @property({ attribute: false }) projects: Project[] = [];
   @property({ type: String }) selectedProjectId: string | undefined;
   @property({ type: String }) selectedWorkspaceId: string | undefined;
@@ -39,7 +41,7 @@ export class SessionDashboard extends LitElement {
 
   override render() {
     const available = this.dashboard?.machines.filter((outcome): outcome is Extract<SessionDashboardMachineOutcome, { outcome: "available" }> => outcome.outcome === "available") ?? [];
-    const cards = available.flatMap((outcome) => outcome.sessions.map((session) => ({ machineId: outcome.machine.id, machineName: outcome.machine.name, session })));
+    const cards = available.flatMap((outcome) => outcome.sessions.map((session) => ({ machineId: outcome.machine.id, machineName: outcome.machine.name, canRename: outcome.capabilities?.includes(PI_WEB_CAPABILITIES.sessionsRename) === true, session })));
     const visible = this.filter === "attention" ? cards.filter(({ session }) => session.needsAttention) : cards;
     const partial = this.dashboard?.machines.filter((outcome) => outcome.outcome !== "available") ?? [];
     return html`
@@ -61,7 +63,7 @@ export class SessionDashboard extends LitElement {
         ${this.error === undefined ? nothing : html`<div class="notice error" role="alert">Could not refresh sessions: ${this.error} <button type="button" @click=${() => { void this.onRetry?.(); }}>Retry</button></div>`}
         ${this.selectionError === "" ? nothing : html`<div class="notice error" role="alert">Could not change selection: ${this.selectionError}</div>`}
         ${partial.length === 0 ? nothing : html`<div class="notice partial" role="status">${partial.map((outcome) => `${outcome.machine.name}: ${outcome.outcome}${outcome.error === undefined ? "" : ` — ${outcome.error}`}`).join(" · ")}</div>`}
-        ${this.loading && this.dashboard === undefined ? html`<p class="state" role="status">Loading session dashboard…</p>` : visible.length === 0 ? html`<p class="state">${this.filter === "attention" ? "No sessions need your attention." : "No sessions are available yet."}</p>` : html`<div class="grid">${visible.map(({ session, machineId, machineName }) => this.renderCard(session, machineId, machineName))}</div>`}
+        ${this.loading && this.dashboard === undefined ? html`<p class="state" role="status">Loading session dashboard…</p>` : visible.length === 0 ? html`<p class="state">${this.filter === "attention" ? "No sessions need your attention." : "No sessions are available yet."}</p>` : html`<div class="grid">${visible.map(({ session, machineId, machineName, canRename }) => this.renderCard(session, machineId, machineName, canRename))}</div>`}
         <dashboard-new-session-chooser
           .projects=${this.projects}
           .selectedProjectId=${this.selectedProjectId}
@@ -73,7 +75,7 @@ export class SessionDashboard extends LitElement {
     `;
   }
 
-  private renderCard(session: LocalSessionDashboardSessionSummary, machineId: string, machineName: string) {
+  private renderCard(session: LocalSessionDashboardSessionSummary, machineId: string, machineName: string, canRename: boolean) {
     const href = this.hrefForSession(session, machineId);
     const name = session.name?.trim();
     const firstMessage = session.firstMessage.trim();
@@ -92,7 +94,7 @@ export class SessionDashboard extends LitElement {
           <div><dt>Branch</dt><dd>${nonEmpty(session.workspace.branch, session.workspace.isMain ? "main" : "No branch")}</dd></div>
           <div><dt>Machine</dt><dd>${machineName}</dd></div>
         </dl>
-        <div class="card-actions"><a href=${href} @click=${(event: MouseEvent) => { this.openSession(event, session, machineId); }}>Open session</a></div>
+        <div class="card-actions"><a href=${href} @click=${(event: MouseEvent) => { this.openSession(event, session, machineId); }}>Open session</a><button type="button" title=${canRename ? "Rename session" : "Update and restart Pi-Web on this machine to rename sessions."} ?disabled=${!canRename} @click=${(event: MouseEvent) => { if (canRename && event.currentTarget instanceof HTMLElement) this.onRenameSession?.(session, machineId, event.currentTarget); }}>Rename</button>${canRename ? nothing : html`<small>Update and restart Pi-Web on this machine to rename sessions.</small>`}</div>
       </article>
     `;
   }
@@ -118,7 +120,7 @@ export class SessionDashboard extends LitElement {
     .card { display: flex; flex-direction: column; min-width: 0; min-height: 18rem; border: .125rem solid var(--pi-border); border-top-color: var(--pi-text); padding: 1rem; background: var(--pi-surface); } .card.status-errored { border-width: .25rem; border-color: var(--pi-text); background: transparent; }
     .card-top { color: var(--pi-muted); font-size: .75rem; } .status { display: inline-flex; align-items: center; gap: .375rem; color: var(--pi-text); font-weight: 800; text-transform: uppercase; } .status-mark { display: inline-grid; place-items: center; width: 1rem; height: 1rem; border: .125rem solid currentColor; } .status-running .status-mark { border-color: var(--pi-accent); border-right-color: transparent; animation: spin .8s linear infinite; } .status-waiting .status-mark { border-style: dashed; } .status-errored .status-mark { border-width: .1875rem; font-size: .875rem; }
     h2 { margin: 1.25rem 0 .5rem; font-size: 1.25rem; line-height: 1.15; overflow-wrap: anywhere; } h2 a, .card-actions a { color: inherit; text-decoration: none; } h2 a:hover, .card-actions a:hover { color: var(--pi-accent); text-decoration: underline; } .activity { min-height: 2.5rem; margin: 0 0 1rem; color: var(--pi-text-secondary); overflow-wrap: anywhere; }
-    dl { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; margin: auto 0 1rem; border-top: .125rem solid var(--pi-border); padding-top: .75rem; } dl div { min-width: 0; } dt { color: var(--pi-muted); font-size: .6875rem; font-weight: 800; text-transform: uppercase; } dd { margin: .125rem 0 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .card-actions { justify-content: flex-start; flex-wrap: wrap; gap: .75rem; border-top: .125rem solid var(--pi-border); padding-top: .75rem; font-size: .8125rem; }
+    dl { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; margin: auto 0 1rem; border-top: .125rem solid var(--pi-border); padding-top: .75rem; } dl div { min-width: 0; } dt { color: var(--pi-muted); font-size: .6875rem; font-weight: 800; text-transform: uppercase; } dd { margin: .125rem 0 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .card-actions { justify-content: flex-start; flex-wrap: wrap; gap: .75rem; border-top: .125rem solid var(--pi-border); padding-top: .75rem; font-size: .8125rem; } .card-actions button { min-height: 2rem; padding: .25rem .5rem; } .card-actions small { color: var(--pi-muted); }
     @media (max-width: 70rem) { .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } } @media (max-width: 42rem) { section { padding: 1rem; } header { align-items: flex-start; flex-direction: column; } .grid { grid-template-columns: 1fr; } .controls { align-items: flex-start; flex-direction: column; } }
     @media (pointer: coarse) { button, a { min-height: 2.75rem; } } @media (prefers-reduced-motion: reduce) { .status-running .status-mark { animation: none; } } @keyframes spin { to { transform: rotate(360deg); } }
   `;

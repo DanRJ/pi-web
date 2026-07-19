@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { PI_WEB_CAPABILITIES } from "../../../shared/capabilities";
-import { parseCommandResult, parseExtensionUiPendingResponse, parseExtensionUiRespondResponse, parseFederatedSessionDashboardResponse, parseFileContentResponse, parseFileSuggestion, parseGitStatusResponse, parseMachineRuntime, parseMessagePage, parsePiPackageMutationResponse, parsePiPackagesResponse, parsePiWebConfigResponse, parsePiWebPluginsResponse, parsePiWebRuntimeResponse, parsePiWebStatusResponse, parseSessionBulkArchiveResponse, parseSessionBulkDeleteArchivedResponse, parseSessionCleanupExecuteResponse, parseSessionCleanupPreviewResponse, parseSessionInfo, parseSessionStatus, parseSlashCommand, parseTerminalCommandRun, parseTerminalInfo, parseWorkspace, parseWorkspaceActivityResponse } from "./parsers";
+import { parseCommandResult, parseExtensionUiPendingResponse, parseExtensionUiRespondResponse, parseFederatedSessionDashboardResponse, parseFileContentResponse, parseFileSuggestion, parseGitStatusResponse, parseMachineRuntime, parseMessagePage, parsePiPackageMutationResponse, parsePiPackagesResponse, parsePiWebConfigResponse, parsePiWebPluginsResponse, parsePiWebRuntimeResponse, parsePiWebStatusResponse, parseSessionBulkArchiveResponse, parseSessionBulkDeleteArchivedResponse, parseSessionCleanupExecuteResponse, parseSessionCleanupPreviewResponse, parseSessionInfo, parseSessionRenameResponse, parseSessionStatus, parseSlashCommand, parseTerminalCommandRun, parseTerminalInfo, parseWorkspace, parseWorkspaceActivityResponse } from "./parsers";
 
 describe("API parsers", () => {
   it("parses PI WEB config responses", () => {
@@ -196,6 +196,13 @@ describe("API parsers", () => {
   it("rejects malformed bulk session mutation responses", () => {
     expect(() => parseSessionBulkArchiveResponse({ archived: true, archivedSessionIds: ["s1"], failures: [{ sessionId: "s2" }], generatedAt: "now" })).toThrow("Expected string field: error");
     expect(() => parseSessionBulkDeleteArchivedResponse({ deleted: true, deletedSessionIds: [1], failures: [], generatedAt: "now" })).toThrow("Expected string array field: deletedSessionIds");
+  });
+
+  it("strictly parses renamed and cleared session responses", () => {
+    expect(parseSessionRenameResponse({ sessionId: "s1", name: "Named" })).toEqual({ sessionId: "s1", name: "Named" });
+    expect(parseSessionRenameResponse({ sessionId: "s1" })).toEqual({ sessionId: "s1" });
+    expect(() => parseSessionRenameResponse({ sessionId: "s1", name: null })).toThrow("Expected optional string field: name");
+    expect(() => parseSessionRenameResponse({ name: "Named" })).toThrow("Expected string field: sessionId");
   });
 
   it("parses session info including optional persistence signals", () => {

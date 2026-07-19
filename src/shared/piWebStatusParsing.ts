@@ -19,7 +19,10 @@ export function parsePiWebRuntimeResponse(value: unknown): PiWebRuntimeResponse 
   const packageName = value["packageName"];
   const generatedAt = value["generatedAt"];
   const components = value["components"];
-  const capabilities = parseKnownPiWebCapabilities(value["capabilities"]);
+  // Older machines predate runtime capabilities. Treat omission as an empty
+  // list so feature callers can safely report unsupported rather than reject
+  // the whole otherwise-valid runtime response.
+  const capabilities = value["capabilities"] === undefined ? [] : parseKnownPiWebCapabilities(value["capabilities"]);
   if (typeof packageName !== "string" || packageName === "" || typeof generatedAt !== "string" || generatedAt === "" || !isRecord(components) || capabilities === undefined) return undefined;
   const web = parsePiWebRuntimeComponent(components["web"]);
   const sessiond = parsePiWebRuntimeComponent(components["sessiond"]);
@@ -33,7 +36,7 @@ export function parsePiWebRuntimeComponent(value: unknown): PiWebRuntimeComponen
   const label = value["label"];
   const runtimeVersion = value["runtimeVersion"];
   const available = value["available"];
-  const capabilities = parseKnownPiWebCapabilities(value["capabilities"]);
+  const capabilities = value["capabilities"] === undefined ? [] : parseKnownPiWebCapabilities(value["capabilities"]);
   const activeAgentProfileValue = value["activeAgentProfile"];
   const activeAgentProfile = activeAgentProfileValue === undefined ? undefined : parseActiveAgentProfileDescriptor(activeAgentProfileValue);
   const error = value["error"];

@@ -15,7 +15,7 @@ Theme colours continue to use the public 35-token theme API. The shell consumes 
 
 Modernist supplies zero-radius controls, two-pixel dividers, Archivo, and a `16.5rem` navigation target. Component-specific hooks preserve legacy details that should not follow a global divider change: conversation-meter markers retain their border and a running tool keeps its glyph unless a theme opts into the Modernist spinner. The shell owns grid tracks, breakpoints, panel resizing, and collapsed state; themes do not.
 
-`app-session-header` is presentational. `PiWebApp` owns session/workspace/model/activity inputs and stop/theme callbacks. The compact header retains the current title, status, theme toggle, and Stop when available; it does not duplicate navigation, Actions, settings, pause, elapsed-time, notification, or account controls.
+`app-session-header` is presentational. `PiWebApp` owns session/workspace/model/activity inputs and stop/theme callbacks. The compact header retains the current title, status, Rename when the selected machine's effective web/sessiond runtime advertises it, theme toggle, and Stop when available; it does not duplicate navigation, Actions, settings, pause, elapsed-time, notification, or account controls. Rename uses the one modal shared with navigation and dashboard: it selects the current custom title, normalizes line breaks/whitespace, limits input to 120 characters, and treats blank or Clear as the fallback title. It traps Tab, supports Escape while idle, and returns focus to the precise initiating control.
 
 ## Transcript hierarchy and truthfulness
 

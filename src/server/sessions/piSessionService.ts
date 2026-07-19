@@ -28,7 +28,8 @@ import { deterministicSessionName, fallbackSessionName, generateShortSessionName
 import { computeEditPreview, type EditPreviewResult } from "./editPreview.js";
 import { attachmentsToInlineImages, saveAttachmentsToWorkspace } from "./attachmentService.js";
 import { parsePromptAttachments } from "../../shared/promptAttachments.js";
-import type { SavedPromptAttachment, SessionBulkArchiveResponse, SessionBulkDeleteArchivedResponse, SessionBulkFailure, SessionBulkMutationRef } from "../../shared/apiTypes.js";
+import type { SavedPromptAttachment, SessionBulkArchiveResponse, SessionBulkDeleteArchivedResponse, SessionBulkFailure, SessionBulkMutationRef, SessionRenameResponse } from "../../shared/apiTypes.js";
+import { sessionNameEvent } from "../../shared/sessionName.js";
 import {
   deriveSessionDashboardDisplayStatus,
   deriveSessionDashboardRuntimeStatus,
@@ -40,6 +41,7 @@ import { ExtensionUiBroker } from "./extensionUiBroker.js";
 import { createAskOptionsToolDefinition } from "./askOptionsTool.js";
 import { createShowImageToolDefinition } from "./showImageTool.js";
 import type { ExtensionUiPendingResponse, ExtensionUiRespondResponse, ExtensionUiResponse } from "../../shared/extensionUi.js";
+import { appendPersistedSessionName, PersistedSessionNameVerificationError, type PersistedSessionNameInput } from "./sessionNamePersistence.js";
 
 import { canonicalizeStoredCwd, cwdPathsEqual } from "../workingDirectory.js";
 import type { WorkspaceActivityService } from "../activity/workspaceActivityService.js";
@@ -433,6 +435,8 @@ export interface PiSessionServiceDependencies {
   logger?: PiSessionLogger;
   /** Clock seam for cleanup planning tests. */
   now?: () => Date;
+  /** Durable append seam for session-name tests; production fsyncs the JSONL append. */
+  appendPersistedSessionName?: (input: PersistedSessionNameInput) => Promise<void>;
 }
 
 export class PiSessionService implements SessionRouteService {
@@ -469,6 +473,9 @@ export class PiSessionService implements SessionRouteService {
   private readonly spawnTargets: SpawnTargetResolver | undefined;
   private readonly logger: PiSessionLogger;
   private readonly now: () => Date;
+  private readonly appendPersistedSessionName: (input: PersistedSessionNameInput) => Promise<void>;
+  /** Per canonical cwd/session lock for every lifecycle file mutation. */
+  private readonly lifecycleMutationQueues = new Map<string, Promise<void>>();
 
   constructor(private readonly events: SessionEventHub, deps: PiSessionServiceDependencies) {
     this.archiveStore = deps.archiveStore ?? new SessionArchiveStore();
@@ -478,6 +485,7 @@ export class PiSessionService implements SessionRouteService {
     this.spawnTargets = deps.spawnTargets;
     this.logger = deps.logger ?? noopLogger;
     this.now = deps.now ?? (() => new Date());
+    this.appendPersistedSessionName = deps.appendPersistedSessionName ?? appendPersistedSessionName;
     this.extensionUi = new ExtensionUiBroker({
       events: {
         request: (sessionId, request) => {
@@ -542,42 +550,54 @@ export class PiSessionService implements SessionRouteService {
   async cleanup(request: NormalizedSessionCleanupRequest): Promise<ClientSessionCleanupExecuteResponse> {
     const plan = await this.cleanupPlan(request);
     if (plan.deleteRecords.length > 0 && this.archiveStore.deleteArchived === undefined && this.archiveStore.deleteArchivedMany === undefined) throw new Error("Archive store does not support deletion");
+    const refs = [
+      ...plan.archiveInputs.map((input) => ({ id: input.sessionId, cwd: input.cwd })),
+      ...plan.deleteRecords.map((record) => ({ id: record.sessionId, cwd: record.cwd })),
+    ];
+    return this.serializeLifecycleMutations(refs, async () => {
+      const archiveInputs: ArchiveSessionInput[] = [];
+      const readyArchiveInputs: ArchiveSessionInput[] = [];
+      const deleteRecords: ArchivedSessionRecord[] = [];
+      const readyDeleteRecords: ArchivedSessionRecord[] = [];
+      const skippedBusySessionIds = new Set(plan.skippedBusySessionIds);
 
-    const archiveInputs: ArchiveSessionInput[] = [];
-    const readyArchiveInputs: ArchiveSessionInput[] = [];
-    const deleteRecords: ArchivedSessionRecord[] = [];
-    const readyDeleteRecords: ArchivedSessionRecord[] = [];
-    const skippedBusySessionIds = new Set(plan.skippedBusySessionIds);
-
-    for (const input of plan.archiveInputs) {
-      if (this.activeSessionHasWork(input.sessionId)) {
-        skippedBusySessionIds.add(input.sessionId);
-        continue;
+      for (const input of plan.archiveInputs) {
+        // The plan was built before these locks were acquired. Do not archive a
+        // source that another request has archived while this cleanup waited.
+        if (await this.getArchived({ id: input.sessionId, cwd: input.cwd }) !== undefined) continue;
+        if (this.activeSessionHasWork(input.sessionId)) {
+          skippedBusySessionIds.add(input.sessionId);
+          continue;
+        }
+        await this.closeActive(input.sessionId, { waitForPendingOpen: false });
+        readyArchiveInputs.push(input);
       }
-      await this.closeActive(input.sessionId);
-      readyArchiveInputs.push(input);
-    }
-    await this.archiveStoreArchiveMany(readyArchiveInputs);
-    archiveInputs.push(...readyArchiveInputs);
+      await this.archiveStoreArchiveMany(readyArchiveInputs);
+      archiveInputs.push(...readyArchiveInputs);
 
-    for (const record of plan.deleteRecords) {
-      if (this.activeSessionHasWork(record.sessionId)) {
-        skippedBusySessionIds.add(record.sessionId);
-        continue;
+      for (const plannedRecord of plan.deleteRecords) {
+        // Restore wins while cleanup is queued: only move/delete the record
+        // that still exists after this lifecycle lock has been acquired.
+        const record = await this.refreshedArchivedRecord(plannedRecord);
+        if (record === undefined) continue;
+        if (this.activeSessionHasWork(record.sessionId)) {
+          skippedBusySessionIds.add(record.sessionId);
+          continue;
+        }
+        await this.closeActive(record.sessionId, { waitForPendingOpen: false });
+        readyDeleteRecords.push(record);
       }
-      await this.closeActive(record.sessionId);
-      readyDeleteRecords.push(record);
-    }
-    await this.ensureArchivedRecordsMoved(readyDeleteRecords);
-    const deletedSessionIds = new Set(await this.archiveStoreDeleteArchivedMany(readyDeleteRecords.map((record) => record.sessionId)));
-    deleteRecords.push(...readyDeleteRecords.filter((record) => deletedSessionIds.has(record.sessionId)));
+      await this.ensureArchivedRecordsMoved(readyDeleteRecords);
+      const deletedSessionIds = new Set(await this.archiveStoreDeleteArchivedMany(readyDeleteRecords.map((record) => record.sessionId)));
+      deleteRecords.push(...readyDeleteRecords.filter((record) => deletedSessionIds.has(record.sessionId)));
 
-    return summarizeSessionCleanupExecution({
-      archiveInputs,
-      deleteRecords,
-      thresholds: plan.thresholds,
-      generatedAt: plan.generatedAt,
-      skippedBusySessionIds: [...skippedBusySessionIds],
+      return summarizeSessionCleanupExecution({
+        archiveInputs,
+        deleteRecords,
+        thresholds: plan.thresholds,
+        generatedAt: plan.generatedAt,
+        skippedBusySessionIds: [...skippedBusySessionIds],
+      });
     });
   }
 
@@ -590,6 +610,7 @@ export class PiSessionService implements SessionRouteService {
     const activeSessions = Array.from(new Set(this.active.values()));
     this.active.clear();
     this.pendingSessionOpens.clear();
+    this.lifecycleMutationQueues.clear();
     this.activities.clear();
     this.compactionPromptQueues.clear();
     this.authLossWarnings.clear();
@@ -1294,10 +1315,13 @@ export class PiSessionService implements SessionRouteService {
 
   async archive(ref: PiSessionLookup): Promise<void> {
     const session = await this.getOrOpen(ref);
-    if (this.hasActiveWork(session)) throw new Error("Stop current session activity before archiving");
-    const archiveInput = await this.archiveInputForSession(session);
-    await this.closeActive(session.sessionId);
-    await this.archiveStore.archive(archiveInput);
+    const lifecycleRef = { id: session.sessionId, cwd: session.sessionManager.getCwd() };
+    await this.serializeLifecycleMutations([lifecycleRef], async () => {
+      if (this.hasActiveWork(session)) throw new Error("Stop current session activity before archiving");
+      const archiveInput = await this.archiveInputForSession(session);
+      await this.closeActive(session.sessionId, { waitForPendingOpen: false });
+      await this.archiveStore.archive(archiveInput);
+    });
   }
 
   async archiveMany(refs: readonly SessionBulkMutationRef[]): Promise<SessionBulkArchiveResponse> {
@@ -1338,30 +1362,38 @@ export class PiSessionService implements SessionRouteService {
       }
     }
 
-    const readyInputs: ArchiveSessionInput[] = [];
-    for (const item of planItems) {
-      try {
-        await this.closeActive(item.input.sessionId);
-        readyInputs.push(item.input);
-      } catch (error: unknown) {
-        failures.push({ sessionId: item.input.sessionId, error: errorMessage(error) });
+    return this.serializeLifecycleMutations(planItems.map(({ input }) => ({ id: input.sessionId, cwd: input.cwd })), async () => {
+      const readyInputs: ArchiveSessionInput[] = [];
+      for (const item of planItems) {
+        try {
+          // An archive may have won while this bulk request was waiting. Never
+          // copy/delete its original source a second time.
+          if (await this.getArchived({ id: item.input.sessionId, cwd: item.input.cwd }) !== undefined) {
+            alreadyArchivedSessionIds.push(item.input.sessionId);
+            continue;
+          }
+          await this.closeActive(item.input.sessionId, { waitForPendingOpen: false });
+          readyInputs.push(item.input);
+        } catch (error: unknown) {
+          failures.push({ sessionId: item.input.sessionId, error: errorMessage(error) });
+        }
       }
-    }
 
-    const archivedSessionIds = [...alreadyArchivedSessionIds];
-    try {
-      const archived = await this.archiveStoreArchiveMany(readyInputs);
-      archivedSessionIds.push(...archived.map((record) => record.sessionId));
-    } catch (error: unknown) {
-      for (const input of readyInputs) failures.push({ sessionId: input.sessionId, error: errorMessage(error) });
-    }
+      const archivedSessionIds = [...alreadyArchivedSessionIds];
+      try {
+        const archived = await this.archiveStoreArchiveMany(readyInputs);
+        archivedSessionIds.push(...archived.map((record) => record.sessionId));
+      } catch (error: unknown) {
+        for (const input of readyInputs) failures.push({ sessionId: input.sessionId, error: errorMessage(error) });
+      }
 
-    return {
-      archived: true,
-      archivedSessionIds: uniqueStrings(archivedSessionIds),
-      failures,
-      generatedAt: new Date().toISOString(),
-    };
+      return {
+        archived: true,
+        archivedSessionIds: uniqueStrings(archivedSessionIds),
+        failures,
+        generatedAt: new Date().toISOString(),
+      };
+    });
   }
 
   async archiveTree(ref: PiSessionLookup): Promise<ClientArchiveSessionsResponse> {
@@ -1373,32 +1405,44 @@ export class PiSessionService implements SessionRouteService {
     if (busy !== undefined) throw new Error(`Stop current session activity before archiving ${sessionDisplayName(busy)}`);
 
     const archiveInputs = plan.unarchivedTargets.map((target) => archiveInputFromCandidate(target));
-    for (const input of archiveInputs) await this.closeActive(input.sessionId);
-    await this.archiveStoreArchiveMany(archiveInputs);
+    return this.serializeLifecycleMutations(archiveInputs.map((input) => ({ id: input.sessionId, cwd: input.cwd })), async () => {
+      for (const input of archiveInputs) await this.closeActive(input.sessionId, { waitForPendingOpen: false });
+      await this.archiveStoreArchiveMany(archiveInputs);
 
-    return {
-      archived: true,
-      sessionIds: archiveInputs.map((input) => input.sessionId),
-      archivedCount: archiveInputs.length,
-      skippedAlreadyArchivedCount: plan.skippedAlreadyArchivedCount,
-    };
+      return {
+        archived: true,
+        sessionIds: archiveInputs.map((input) => input.sessionId),
+        archivedCount: archiveInputs.length,
+        skippedAlreadyArchivedCount: plan.skippedAlreadyArchivedCount,
+      };
+    });
   }
 
   async restore(ref: PiSessionLookup): Promise<void> {
     const archived = await this.getArchived(ref);
     if (archived === undefined) throw new Error("Session not found");
-    await this.closeActive(archived.sessionId);
-    await this.archiveStore.restore(archived.sessionId);
+    await this.serializeLifecycleMutations([{ id: archived.sessionId, cwd: archived.cwd }], async () => {
+      // Re-check after waiting: a concurrent delete must not be resurrected.
+      if (await this.getArchived({ id: archived.sessionId, cwd: archived.cwd }) === undefined) throw new Error("Session not found");
+      await this.closeActive(archived.sessionId, { waitForPendingOpen: false });
+      await this.archiveStore.restore(archived.sessionId);
+    });
   }
 
   async deleteArchived(ref: PiSessionLookup): Promise<void> {
     const record = await this.getArchived(ref);
     if (record === undefined) throw new Error("Archived session not found");
-    if (this.archiveStore.deleteArchived === undefined) throw new Error("Archive store does not support deletion");
+    const deleteArchived = this.archiveStore.deleteArchived;
+    if (deleteArchived === undefined) throw new Error("Archive store does not support deletion");
 
-    await this.closeActive(record.sessionId);
-    if (record.archivePath === undefined) await this.ensureArchivedRecordMoved(record);
-    await this.archiveStore.deleteArchived(record.sessionId);
+    await this.serializeLifecycleMutations([{ id: record.sessionId, cwd: record.cwd }], async () => {
+      // Re-check after waiting: restore may have removed this record.
+      const current = await this.getArchived({ id: record.sessionId, cwd: record.cwd });
+      if (current === undefined) throw new Error("Archived session not found");
+      await this.closeActive(current.sessionId, { waitForPendingOpen: false });
+      if (current.archivePath === undefined) await this.ensureArchivedRecordMoved(current);
+      await deleteArchived(current.sessionId);
+    });
   }
 
   async deleteArchivedMany(refs: readonly SessionBulkMutationRef[]): Promise<SessionBulkDeleteArchivedResponse> {
@@ -1424,36 +1468,46 @@ export class PiSessionService implements SessionRouteService {
       planItems.push({ record });
     }
 
-    const readyRecords: ArchivedSessionRecord[] = [];
-    for (const item of planItems) {
-      try {
-        await this.closeActive(item.record.sessionId);
-        readyRecords.push(item.record);
-      } catch (error: unknown) {
-        failures.push({ sessionId: item.record.sessionId, error: errorMessage(error) });
+    return this.serializeLifecycleMutations(planItems.map(({ record }) => ({ id: record.sessionId, cwd: record.cwd })), async () => {
+      const readyRecords: ArchivedSessionRecord[] = [];
+      for (const item of planItems) {
+        try {
+          // The listing used to form the plan is stale once we waited for the
+          // lock. In particular, do not recreate a legacy archive path after a
+          // concurrent restore removed its record.
+          const record = await this.refreshedArchivedRecord(item.record);
+          if (record === undefined) {
+            failures.push({ sessionId: item.record.sessionId, error: "Archived session not found" });
+            continue;
+          }
+          await this.closeActive(record.sessionId, { waitForPendingOpen: false });
+          readyRecords.push(record);
+        } catch (error: unknown) {
+          failures.push({ sessionId: item.record.sessionId, error: errorMessage(error) });
+        }
       }
-    }
 
-    const moveFailures = await this.moveLegacyArchivedRecordsForDelete(readyRecords);
-    failures.push(...moveFailures);
-    const moveFailureIds = new Set(moveFailures.map((failure) => failure.sessionId));
-    const deleteIds = readyRecords
-      .map((record) => record.sessionId)
-      .filter((sessionId) => !moveFailureIds.has(sessionId));
+      const moveFailures = await this.moveLegacyArchivedRecordsForDelete(readyRecords);
+      failures.push(...moveFailures);
+      const moveFailureIds = new Set(moveFailures.map((failure) => failure.sessionId));
+      const deleteIds = readyRecords
+        .map((record) => record.sessionId)
+        .filter((sessionId) => !moveFailureIds.has(sessionId));
 
-    let deletedSessionIds: string[] = [];
-    try {
-      deletedSessionIds = await this.archiveStoreDeleteArchivedMany(deleteIds);
-    } catch (error: unknown) {
-      for (const sessionId of deleteIds) failures.push({ sessionId, error: errorMessage(error) });
-    }
+      let deletedSessionIds: string[] = [];
+      try {
+        deletedSessionIds = await this.archiveStoreDeleteArchivedMany(deleteIds);
+      } catch (error: unknown) {
+        for (const sessionId of deleteIds) failures.push({ sessionId, error: errorMessage(error) });
+      }
 
-    return {
-      deleted: true,
-      deletedSessionIds,
-      failures,
-      generatedAt: new Date().toISOString(),
-    };
+      return {
+        deleted: true,
+        deletedSessionIds,
+        failures,
+        generatedAt: new Date().toISOString(),
+      };
+    });
   }
 
   async reload(ref: PiSessionLookup): Promise<void> {
@@ -1481,6 +1535,41 @@ export class PiSessionService implements SessionRouteService {
     clearSessionQueue(session);
     this.publishStatus(session);
     return this.statusFromSession(session);
+  }
+
+  /**
+   * Rename without opening a dormant runtime. The client supplies only an id and
+   * cwd context; the file path always comes from this daemon's scoped listing.
+   */
+  async rename(ref: SessionRouteRef, name: string | undefined): Promise<SessionRenameResponse> {
+    return this.serializeLifecycleMutations([ref], async () => {
+      if (await this.getArchived(ref) !== undefined) throw new SessionRenameArchivedError();
+
+      const active = this.active.get(ref.id);
+      if (active !== undefined && cwdPathsEqual(active.runtime.cwd, ref.cwd)) {
+        // Pi persists setSessionName itself for an active runtime. Do not abort,
+        // reopen, bind extensions, or otherwise disturb current agent work.
+        active.runtime.session.setSessionName(name ?? "");
+        this.publishSessionName(active.runtime.session, name);
+        return sessionRenameResponse(active.runtime.session.sessionId, name);
+      }
+
+      const listed = (await this.sessionManager.list(ref.cwd)).find((candidate) => candidate.id === ref.id && cwdPathsEqual(candidate.cwd, ref.cwd));
+      if (listed === undefined) throw new SessionRenameNotFoundError();
+      // Archive state may have changed while listing. Archived sessions must be
+      // restored first instead of mutating their original JSONL.
+      if (await this.getArchived({ id: listed.id, cwd: ref.cwd }) !== undefined) throw new SessionRenameArchivedError();
+
+      try {
+        await this.appendPersistedSessionName({ path: listed.path, sessionId: listed.id, cwd: ref.cwd, name: name ?? "" });
+      } catch (error) {
+        if (error instanceof PersistedSessionNameVerificationError) throw new SessionRenameNotFoundError();
+        throw error;
+      }
+      // Publish only after the fsync-backed append has committed.
+      this.publishSessionNameById(listed.id, name);
+      return sessionRenameResponse(listed.id, name);
+    });
   }
 
   async abort(ref: PiSessionLookup): Promise<void> {
@@ -1522,6 +1611,16 @@ export class PiSessionService implements SessionRouteService {
     const uniqueCwds = uniqueStrings(cwds);
     const entries = await Promise.all(uniqueCwds.map(async (cwd) => [cwd, await this.sessionManager.list(cwd)] as const));
     return new Map(entries);
+  }
+
+  /** Re-read an exact archive record after its lifecycle lock is held. */
+  private async refreshedArchivedRecord(record: Pick<ArchivedSessionRecord, "sessionId" | "cwd">): Promise<ArchivedSessionRecord | undefined> {
+    const fetched = await this.archiveStore.get(record.sessionId);
+    if (fetched?.sessionId === record.sessionId && cwdPathsEqual(fetched.cwd, record.cwd)) return fetched;
+    // Lightweight test/adapter repositories sometimes implement `get` only
+    // for direct routes. A fresh list still gives this operation a current,
+    // exact record rather than falling back to the stale plan item.
+    return (await this.archiveStore.list()).find((candidate) => candidate.sessionId === record.sessionId && cwdPathsEqual(candidate.cwd, record.cwd));
   }
 
   private async archiveStoreArchiveMany(inputs: readonly ArchiveSessionInput[]): Promise<ArchivedSessionRecord[]> {
@@ -1604,7 +1703,10 @@ export class PiSessionService implements SessionRouteService {
   private async ensureArchivedSessionMoved(record: ArchivedSessionRecord, session: PiSessionListEntry | undefined): Promise<ArchivedSessionRecord> {
     if (session === undefined || this.active.has(record.sessionId)) return record;
     try {
-      return await this.archiveStore.archive(archiveInputFromListEntry(session));
+      return await this.serializeLifecycleMutations([{ id: record.sessionId, cwd: record.cwd }], async () => {
+        if (this.active.has(record.sessionId)) return record;
+        return this.archiveStore.archive(archiveInputFromListEntry(session));
+      });
     } catch {
       return record;
     }
@@ -1613,6 +1715,7 @@ export class PiSessionService implements SessionRouteService {
   private async ensureArchivedRecordMoved(record: ArchivedSessionRecord): Promise<ArchivedSessionRecord> {
     const session = (await this.sessionManager.list(record.cwd)).find((candidate) => candidate.id === record.sessionId);
     if (session === undefined) return record;
+    // Callers already hold this record's lifecycle lock.
     const [moved] = await this.archiveStoreArchiveMany([archiveInputFromListEntry(session)]);
     return moved ?? record;
   }
@@ -1686,9 +1789,13 @@ export class PiSessionService implements SessionRouteService {
     return [...names];
   }
 
-  private async closeActive(sessionId: string): Promise<void> {
-    const pendingOpens = this.pendingSessionOpenPromises(sessionId);
-    if (pendingOpens.length > 0) await Promise.allSettled(pendingOpens);
+  private async closeActive(sessionId: string, options: { waitForPendingOpen?: boolean } = {}): Promise<void> {
+    // Lifecycle callers already hold this session's lock. A new open queued
+    // behind that lock must not be awaited here or both operations deadlock.
+    if (options.waitForPendingOpen !== false) {
+      const pendingOpens = this.pendingSessionOpenPromises(sessionId);
+      if (pendingOpens.length > 0) await Promise.allSettled(pendingOpens);
+    }
     const active = this.active.get(sessionId);
     if (!active) return;
     this.active.delete(sessionId);
@@ -1724,11 +1831,10 @@ export class PiSessionService implements SessionRouteService {
 
     const archived = await this.getArchived(ref);
     if (archived?.archivePath !== undefined) {
-      const { archivePath } = archived;
       return this.openExistingSession(
         archived.sessionId,
         archived.cwd,
-        () => this.sessionManager.open(archivePath),
+        () => this.openCurrentSessionManager(archived.sessionId, archived.cwd),
       );
     }
 
@@ -1736,13 +1842,25 @@ export class PiSessionService implements SessionRouteService {
       ? (await this.sessionManager.list(ref.cwd)).find((s) => s.id === ref.id || s.id.startsWith(ref.id))
       : (await this.sessionManager.listAll?.() ?? []).find((s) => s.id === ref || s.id.startsWith(ref));
     if (!match) throw new Error("Session not found");
-    return this.openExistingSession(match.id, match.cwd, () => this.sessionManager.open(match.path));
+    return this.openExistingSession(match.id, match.cwd, () => this.openCurrentSessionManager(match.id, match.cwd));
+  }
+
+  /** Resolve the backing file only after the lifecycle lock has been acquired. */
+  private async openCurrentSessionManager(sessionId: string, cwd: string): Promise<PiSessionManager> {
+    const archived = await this.getArchived({ id: sessionId, cwd });
+    if (archived?.archivePath !== undefined) return this.sessionManager.open(archived.archivePath);
+    const listed = (await this.sessionManager.list(cwd)).find((candidate) => candidate.id === sessionId && cwdPathsEqual(candidate.cwd, cwd))
+      // Legacy id-only callers intentionally search Pi's default store via
+      // listAll, which need not be represented by a cwd-scoped list adapter.
+      ?? (await this.sessionManager.listAll?.() ?? []).find((candidate) => candidate.id === sessionId && cwdPathsEqual(candidate.cwd, cwd));
+    if (listed === undefined) throw new Error("Session not found");
+    return this.sessionManager.open(listed.path);
   }
 
   private openExistingSession(
     sessionId: string,
     cwd: string,
-    openSessionManager: () => PiSessionManager,
+    openSessionManager: () => PiSessionManager | Promise<PiSessionManager>,
   ): Promise<ActiveSession<PiSessionRuntime>> {
     const active = this.activeForLookup({ id: sessionId, cwd });
     if (active !== undefined) return Promise.resolve(active);
@@ -1751,9 +1869,17 @@ export class PiSessionService implements SessionRouteService {
     const existing = this.pendingSessionOpens.get(key);
     if (existing !== undefined) return existing.promise;
 
+    // Opening creates and binds a runtime, which can write session state. It
+    // shares the canonical lifecycle lock with rename/archive/restore so a
+    // rename that wins is visible to the newly opened runtime, while an open
+    // that wins is renamed through setSessionName after registration.
     const pending: PendingSessionOpen = {
       sessionId,
-      promise: this.create(openSessionManager(), cwd),
+      promise: this.serializeLifecycleMutations([{ id: sessionId, cwd }], async () => {
+        const current = this.activeForLookup({ id: sessionId, cwd });
+        if (current !== undefined) return current;
+        return this.create(await openSessionManager(), cwd);
+      }),
     };
     pending.promise = pending.promise.finally(() => {
       if (this.pendingSessionOpens.get(key) === pending) this.pendingSessionOpens.delete(key);
@@ -1766,6 +1892,33 @@ export class PiSessionService implements SessionRouteService {
     return [...this.pendingSessionOpens.values()]
       .filter((pending) => sessionId === undefined || pending.sessionId === sessionId)
       .map((pending) => pending.promise);
+  }
+
+  /**
+   * Reserve all keys in canonical sorted order before waiting. No lifecycle
+   * operation calls this while already locked, avoiding re-entrant waits while
+   * allowing bulk operations to acquire overlapping sets without deadlocks.
+   */
+  private async serializeLifecycleMutations<T>(refs: readonly SessionRouteRef[], operation: () => Promise<T>): Promise<T> {
+    const keys = uniqueStrings(refs.map((ref) => JSON.stringify([canonicalizeStoredCwd(ref.cwd), ref.id]))).sort();
+    const reservations: { key: string; gate: Promise<void>; release: () => void; previous: Promise<void> }[] = [];
+    for (const key of keys) {
+      const previous = this.lifecycleMutationQueues.get(key) ?? Promise.resolve();
+      let release = (): void => undefined;
+      const blocker = new Promise<void>((resolve) => { release = resolve; });
+      const gate = previous.catch(() => undefined).then(() => blocker);
+      this.lifecycleMutationQueues.set(key, gate);
+      reservations.push({ key, gate, release, previous });
+    }
+    await Promise.all(reservations.map(({ previous }) => previous.catch(() => undefined)));
+    try {
+      return await operation();
+    } finally {
+      for (const reservation of reservations) {
+        reservation.release();
+        if (this.lifecycleMutationQueues.get(reservation.key) === reservation.gate) this.lifecycleMutationQueues.delete(reservation.key);
+      }
+    }
   }
 
   private async getArchived(ref: PiSessionLookup): Promise<ArchivedSessionRecord | undefined> {
@@ -2006,11 +2159,13 @@ export class PiSessionService implements SessionRouteService {
     }
   }
 
-  private publishSessionName(session: PiAgentSession): void {
-    const event = session.sessionName === undefined
-      ? { type: "session.name", sessionId: session.sessionId } as const
-      : { type: "session.name", sessionId: session.sessionId, name: session.sessionName } as const;
-    this.events.publish(session.sessionId, event);
+  private publishSessionName(session: PiAgentSession, name = session.sessionName): void {
+    this.publishSessionNameById(session.sessionId, name);
+  }
+
+  private publishSessionNameById(sessionId: string, name: string | undefined): void {
+    const event = sessionNameEvent(sessionId, name);
+    this.events.publish(sessionId, event);
     this.events.publishGlobal(event);
   }
 
@@ -2195,6 +2350,24 @@ function findSessionByIdOrPrefix(sessions: readonly PiSessionListEntry[], sessio
 
 function uniqueStrings(values: readonly string[]): string[] {
   return [...new Set(values)];
+}
+
+export class SessionRenameNotFoundError extends Error {
+  constructor() {
+    super("Session not found");
+    this.name = "SessionRenameNotFoundError";
+  }
+}
+
+export class SessionRenameArchivedError extends Error {
+  constructor() {
+    super("Archived sessions are read-only. Restore the session before renaming it.");
+    this.name = "SessionRenameArchivedError";
+  }
+}
+
+function sessionRenameResponse(sessionId: string, name: string | undefined): SessionRenameResponse {
+  return name === undefined ? { sessionId } : { sessionId, name };
 }
 
 function errorMessage(error: unknown): string {

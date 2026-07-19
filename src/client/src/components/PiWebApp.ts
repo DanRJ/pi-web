@@ -49,6 +49,7 @@ import "./ProjectList";
 import "./WorkspaceList";
 import "./SessionList";
 import "./SessionCleanupDialog";
+import "./SessionRenameDialog";
 import "./ChatView";
 import type { ChatView } from "./ChatView";
 import "./PromptEditor";
@@ -98,6 +99,17 @@ interface SessionCleanupDialogState {
   loading?: boolean | undefined;
   running?: boolean | undefined;
   error?: string | undefined;
+}
+
+interface SessionRenameDialogTarget {
+  machineId: string;
+  sessionId: string;
+  cwd: string;
+  oldName?: string;
+  machineRevision?: string;
+  /** Dashboard capabilities are already an effective web+sessiond snapshot. */
+  capabilityVerified?: true;
+  opener?: HTMLElement;
 }
 
 @customElement("pi-web-app")
@@ -218,6 +230,9 @@ export class PiWebApp extends LitElement {
   @state() private activeThemeId: QualifiedContributionId = CLASSIC_THEME_ID;
   @state() private isRefreshingApp = false;
   @state() private sessionCleanupDialog: SessionCleanupDialogState | undefined;
+  @state() private sessionRenameTarget: SessionRenameDialogTarget | undefined;
+  @state() private sessionRenameSaving = false;
+  @state() private sessionRenameError = "";
   @state() private settingsSection: SettingsSection | undefined = readSettingsSection();
   @state() private shortcutConfig: PiWebShortcutConfig = {};
   @state() private workspaceUploadDefaultFolder = effectiveWorkspaceUploadFolder(undefined);
@@ -1367,6 +1382,65 @@ export class PiWebApp extends LitElement {
     return runtime?.ok === true && supportsPiWebCapability(runtime, PI_WEB_CAPABILITIES.sessionsReload);
   }
 
+  private canRenameSessions(machineId = selectedMachineId(this.state)): boolean {
+    const runtime = this.state.machineRuntimes[machineId];
+    return runtime?.ok === true && supportsPiWebCapability(runtime, PI_WEB_CAPABILITIES.sessionsRename);
+  }
+
+  private renameUnavailableMessage(machineId = selectedMachineId(this.state)): string {
+    const machine = this.state.machines.find((candidate) => candidate.id === machineId);
+    return `Update and restart Pi-Web on ${machine?.name ?? "this machine"} to rename sessions.`;
+  }
+
+  private openSessionRenameDialog(session: Pick<SessionInfo, "id" | "cwd" | "name">, machineId: string, opener?: HTMLElement, capabilityVerified = false): void {
+    if (!capabilityVerified && !this.canRenameSessions(machineId)) return;
+    const machine = this.state.machines.find((candidate) => candidate.id === machineId);
+    this.sessionRenameTarget = { machineId, sessionId: session.id, cwd: session.cwd, ...(session.name === undefined ? {} : { oldName: session.name }), ...(machineId === "local" || machine?.updatedAt === undefined ? {} : { machineRevision: machine.updatedAt }), ...(capabilityVerified ? { capabilityVerified: true } : {}), ...(opener === undefined ? {} : { opener }) };
+    this.sessionRenameSaving = false;
+    this.sessionRenameError = "";
+  }
+
+  private closeSessionRenameDialog(): void {
+    const opener = this.sessionRenameTarget?.opener;
+    this.sessionRenameTarget = undefined;
+    this.sessionRenameSaving = false;
+    this.sessionRenameError = "";
+    void this.updateComplete.then(() => { if (opener?.isConnected === true) opener.focus(); });
+  }
+
+  private async submitSessionRename(name: string | null): Promise<void> {
+    const target = this.sessionRenameTarget;
+    if (target === undefined || this.sessionRenameSaving) return;
+    const machine = this.state.machines.find((candidate) => candidate.id === target.machineId);
+    if ((target.capabilityVerified !== true && !this.canRenameSessions(target.machineId)) || (target.machineId !== "local" && machine?.updatedAt !== target.machineRevision)) {
+      // Keep the modal and its original title intact. A remote target can
+      // change between opening it and saving; silently closing loses both the
+      // user's draft and the clear reason the write was not attempted.
+      this.sessionRenameSaving = false;
+      this.sessionRenameError = "This machine changed. Reopen Rename and try again.";
+      return;
+    }
+    this.sessionRenameSaving = true;
+    this.sessionRenameError = "";
+    try {
+      const response = await sessionsApi.rename({ id: target.sessionId, cwd: target.cwd }, name, target.machineId, target.machineRevision);
+      const currentMachine = this.state.machines.find((candidate) => candidate.id === target.machineId);
+      if (this.sessionRenameTarget !== target) return;
+      if (target.machineId !== "local" && currentMachine?.updatedAt !== target.machineRevision) {
+        this.sessionRenameSaving = false;
+        this.sessionRenameError = "This machine changed. Reopen Rename and try again.";
+        return;
+      }
+      if (selectedMachineId(this.state) === target.machineId) this.sessions.applySessionName(response.sessionId, response.name);
+      this.dashboard.applySessionName(target.machineId, response.sessionId, response.name);
+      this.closeSessionRenameDialog();
+    } catch (error) {
+      if (this.sessionRenameTarget !== target) return;
+      this.sessionRenameSaving = false;
+      this.sessionRenameError = renameErrorMessage(error);
+    }
+  }
+
   private canClearServerQueue(): boolean {
     const runtime = this.selectedMachineRuntime();
     return runtime?.ok === true && supportsPiWebCapability(runtime, PI_WEB_CAPABILITIES.sessionsClearQueue);
@@ -1489,11 +1563,13 @@ export class PiWebApp extends LitElement {
         .canDeleteArchivedSessions=${this.canDeleteArchivedSessions()}
         .canReloadSessions=${this.canReloadSessions()}
         .canCleanupSessions=${this.canCleanupSessions()}
+        .canRenameSessions=${this.canRenameSessions()}
         .authoritativeSessionPersistence=${this.hasAuthoritativeSessionPersistence()}
         .dashboardActive=${this.topLevelPage === "dashboard"}
         .onOpenDashboard=${() => { this.openDashboard(); }}
         .archivedDeleteUnavailableMessage=${this.archivedDeleteUnavailableMessage()}
         .cleanupUnavailableMessage=${this.sessionCleanupUnavailableMessage()}
+        .renameUnavailableMessage=${this.renameUnavailableMessage()}
         .collapsible=${true}
         .compact=${this.appShell.isMobileNavigationLayout}
         .projectsCollapsed=${this.navigationSections.isCollapsed("projects")}
@@ -1522,6 +1598,7 @@ export class PiWebApp extends LitElement {
         .onDetachParentSession=${(session: SessionInfo) => this.sessions.detachParent(session)}
         .onReloadSession=${(session: SessionInfo) => this.sessions.reloadSession(session)}
         .onCleanupSessions=${() => { this.openSessionCleanupDialog(); }}
+        .onRenameSession=${(session: SessionInfo, opener: HTMLElement) => { this.openSessionRenameDialog(session, selectedMachineId(this.state), opener); }}
         .onFocusNavigationTarget=${(target: NavigationFocusTarget) => { void this.focusNavigationTarget(target); }}
         .onCancelKeyboardNavigation=${() => { void this.focusChatComposer(); }}
       ></app-navigation-panel>
@@ -2460,6 +2537,7 @@ export class PiWebApp extends LitElement {
       ${state.projectDialogOpen ? html`<project-dialog .machineId=${selectedMachineId(state)} .onSubmit=${(path: string, create: boolean) => this.projects.addProject(path, create)} .onCancel=${() => { this.setState({ projectDialogOpen: false }); }}></project-dialog>` : null}
       ${state.machineDialogOpen ? html`<machine-dialog .machine=${this.machineDialogMachine} .error=${state.error} .onSubmit=${(input: MachineDialogSubmit) => this.submitMachineDialog(input)} .onCancel=${() => { this.closeMachineDialog(); }}></machine-dialog>` : null}
       ${state.authDialog !== undefined ? html`<auth-dialog .state=${state.authDialog} .onChooseMethod=${(authType: "oauth" | "api_key") => { void this.auth.chooseLoginMethod(authType); }} .onSelectProvider=${(providerId: string, authType: "oauth" | "api_key") => { void this.auth.selectLoginProvider(providerId, authType); }} .onApiKeyInput=${(value: string) => { this.auth.updateApiKey(value); }} .onSaveApiKey=${() => { void this.auth.saveApiKey(); }} .onLogoutProvider=${(providerId: string) => { void this.auth.logoutProvider(providerId); }} .onOAuthInput=${(value: string) => { this.auth.updateOAuthInput(value); }} .onOAuthRespond=${(value?: string) => { void this.auth.respondOAuth(value); }} .onOAuthCancel=${() => { void this.auth.cancelOAuth(); }} .onCancel=${() => { this.auth.closeDialog(); }}></auth-dialog>` : null}
+      ${this.sessionRenameTarget !== undefined ? html`<session-rename-dialog .name=${this.sessionRenameTarget.oldName ?? ""} .saving=${this.sessionRenameSaving} .error=${this.sessionRenameError} .onSave=${(name: string | null) => this.submitSessionRename(name)} .onCancel=${() => { this.closeSessionRenameDialog(); }}></session-rename-dialog>` : null}
       ${this.sessionCleanupDialog !== undefined ? html`<session-cleanup-dialog .canCleanup=${this.canCleanupSessions()} .unavailableMessage=${this.sessionCleanupUnavailableMessage()} .preview=${this.sessionCleanupDialog.preview} .previewRequest=${this.sessionCleanupDialog.previewRequest} .result=${this.sessionCleanupDialog.result} .loading=${this.sessionCleanupDialog.loading === true} .running=${this.sessionCleanupDialog.running === true} .error=${this.sessionCleanupDialog.error ?? ""} .onPreview=${(request: SessionCleanupRequest) => { void this.previewSessionCleanup(request); }} .onRun=${(request: SessionCleanupRequest) => { void this.runSessionCleanup(request); }} .onClose=${() => { this.closeSessionCleanupDialog(); }}></session-cleanup-dialog>` : null}
       ${state.themeDialog !== undefined ? html`<command-picker title=${state.themeDialog.title} .options=${state.themeDialog.options} .selectedValue=${state.themeDialog.selectedValue} .onPick=${(value: string) => { this.pickTheme(value); }} .onCancel=${() => { this.setState({ themeDialog: undefined }); }}></command-picker>` : null}
       ${this.settingsSection !== undefined && !this.isModernistSettingsDestination() ? this.renderSettings("dialog", state) : null}
@@ -2480,6 +2558,7 @@ export class PiWebApp extends LitElement {
             .selectionError=${this.state.error}
             .hrefForSession=${(session: LocalSessionDashboardSessionSummary, machineId: string) => this.dashboardSessionHref(session, machineId)}
             .onOpenSession=${(session: LocalSessionDashboardSessionSummary, machineId: string) => this.openDashboardSession(session, machineId)}
+            .onRenameSession=${(session: LocalSessionDashboardSessionSummary, machineId: string, opener: HTMLElement) => { this.openSessionRenameDialog(session, machineId, opener, true); }}
             .projects=${this.state.projects}
             .selectedProjectId=${this.state.selectedProject?.id}
             .selectedWorkspaceId=${this.state.selectedWorkspace?.id}
@@ -2516,6 +2595,9 @@ export class PiWebApp extends LitElement {
               .isSendingPrompt=${state.sendingPrompts[state.selectedSession.id] === true}
               .canStop=${this.canStopActiveWork(state.status)}
               .clearsServerQueue=${this.stopClearsServerQueue(state.status)}
+              .canRename=${this.canRenameSessions()}
+              .renameUnavailableMessage=${this.renameUnavailableMessage()}
+              .onRename=${(opener: HTMLElement) => { const selected = state.selectedSession; if (selected !== undefined) this.openSessionRenameDialog(selected, selectedMachineId(state), opener); }}
               .onStop=${this.handleStopActiveWork}
               .onToggleTheme=${this.handleToggleThemeAppearance}
             ></app-session-header>
@@ -2543,6 +2625,16 @@ function deepActiveElement(root: ParentNode | undefined): HTMLElement | undefine
   let active = activeElementIn(root);
   while (active?.shadowRoot?.activeElement != null) active = active.shadowRoot.activeElement;
   return active instanceof HTMLElement ? active : undefined;
+}
+
+function renameErrorMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  const lower = message.toLowerCase();
+  if (lower.includes("archived") || lower.includes("409")) return "Restore this session before renaming.";
+  if (lower.includes("not found") || lower.includes("404")) return "This session is no longer available.";
+  if (lower.includes("machine connection changed")) return "This machine changed. Reopen Rename and try again.";
+  if (lower.includes("offline") || lower.includes("network") || lower.includes("fetch")) return "This machine is offline. Check its connection and try again.";
+  return `Could not rename session: ${message}`;
 }
 
 function activeElementIn(root: ParentNode): Element | null {

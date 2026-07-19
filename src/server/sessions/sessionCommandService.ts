@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import type { SessionUiEvent } from "../../shared/apiTypes.js";
+import { normalizeSessionName, sessionNameEvent } from "../../shared/sessionName.js";
 import type { ClientCommandResult, ClientSession } from "../types.js";
 import { isBuiltinCommand } from "./builtinCommands.js";
 
@@ -118,10 +119,19 @@ export class SessionCommandService<TSession extends CommandSession = CommandSess
   }
 
   private nameSession(active: CommandActiveSession<TSession>, name: string): ClientCommandResult {
-    if (name === "") return { type: "unsupported", message: "Usage: /name <session name>" };
-    active.runtime.session.setSessionName(name);
-    this.publishSessionName(active.runtime.session);
-    return { type: "done", message: `Session named: ${name}`, session: clientSessionFromRuntime(active.runtime) };
+    const normalized = normalizeSessionName(name);
+    // Pi persists an empty string as the explicit session_info clear value.
+    // The event remains compact (without name) and mirrors the HTTP contract.
+    if (normalized === undefined) {
+      active.runtime.session.setSessionName("");
+      const event = sessionNameEvent(active.runtime.session.sessionId, undefined);
+      this.events.publish(active.runtime.session.sessionId, event);
+      this.events.publishGlobal?.(event);
+      return { type: "done", message: "Session name cleared", session: clientSessionFromRuntime(active.runtime) };
+    }
+    active.runtime.session.setSessionName(normalized);
+    this.publishSessionName(active.runtime.session, normalized);
+    return { type: "done", message: `Session named: ${normalized}`, session: clientSessionFromRuntime(active.runtime) };
   }
 
   private compact(session: TSession, instructions: string): ClientCommandResult {
@@ -204,10 +214,8 @@ export class SessionCommandService<TSession extends CommandSession = CommandSess
     }
   }
 
-  private publishSessionName(session: TSession): void {
-    const event = session.sessionName === undefined
-      ? { type: "session.name", sessionId: session.sessionId } as const
-      : { type: "session.name", sessionId: session.sessionId, name: session.sessionName } as const;
+  private publishSessionName(session: TSession, name = session.sessionName): void {
+    const event = sessionNameEvent(session.sessionId, name);
     this.events.publish(session.sessionId, event);
     this.events.publishGlobal?.(event);
   }
@@ -222,11 +230,12 @@ export class SessionCommandService<TSession extends CommandSession = CommandSess
 function clientSessionFromRuntime(runtime: CommandRuntime): ClientSession {
   const session = runtime.session;
   const parentSessionPath = typeof session.sessionManager.getHeader === "function" ? session.sessionManager.getHeader()?.parentSession : undefined;
+  const name = normalizedName(session.sessionName);
   return {
     id: session.sessionId,
     path: session.sessionFile ?? "",
     cwd: runtime.cwd,
-    ...(session.sessionName === undefined ? {} : { name: session.sessionName }),
+    ...(name === undefined ? {} : { name }),
     created: new Date().toISOString(),
     modified: new Date().toISOString(),
     messageCount: session.messages.length,

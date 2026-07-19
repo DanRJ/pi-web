@@ -21,6 +21,17 @@ describe("PI WEB status parsing", () => {
     });
   });
 
+  it("accepts old-machine runtime responses that omit capability fields as unsupported", () => {
+    expect(parsePiWebRuntimeResponse({
+      packageName: "@jmfederico/pi-web",
+      generatedAt: "now",
+      components: {
+        web: { component: "web", label: "Web/UI", available: true },
+        sessiond: { component: "sessiond", label: "Session daemon", available: true },
+      },
+    })).toMatchObject({ capabilities: [], components: { web: { capabilities: [] }, sessiond: { capabilities: [] } } });
+  });
+
   it("rejects runtime responses with malformed component capability arrays", () => {
     expect(parsePiWebRuntimeResponse({
       packageName: "@jmfederico/pi-web",

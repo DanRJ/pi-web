@@ -28,6 +28,17 @@ describe("machine-scoped session proxy routes", () => {
     expect(daemon.requests).toEqual([{ method: "GET", path: "/sessions?cwd=/repo", body: undefined }]);
   });
 
+  it("forwards session-name mutations through the local session proxy", async () => {
+    const renamed = { sessionId: "session-1", name: "Useful name" };
+    daemon.respondWith({ statusCode: 200, headers: { "content-type": "application/json" }, body: JSON.stringify(renamed) });
+
+    const response = await app.inject({ method: "PUT", url: "/api/machines/local/sessions/session-1/name", payload: { cwd: "/repo", name: "Useful name" } });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual(renamed);
+    expect(daemon.requests).toEqual([{ method: "PUT", path: "/sessions/session-1/name", body: { cwd: "/repo", name: "Useful name" } }]);
+  });
+
   it("forwards queue-clear mutations and their status through the session daemon", async () => {
     const status = { sessionId: "session-1", pendingMessageCount: 0, queuedMessages: [] };
     daemon.respondWith({ statusCode: 200, headers: { "content-type": "application/json" }, body: JSON.stringify(status) });

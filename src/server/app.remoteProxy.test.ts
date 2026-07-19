@@ -82,6 +82,64 @@ describe("buildApp remote machine proxy routes", () => {
     expect(request).toHaveBeenCalledWith("POST", "/api/sessions", { cwd: "/repo" });
   });
 
+  it("does not forward a stale revisioned remote session rename", async () => {
+    const added = await appTestContext.app.inject({ method: "POST", url: "/api/machines", payload: { name: "Remote", baseUrl: "https://old.example.test/" } });
+    const remote = added.json<{ id: string; updatedAt: string }>();
+    const request = vi.fn<MachineClient["request"]>();
+    appTestContext.remoteClient = fakeRemoteClient({ request });
+
+    await appTestContext.app.inject({ method: "PATCH", url: `/api/machines/${remote.id}`, payload: { baseUrl: "https://new.example.test/" } });
+    const response = await appTestContext.app.inject({
+      method: "PUT",
+      url: `/api/machines/${remote.id}/sessions/s1/name`,
+      headers: { [MACHINE_REVISION_HEADER]: remote.updatedAt },
+      payload: { cwd: "/repo", name: "New name" },
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toMatchObject({ error: MACHINE_REVISION_CONFLICT_ERROR, machineId: remote.id });
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it("forwards a matching remote session rename without the gateway revision header", async () => {
+    const added = await appTestContext.app.inject({ method: "POST", url: "/api/machines", payload: { name: "Remote", baseUrl: "https://remote.example.test/" } });
+    const remote = added.json<{ id: string; updatedAt: string }>();
+    const request = vi.fn<MachineClient["request"]>(() => Promise.resolve({
+      statusCode: 200,
+      headers: { "content-type": "application/json" },
+      body: Readable.from([JSON.stringify({ sessionId: "s1", name: "New name" })]),
+    }));
+    appTestContext.remoteClient = fakeRemoteClient({ request });
+
+    const response = await appTestContext.app.inject({
+      method: "PUT",
+      url: `/api/machines/${remote.id}/sessions/s1/name`,
+      headers: { [MACHINE_REVISION_HEADER]: remote.updatedAt },
+      payload: { cwd: "/repo", name: "New name" },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ sessionId: "s1", name: "New name" });
+    expect(request).toHaveBeenCalledWith("PUT", "/api/sessions/s1/name", { cwd: "/repo", name: "New name" });
+  });
+
+  it("keeps legacy remote session rename clients working without a revision header", async () => {
+    const added = await appTestContext.app.inject({ method: "POST", url: "/api/machines", payload: { name: "Remote", baseUrl: "https://remote.example.test/" } });
+    const remote = added.json<{ id: string }>();
+    const request = vi.fn<MachineClient["request"]>(() => Promise.resolve({
+      statusCode: 200,
+      headers: { "content-type": "application/json" },
+      body: Readable.from([JSON.stringify({ sessionId: "s1" })]),
+    }));
+    appTestContext.remoteClient = fakeRemoteClient({ request });
+
+    const response = await appTestContext.app.inject({ method: "PUT", url: `/api/machines/${remote.id}/sessions/s1/name`, payload: { cwd: "/repo", name: null } });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ sessionId: "s1" });
+    expect(request).toHaveBeenCalledWith("PUT", "/api/sessions/s1/name", { cwd: "/repo", name: null });
+  });
+
   it("preserves the force-refresh query when proxying update checks", async () => {
     const addResponse = await appTestContext.app.inject({ method: "POST", url: "/api/machines", payload: { name: "Remote", baseUrl: "https://remote.example.test/" } });
     const remote = addResponse.json<{ id: string }>();
