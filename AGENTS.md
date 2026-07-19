@@ -1,5 +1,11 @@
 # Agent Notes
 
+## Repository targeting
+
+- Treat `DanRJ/pi-web` (`origin`) as the only GitHub repository for issue, pull-request, release, branch, and repository searches.
+- Never search or query `jmfederico/pi-web` (`upstream`) for project work.
+- The `upstream` remote is only for an explicitly requested source synchronization operation; it is not a project-management or research source.
+
 This project is expected to run locally using split systemd user services:
 
 - `pi-web-sessiond.service` runs `npm run start:sessiond` in non-autoreload, non-auto-restart mode.

@@ -113,6 +113,7 @@ export const appStyles = css`
   .shell.dashboard-page { grid-template-columns: var(--navigation-panel-width) 1px minmax(0, 1fr); }
   .shell.dashboard-page main { grid-column: 3; }
   .dashboard-main session-dashboard { flex: 1 1 auto; min-height: 0; }
+  modernist-global-header { display: none; }
   /* Settings is a Modernist destination, not a modal: leave every underlying
      surface mounted while the post-navigation track belongs to settings. */
   .shell[data-settings-destination] { grid-template-columns: var(--navigation-panel-width) var(--pi-divider-width, 2px) minmax(0, 1fr); }
@@ -124,9 +125,25 @@ export const appStyles = css`
      The legacy workspace width/collapse values remain stored; this composition
      simply does not consume that sidecar track while it is expanded. */
   @media (min-width: 1181px) {
+    /* Modernist desktop owns a separate 56px global row, a hierarchy sidebar,
+       and one post-navigation content track. Workspace state stays mounted in
+       Chat without creating an implicit sidecar grid track. */
+    .shell.modernist-desktop-shell { grid-template-columns: var(--navigation-panel-width) var(--pi-divider-width, 2px) minmax(0, 1fr); grid-template-rows: 56px minmax(0, 1fr); }
+    .shell.modernist-desktop-shell > modernist-global-header { grid-column: 1 / -1; grid-row: 1; display: block; min-width: 0; }
+    .shell.modernist-desktop-shell > aside { grid-column: 1; grid-row: 2; }
+    .shell.modernist-desktop-shell > .navigation-panel-edge { grid-column: 2; grid-row: 2; }
+    .shell.modernist-desktop-shell > main,
+    .shell.modernist-desktop-shell > settings-dialog,
+    .shell.modernist-desktop-shell > workspace-panel { grid-column: 3; grid-row: 2; min-width: 0; }
+    .shell.modernist-desktop-shell > .workspace-panel-edge { display: none; }
+    .shell.modernist-desktop-shell:not(.modernist-tools-expanded):not([data-settings-destination]) > workspace-panel { display: none; }
+    .shell.modernist-desktop-shell main > app-session-header { min-width: 0; overflow: hidden; padding-inline: var(--pi-space-2, 8px); }
+    .shell.modernist-desktop-shell main > chat-view,
+    .shell.modernist-desktop-shell main > prompt-editor,
+    .shell.modernist-desktop-shell main > status-bar { min-width: 0; }
     .shell.modernist-tools-expanded { grid-template-columns: var(--navigation-panel-width) var(--pi-divider-width, 2px) minmax(0, 1fr); }
     .shell.modernist-tools-expanded main { display: none; }
-    .shell.modernist-tools-expanded > workspace-panel { grid-column: 3; }
+    .shell.modernist-tools-expanded > workspace-panel { grid-column: 3; grid-row: 2; }
     .shell.modernist-tools-expanded > .workspace-panel-edge { display: none; }
     .shell.navigation-panel-collapsed { --navigation-panel-width: 0px; }
     .shell.navigation-panel-collapsed > aside { display: none; }

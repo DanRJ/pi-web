@@ -35,6 +35,8 @@ export class AppNavigationPanel extends LitElement {
   @property({ attribute: false }) refreshControl: unknown;
   @property({ type: Boolean, reflect: true }) collapsible = false;
   @property({ type: Boolean, reflect: true }) compact = false;
+  /** Modernist desktop keeps the hierarchy in the sidebar and moves global actions above it. */
+  @property({ type: Boolean, reflect: true }) hierarchy = false;
   @property({ type: Boolean }) machinesCollapsed = false;
   @property({ type: Boolean }) projectsCollapsed = false;
   @property({ type: Boolean }) workspacesCollapsed = false;
@@ -88,7 +90,7 @@ export class AppNavigationPanel extends LitElement {
   async focusSection(section: NavigationSection): Promise<boolean> {
     await this.updateComplete;
     switch (section) {
-      case "machines": return await this.focusNavigableSection(this.compact ? this.machineList : this.machineSwitcher);
+      case "machines": return await this.focusNavigableSection(this.compact || this.hierarchy ? this.machineList : this.machineSwitcher);
       case "projects": return await this.focusNavigableSection(this.projectList);
       case "workspaces": return await this.focusNavigableSection(this.workspaceList);
       case "sessions": return await this.focusNavigableSection(this.sessionList);
@@ -97,28 +99,30 @@ export class AppNavigationPanel extends LitElement {
 
   override render() {
     return html`
-      <header>
-        <strong>PI WEB</strong>
-        ${shouldShowMachinesSection(this.machines) ? html`
-          <machine-switcher
-            .machines=${this.machines}
-            .selected=${this.selectedMachine}
-            .statuses=${this.machineStatuses}
-            .activities=${this.machineActivities}
-            .onSelect=${(machine: Machine) => this.onSelectMachine?.(machine)}
-            .onRemove=${(machine: Machine) => this.onRemoveMachine?.(machine)}
-            .onFocusNextSection=${() => { this.focusNextFrom("machines"); }}
-            .onCancelKeyboardNavigation=${() => { this.cancelKeyboardNavigation(); }}
-          ></machine-switcher>
-        ` : null}
-        <div class="header-actions">
-          ${this.refreshControl}
-          <button aria-current=${this.dashboardActive ? "page" : "false"} @click=${() => { this.onOpenDashboard?.(); }}>Dashboard</button>
-          <button title="Show Actions" aria-label="Show Actions" @click=${() => { this.onShowActions?.(); }}>Actions</button>
-        </div>
-      </header>
+      ${this.hierarchy ? null : html`
+        <header>
+          <strong>PI WEB</strong>
+          ${shouldShowMachinesSection(this.machines) ? html`
+            <machine-switcher
+              .machines=${this.machines}
+              .selected=${this.selectedMachine}
+              .statuses=${this.machineStatuses}
+              .activities=${this.machineActivities}
+              .onSelect=${(machine: Machine) => this.onSelectMachine?.(machine)}
+              .onRemove=${(machine: Machine) => this.onRemoveMachine?.(machine)}
+              .onFocusNextSection=${() => { this.focusNextFrom("machines"); }}
+              .onCancelKeyboardNavigation=${() => { this.cancelKeyboardNavigation(); }}
+            ></machine-switcher>
+          ` : null}
+          <div class="header-actions">
+            ${this.refreshControl}
+            <button aria-current=${this.dashboardActive ? "page" : "false"} @click=${() => { this.onOpenDashboard?.(); }}>Dashboard</button>
+            <button title="Show Actions" aria-label="Show Actions" @click=${() => { this.onShowActions?.(); }}>Actions</button>
+          </div>
+        </header>
+      `}
       ${this.compact ? html`<button class="dashboard-link" aria-current=${this.dashboardActive ? "page" : "false"} @click=${() => { this.onOpenDashboard?.(); }}>Dashboard</button>` : null}
-      ${this.compact && shouldShowMachinesSection(this.machines) ? html`
+      ${(this.compact || this.hierarchy) && shouldShowMachinesSection(this.machines, this.hierarchy) ? html`
         <machine-list
           .machines=${this.machines}
           .selected=${this.selectedMachine}
@@ -208,12 +212,12 @@ export class AppNavigationPanel extends LitElement {
   }
 
   private focusPreviousFrom(section: NavigationSection): void {
-    const target = previousVisibleNavigationTarget(section, this.machines);
+    const target = previousVisibleNavigationTarget(section, this.machines, this.hierarchy);
     if (target !== undefined) void this.onFocusNavigationTarget?.(target);
   }
 
   private focusNextFrom(section: NavigationSection): void {
-    void this.onFocusNavigationTarget?.(nextVisibleNavigationTarget(section, this.machines));
+    void this.onFocusNavigationTarget?.(nextVisibleNavigationTarget(section, this.machines, this.hierarchy));
   }
 
   private cancelKeyboardNavigation(): void {
@@ -227,6 +231,7 @@ export class AppNavigationPanel extends LitElement {
     header strong { flex: 0 0 auto; font-family: var(--pi-heading-font-family, inherit); font-weight: var(--pi-heading-font-weight, 700); letter-spacing: var(--pi-navigation-heading-letter-spacing, normal); }
     machine-switcher { flex: 1 1 auto; min-width: 0; }
     :host([compact]) header { display: none; }
+    :host([hierarchy]) header, :host([hierarchy]) .dashboard-link { display: none; }
     .header-actions { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; }
     .dashboard-link { margin: 8px; border-width: var(--pi-divider-width, 1px); }
     button[aria-current="page"] { border-color: var(--pi-accent); color: var(--pi-accent); }
@@ -244,25 +249,28 @@ export class AppNavigationPanel extends LitElement {
     :host([compact]) project-list[collapsed],
     :host([compact]) workspace-list[collapsed],
     :host([compact]) session-list[collapsed] { flex: 0 0 auto; min-height: auto; overflow: hidden; }
+    :host([hierarchy]) machine-list, :host([hierarchy]) project-list, :host([hierarchy]) workspace-list { flex: 0 1 25%; max-height: 25%; }
+    :host([hierarchy]) session-list { flex: 1 1 auto; }
+    :host([hierarchy]) machine-list[collapsed], :host([hierarchy]) project-list[collapsed], :host([hierarchy]) workspace-list[collapsed], :host([hierarchy]) session-list[collapsed] { flex: 0 0 auto; min-height: auto; overflow: hidden; }
     button { border: 1px solid var(--pi-border); border-radius: var(--pi-radius-control, 8px); background: var(--pi-surface); color: var(--pi-text); padding: 7px 9px; cursor: pointer; font-family: var(--pi-control-font-family, system-ui, sans-serif); }
     button:focus-visible { outline: var(--pi-focus-ring-width, 2px) solid var(--pi-accent); outline-offset: var(--pi-focus-ring-offset, 2px); }
   `;
 }
 
-export function shouldShowMachinesSection(machines: readonly Machine[]): boolean {
-  return machines.length > 1;
+export function shouldShowMachinesSection(machines: readonly Machine[], hierarchy = false): boolean {
+  return hierarchy || machines.length > 1;
 }
 
-function previousVisibleNavigationTarget(section: NavigationSection, machines: readonly Machine[]): NavigationSection | undefined {
-  const sections = visibleNavigationSections(machines);
+function previousVisibleNavigationTarget(section: NavigationSection, machines: readonly Machine[], hierarchy = false): NavigationSection | undefined {
+  const sections = visibleNavigationSections(machines, hierarchy);
   return sections[sections.indexOf(section) - 1];
 }
 
-function nextVisibleNavigationTarget(section: NavigationSection, machines: readonly Machine[]): NavigationFocusTarget {
-  const sections = visibleNavigationSections(machines);
+function nextVisibleNavigationTarget(section: NavigationSection, machines: readonly Machine[], hierarchy = false): NavigationFocusTarget {
+  const sections = visibleNavigationSections(machines, hierarchy);
   return sections[sections.indexOf(section) + 1] ?? "chat";
 }
 
-function visibleNavigationSections(machines: readonly Machine[]): NavigationSection[] {
-  return NAVIGATION_SECTION_ORDER.filter((section) => section !== "machines" || shouldShowMachinesSection(machines));
+export function visibleNavigationSections(machines: readonly Machine[], hierarchy = false): NavigationSection[] {
+  return NAVIGATION_SECTION_ORDER.filter((section) => section !== "machines" || shouldShowMachinesSection(machines, hierarchy));
 }

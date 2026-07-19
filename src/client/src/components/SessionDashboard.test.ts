@@ -12,6 +12,15 @@ describe("SessionDashboard presentation helpers", () => {
     expect(relativeTime("2026-01-01T00:01:00.000Z", Date.parse("2026-01-01T00:00:00.000Z"))).toContain("minute");
   });
 
+  it("omits the persistent refresh control while retaining error recovery", () => {
+    const dashboard = new SessionDashboard();
+
+    expect(templateMarkup(dashboard.render())).not.toContain(">Refresh</button>");
+
+    dashboard.error = "Dashboard unavailable";
+    expect(templateMarkup(dashboard.render())).toContain(">Retry</button>");
+  });
+
   it("keeps title and Open session as native links without an explicit new-tab option", () => {
     const dashboard = new SessionDashboard();
     dashboard.hrefForSession = () => "/sessions/s1";

@@ -58,7 +58,6 @@ export class SessionDashboard extends LitElement {
             <button type="button" aria-pressed=${String(this.filter === "all")} @click=${() => { this.filter = "all"; }}>All <span>${cards.length}</span></button>
             <button type="button" aria-pressed=${String(this.filter === "attention")} @click=${() => { this.filter = "attention"; }}>Needs you <span>${cards.filter(({ session }) => session.needsAttention).length}</span></button>
           </div>
-          <button class="refresh" type="button" ?disabled=${this.loading} @click=${() => { void this.onRetry?.(); }}>${this.loading ? "Refreshing…" : "Refresh"}</button>
         </div>
         ${this.error === undefined ? nothing : html`<div class="notice error" role="alert">Could not refresh sessions: ${this.error} <button type="button" @click=${() => { void this.onRetry?.(); }}>Retry</button></div>`}
         ${this.selectionError === "" ? nothing : html`<div class="notice error" role="alert">Could not change selection: ${this.selectionError}</div>`}

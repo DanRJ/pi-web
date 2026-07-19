@@ -73,8 +73,10 @@ import type { WorkspacePanelEmptyState } from "./WorkspacePanel";
 import "./appShell/AppContextBar";
 import "./appShell/AppMobileMainTabs";
 import "./appShell/AppMobileDestinationTabs";
+import "./appShell/ModernistGlobalHeader";
 import type { AppMobileDestinationTabs } from "./appShell/AppMobileDestinationTabs";
 import type { AppMobileMainTab, AppMobileMainTabIcon } from "./appShell/AppMobileMainTabs";
+import type { ModernistGlobalDestination } from "./appShell/ModernistGlobalHeader";
 import { shouldShowMachinesSection, type AppNavigationPanel, type NavigationFocusTarget } from "./appShell/AppNavigationPanel";
 import "./appShell/AppPanelEdgeControl";
 import "./appShell/AppRefreshControl";
@@ -986,10 +988,7 @@ export class PiWebApp extends LitElement {
     }
     // A destination tab is a real navigation choice, not an overlay dismissal.
     // Close Modernist settings before exposing the selected mounted surface.
-    if (this.settingsSection !== undefined) {
-      this.reconcileSettingsRoute(undefined);
-      writeSettingsSection(undefined);
-    }
+    if (this.settingsSection !== undefined) this.closeSettings({ restoreFocus: false });
     this.mobileDestination = destination;
     this.resetKeyboardFocusForDestination();
   }
@@ -1052,7 +1051,9 @@ export class PiWebApp extends LitElement {
   }
 
   private closeSettings(options: { restoreFocus?: boolean } = {}): void {
-    this.reconcileSettingsRoute(undefined, { restoreFocus: options.restoreFocus !== false });
+    const restoreFocus = options.restoreFocus !== false;
+    this.reconcileSettingsRoute(undefined, { restoreFocus });
+    if (!restoreFocus) this.settingsFocusReturnTarget = undefined;
     writeSettingsSection(undefined);
   }
 
@@ -1088,6 +1089,51 @@ export class PiWebApp extends LitElement {
 
   private isModernistSettingsDestination(): boolean {
     return this.activeThemeId.startsWith("themes:modernist-");
+  }
+
+  private isModernistDesktopComposition(): boolean {
+    return this.isModernistSettingsDestination()
+      && !this.appShell.isMobileNavigationLayout
+      && this.isDesktopSideBySideLayout();
+  }
+
+  private modernistGlobalDestination(): ModernistGlobalDestination | undefined {
+    if (this.settingsSection !== undefined) return "settings";
+    if (this.topLevelPage === "dashboard") return "dashboard";
+    if (this.state.mainView !== "chat" && this.state.mainView !== "navigation") return "tools";
+    return this.state.mainView === "chat" ? "chat" : undefined;
+  }
+
+  private selectModernistGlobalDestination(destination: ModernistGlobalDestination): void {
+    if (destination === "settings") {
+      this.openSettings();
+      return;
+    }
+    // A global destination replaces Settings rather than dismissing it back to
+    // its old opener; the new destination owns any subsequent focus.
+    if (this.settingsSection !== undefined) this.closeSettings({ restoreFocus: false });
+    if (destination === "dashboard") {
+      this.openDashboard();
+      return;
+    }
+    if (destination === "actions") {
+      this.setState({ actionPaletteOpen: true });
+      return;
+    }
+    if (destination === "chat") {
+      this.selectMainView("chat");
+      return;
+    }
+    this.selectMainView(this.state.workspaceTool);
+  }
+
+  private renderModernistGlobalHeader() {
+    if (!this.isModernistDesktopComposition()) return null;
+    return html`<modernist-global-header
+      .activeDestination=${this.modernistGlobalDestination()}
+      .refreshControl=${this.appShell.shouldShowAppRefreshInHeader() ? this.renderAppRefresh() : undefined}
+      .onSelect=${(destination: ModernistGlobalDestination) => { this.selectModernistGlobalDestination(destination); }}
+    ></modernist-global-header>`;
   }
 
   private restoreSettingsFocus(): void {
@@ -1253,13 +1299,14 @@ export class PiWebApp extends LitElement {
   private isModernistWorkbenchExpanded(): boolean {
     return this.topLevelPage === "workspace"
       && this.activeThemeId.startsWith("themes:modernist-")
-      && this.state.selectedWorkspace !== undefined
       && this.state.mainView !== "chat"
       && this.state.mainView !== "navigation";
   }
 
   private isModernistCoreWorkbenchVisible(): boolean {
-    return this.isModernistWorkbenchExpanded() && isCoreWorkspacePanelId(this.state.workspaceTool);
+    return this.isModernistWorkbenchExpanded()
+      && this.state.selectedWorkspace !== undefined
+      && isCoreWorkspacePanelId(this.state.workspaceTool);
   }
 
   private renderWorkspacePanel() {
@@ -1313,7 +1360,7 @@ export class PiWebApp extends LitElement {
   }
 
   private renderWorkspacePanelEdgeControl() {
-    if (this.isModernistWorkbenchExpanded()) return null;
+    if (this.isModernistWorkbenchExpanded() || this.isModernistDesktopComposition()) return null;
     const constraints = this.resizablePanelConstraints("workspace");
     return html`
       <app-panel-edge-control
@@ -1597,6 +1644,7 @@ export class PiWebApp extends LitElement {
         .renameUnavailableMessage=${this.renameUnavailableMessage()}
         .collapsible=${true}
         .compact=${this.appShell.isMobileNavigationLayout}
+        .hierarchy=${this.isModernistDesktopComposition()}
         .projectsCollapsed=${this.navigationSections.isCollapsed("projects")}
         .workspacesCollapsed=${this.navigationSections.isCollapsed("workspaces")}
         .sessionsCollapsed=${this.navigationSections.isCollapsed("sessions")}
@@ -1706,7 +1754,7 @@ export class PiWebApp extends LitElement {
 
   private async focusNavigationSection(section: NavigationSection): Promise<void> {
     if (this.topLevelPage === "dashboard") this.leaveDashboard("sessions");
-    if (section === "machines" && !shouldShowMachinesSection(this.state.machines)) {
+    if (section === "machines" && !shouldShowMachinesSection(this.state.machines, this.isModernistDesktopComposition())) {
       await this.focusNavigationSection("projects");
       return;
     }
@@ -2586,7 +2634,8 @@ export class PiWebApp extends LitElement {
 
   private renderDashboardPage() {
     return html`
-      <div class=${`${this.panelCollapse.shellClass(this.state.mainView)} dashboard-page mobile-destination-${this.mobileDestination}`} ?data-settings-destination=${this.settingsSection !== undefined && this.isModernistSettingsDestination()} style=${this.panelResize.shellStyle({ navigation: this.resizablePanelConstraints("navigation"), workspace: this.resizablePanelConstraints("workspace") })}>
+      <div class=${`${this.panelCollapse.shellClass(this.state.mainView)} dashboard-page${this.isModernistDesktopComposition() ? " modernist-desktop-shell" : ""} mobile-destination-${this.mobileDestination}`} ?data-settings-destination=${this.settingsSection !== undefined && this.isModernistSettingsDestination()} style=${this.panelResize.shellStyle({ navigation: this.resizablePanelConstraints("navigation"), workspace: this.resizablePanelConstraints("workspace") })}>
+        ${this.renderModernistGlobalHeader()}
         <aside id="navigation-panel">${this.appShell.isMobileNavigationLayout ? null : this.renderNavigationPanel()}</aside>
         ${this.renderNavigationPanelEdgeControl()}
         ${this.settingsSection !== undefined && this.isModernistSettingsDestination() ? this.renderSettings("destination") : null}
@@ -2616,7 +2665,8 @@ export class PiWebApp extends LitElement {
     if (this.topLevelPage === "dashboard") return html`${this.renderDashboardPage()}${this.renderGlobalOverlays()}`;
     const state = this.state;
     return html`
-      <div class=${`${this.panelCollapse.shellClass(state.mainView)}${this.isModernistWorkbenchExpanded() ? " modernist-tools-expanded" : ""} mobile-destination-${this.mobileDestination}${this.mobileKeyboardFocus.active ? " mobile-keyboard-focus" : ""}`} ?data-settings-destination=${this.settingsSection !== undefined && this.isModernistSettingsDestination()} style=${this.panelResize.shellStyle({ navigation: this.resizablePanelConstraints("navigation"), workspace: this.resizablePanelConstraints("workspace") })}>
+      <div class=${`${this.panelCollapse.shellClass(state.mainView)}${this.isModernistWorkbenchExpanded() ? " modernist-tools-expanded" : ""}${this.isModernistDesktopComposition() ? " modernist-desktop-shell" : ""} mobile-destination-${this.mobileDestination}${this.mobileKeyboardFocus.active ? " mobile-keyboard-focus" : ""}`} ?data-settings-destination=${this.settingsSection !== undefined && this.isModernistSettingsDestination()} style=${this.panelResize.shellStyle({ navigation: this.resizablePanelConstraints("navigation"), workspace: this.resizablePanelConstraints("workspace") })}>
+        ${this.renderModernistGlobalHeader()}
         <aside id="navigation-panel">${this.appShell.isMobileNavigationLayout ? null : this.renderNavigationPanel()}</aside>
         ${this.renderNavigationPanelEdgeControl()}
         ${this.settingsSection !== undefined && this.isModernistSettingsDestination() ? this.renderSettings("destination", state) : null}
