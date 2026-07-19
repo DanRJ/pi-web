@@ -1,0 +1,65 @@
+name: Upstream maintenance watcher
+
+on:
+  schedule:
+    - cron: "23 5 * * 1"
+  workflow_dispatch:
+
+# One watcher run may create or update the controlled issue at a time. Queued runs are retained.
+concurrency:
+  group: upstream-maintenance-watcher
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  watch:
+    if: vars.PI_WEB_UPSTREAM_WATCHER_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Add and verify explicit upstream remote
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected='https://github.com/jmfederico/pi-web.git'
+          if ! git remote get-url upstream >/dev/null 2>&1; then
+            git remote add upstream "$expected"
+          fi
+          test "$(git remote get-url upstream)" = "$expected"
+      - name: Ensure controlled issue label exists
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! gh api -X GET "repos/${GITHUB_REPOSITORY}/labels/upstream-maintenance" >/dev/null; then
+            gh api -X POST "repos/${GITHUB_REPOSITORY}/labels" \
+              -f name='upstream-maintenance' \
+              -f color='1d76db' \
+              -f description='Controlled by the upstream maintenance watcher.' >/dev/null
+          fi
+      - name: Check explicit upstream refs
+        id: check
+        shell: bash
+        run: |
+          set +e
+          npm run maintenance:upstream
+          code=$?
+          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
+          if [ "$code" -eq 0 ] || [ "$code" -eq 10 ]; then exit 0; fi
+          exit "$code"
+      - name: Update the one maintenance issue
+        if: steps.check.outputs.exit_code == '10'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/upstream-maintenance-issue.mjs

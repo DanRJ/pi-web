@@ -1,0 +1,153 @@
+{
+  "schemaVersion": 1,
+  "baseline": {
+    "sha": "a857fe4ef333fac5c01319bd2f375fd732588b51",
+    "releasedVersion": "v1.202607.1"
+  },
+  "remotes": {
+    "origin": {
+      "url": "https://github.com/DanRJ/pi-web.git",
+      "ref": "refs/heads/main"
+    },
+    "upstream": {
+      "url": "https://github.com/jmfederico/pi-web.git",
+      "ref": "refs/heads/main"
+    }
+  },
+  "classifiers": [
+    {
+      "id": "api-shared",
+      "description": "HTTP, browser API, shared contract, and workspace protocol changes.",
+      "pathGlobs": [
+        "src/server/**",
+        "src/shared/**",
+        "src/client/src/api/**",
+        "src/client/src/appUrl.ts",
+        "src/client/src/route.ts"
+      ]
+    },
+    {
+      "id": "sessiond-runtime",
+      "description": "Session daemon ownership, session runtime, and agent integration changes.",
+      "pathGlobs": [
+        "src/server/sessiond.ts",
+        "src/server/sessiond/**",
+        "src/server/sessions/**",
+        "src/sessiond/**",
+        "src/cli.ts"
+      ]
+    },
+    {
+      "id": "dependencies-engines-releases",
+      "description": "Package dependencies, supported runtime, packaging, and release changes.",
+      "pathGlobs": [
+        "package.json",
+        "package-lock.json",
+        ".changeset/**",
+        "CHANGELOG.md",
+        ".github/workflows/publish.yml",
+        "README.md"
+      ]
+    }
+  ],
+  "intentionalDivergence": [
+    {
+      "id": "modernist-client-shell",
+      "description": "PI WEB's Modernist navigation, responsive shell, and chat presentation.",
+      "pathGlobs": [
+        "src/client/src/appShell/**",
+        "src/client/src/components/**",
+        "src/client/src/modernist-font.css",
+        "src/client/src/main.ts",
+        "src/client/src/theme.ts",
+        "src/client/**"
+      ]
+    },
+    {
+      "id": "persistent-session-runtime",
+      "description": "Long-lived session daemon and browser/API reconnect behavior.",
+      "pathGlobs": [
+        "src/server/sessiond.ts",
+        "src/server/sessiond/**",
+        "src/server/sessions/**",
+        "src/sessiond/**",
+        "src/server/realtime/**"
+      ]
+    },
+    {
+      "id": "pi-web-server-and-contracts",
+      "description": "PI WEB server composition and shared protocol contracts beyond the daemon-specific runtime.",
+      "pathGlobs": [
+        "src/server/**",
+        "src/shared/**",
+        "src/config.ts",
+        "src/cli.ts"
+      ]
+    },
+    {
+      "id": "workspace-machine-federation",
+      "description": "PI WEB projects, workspaces, machines, files, terminals, and federation.",
+      "pathGlobs": [
+        "src/server/machines/**",
+        "src/server/projects/**",
+        "src/server/workspaces/**",
+        "src/server/terminals/**",
+        "src/server/activity/**",
+        "src/client/src/controllers/**",
+        "src/client/src/workspace*",
+        "src/client/src/machine*"
+      ]
+    },
+    {
+      "id": "plugin-platform",
+      "description": "PI WEB plugin contracts, bundled plugins, and extension integration.",
+      "pathGlobs": [
+        "extensions/**",
+        "pi-web-plugins/**",
+        "plugin-api/**",
+        "plugin-api.d.ts",
+        "plugin-api/unstable.d.ts",
+        "scripts/build-plugins.mjs"
+      ]
+    },
+    {
+      "id": "deployment-operations",
+      "description": "Docker, native services, installation, and repository automation.",
+      "pathGlobs": [
+        "docker/**",
+        "src/docker/**",
+        "src/nativeServices/**",
+        "install.sh",
+        ".github/**",
+        ".githooks/**",
+        "scripts/**"
+      ]
+    },
+    {
+      "id": "documentation-and-agent-guidance",
+      "description": "PI WEB documentation, maintenance policy, and local agent skills.",
+      "pathGlobs": [
+        "docs/**",
+        ".agents/**",
+        "skills/**",
+        "maintenance/**",
+        "AGENTS.md"
+      ]
+    },
+    {
+      "id": "repository-release-metadata",
+      "description": "Package metadata, dependency lockfile, Changesets, and release notes.",
+      "pathGlobs": [
+        "package.json",
+        "package-lock.json",
+        ".changeset/**",
+        "CHANGELOG.md",
+        "knip.json",
+        "eslint.config.js",
+        "tsconfig*.json",
+        "vite.config.ts",
+        "vitest.config.ts"
+      ]
+    }
+  ]
+}

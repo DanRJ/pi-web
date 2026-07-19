@@ -543,6 +543,11 @@ export class PiSessionService implements SessionRouteService {
     return this.active.size;
   }
 
+  /** Number of loaded runtimes with work that would be interrupted by restart. */
+  activeWorkCount(): number {
+    return [...this.active.values()].filter((active) => this.hasActiveWork(active.runtime.session)).length;
+  }
+
   async cleanupPreview(request: NormalizedSessionCleanupRequest): Promise<ClientSessionCleanupPreviewResponse> {
     return previewResponseFromPlan(await this.cleanupPlan(request));
   }

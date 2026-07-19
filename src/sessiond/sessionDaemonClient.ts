@@ -3,10 +3,16 @@ import { WebSocket } from "ws";
 import { isHostAbsoluteAgentDir, isSafeAgentCommandForHost } from "../config.js";
 import type { ActiveAgentProfileDescriptor } from "../shared/apiTypes.js";
 import { parsePiWebRuntimeComponent } from "../shared/piWebStatusParsing.js";
+import type { RestartReadinessReason, SessionDaemonRestartReadiness } from "../server/sessiond/restartReadiness.js";
 import { sessiondHttpUrl, sessiondSocketPath } from "./config.js";
 
 export type SessionDaemonAgentProfileResult =
   | { status: "available"; profile: ActiveAgentProfileDescriptor }
+  | { status: "unavailable"; error: string }
+  | { status: "invalid"; error: string };
+
+export type SessionDaemonRestartReadinessResult =
+  | { status: "available"; readiness: SessionDaemonRestartReadiness }
   | { status: "unavailable"; error: string }
   | { status: "invalid"; error: string };
 
@@ -26,6 +32,10 @@ export class SessionDaemonClient {
 
   getActiveAgentProfile(): Promise<SessionDaemonAgentProfileResult> {
     return getSessionDaemonActiveAgentProfile(this);
+  }
+
+  getRestartReadiness(): Promise<SessionDaemonRestartReadinessResult> {
+    return getSessionDaemonRestartReadiness(this);
   }
 
   connectWebSocket(path: string): WebSocket {
@@ -113,6 +123,76 @@ export async function getSessionDaemonActiveAgentProfile(client: SessionDaemonRe
     return { status: "invalid", error: "session daemon active agent profile was not valid for this host" };
   }
   return { status: "available", profile: runtime.activeAgentProfile };
+}
+
+export async function getSessionDaemonRestartReadiness(client: SessionDaemonRequestClient): Promise<SessionDaemonRestartReadinessResult> {
+  let response: Awaited<ReturnType<SessionDaemonRequestClient["request"]>>;
+  try {
+    response = await client.request("GET", "/restart-readiness");
+  } catch (error) {
+    return { status: "unavailable", error: errorMessage(error) };
+  }
+
+  if (response.statusCode < 200 || response.statusCode >= 300) {
+    return { status: "unavailable", error: `session daemon restart readiness request returned HTTP ${String(response.statusCode)}` };
+  }
+
+  let value: unknown;
+  try {
+    value = response.body === "" ? undefined : JSON.parse(response.body);
+  } catch {
+    return { status: "invalid", error: "session daemon restart readiness response was not valid JSON" };
+  }
+
+  const readiness = parseSessionDaemonRestartReadiness(value);
+  return readiness === undefined
+    ? { status: "invalid", error: "session daemon restart readiness response was invalid" }
+    : { status: "available", readiness };
+}
+
+export function parseSessionDaemonRestartReadiness(value: unknown): SessionDaemonRestartReadiness | undefined {
+  if (!isRecord(value)) return undefined;
+  const keys = Object.keys(value).sort();
+  const expectedKeys = ["busySessions", "loadedSessions", "reasons", "runningTerminals", "safeToRestart"];
+  if (keys.length !== expectedKeys.length || keys.some((key, index) => key !== expectedKeys[index])) return undefined;
+
+  const safeToRestart = value["safeToRestart"];
+  const loadedSessions = value["loadedSessions"];
+  const busySessions = value["busySessions"];
+  const runningTerminals = value["runningTerminals"];
+  const reasons = value["reasons"];
+  if (
+    typeof safeToRestart !== "boolean"
+    || !isNonNegativeSafeInteger(loadedSessions)
+    || !isNonNegativeSafeInteger(busySessions)
+    || !isNonNegativeSafeInteger(runningTerminals)
+    || !Array.isArray(reasons)
+    || !reasons.every(isRestartReadinessReason)
+    || busySessions > loadedSessions
+  ) return undefined;
+
+  const expectedReasons: RestartReadinessReason[] = [];
+  if (busySessions > 0) expectedReasons.push("busy-sessions");
+  if (runningTerminals > 0) expectedReasons.push("running-terminals");
+  if (safeToRestart !== (expectedReasons.length === 0) || !arraysEqual(reasons, expectedReasons)) return undefined;
+
+  return { safeToRestart, loadedSessions, busySessions, runningTerminals, reasons };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isNonNegativeSafeInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+}
+
+function isRestartReadinessReason(value: unknown): value is RestartReadinessReason {
+  return value === "busy-sessions" || value === "running-terminals";
+}
+
+function arraysEqual<T>(left: readonly T[], right: readonly T[]): boolean {
+  return left.length === right.length && left.every((value, index) => value === right[index]);
 }
 
 function errorMessage(error: unknown): string {

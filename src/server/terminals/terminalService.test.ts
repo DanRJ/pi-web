@@ -22,6 +22,22 @@ describe.skipIf(process.platform === "win32")("TerminalService command runs", ()
     }
   });
 
+  it("counts only live server-owned PTYs", async () => {
+    const service = new TerminalService();
+    try {
+      const terminal = service.create({ cwd: process.cwd() });
+      expect(service.runningCount()).toBe(1);
+
+      const exited = terminalExit(service, terminal.id);
+      service.write(terminal.id, "exit\n");
+      await exited;
+
+      expect(service.runningCount()).toBe(0);
+    } finally {
+      service.dispose();
+    }
+  });
+
   describe("PI_WEB_TERMINAL propagation", () => {
     let originalPiWebTerminal: string | undefined;
 

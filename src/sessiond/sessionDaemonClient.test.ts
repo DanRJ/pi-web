@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { SessionDaemonClient } from "./sessionDaemonClient.js";
+import { SessionDaemonClient, parseSessionDaemonRestartReadiness } from "./sessionDaemonClient.js";
 
 const activeAgentProfile = {
   schemaVersion: 1,
@@ -66,6 +66,72 @@ describe("SessionDaemonClient active agent profile protocol", () => {
     });
   });
 });
+
+describe("SessionDaemonClient restart readiness protocol", () => {
+  it("returns the narrow aggregate readiness contract", async () => {
+    const client = new SessionDaemonClient();
+    const request = vi.spyOn(client, "request").mockResolvedValue(restartReadinessResponse({
+      safeToRestart: false,
+      loadedSessions: 4,
+      busySessions: 2,
+      runningTerminals: 1,
+      reasons: ["busy-sessions", "running-terminals"],
+    }));
+
+    await expect(client.getRestartReadiness()).resolves.toEqual({
+      status: "available",
+      readiness: {
+        safeToRestart: false,
+        loadedSessions: 4,
+        busySessions: 2,
+        runningTerminals: 1,
+        reasons: ["busy-sessions", "running-terminals"],
+      },
+    });
+    expect(request).toHaveBeenCalledWith("GET", "/restart-readiness");
+  });
+
+  it("rejects malformed, contradictory, and detail-bearing readiness payloads", () => {
+    const valid = {
+      safeToRestart: true,
+      loadedSessions: 1,
+      busySessions: 0,
+      runningTerminals: 0,
+      reasons: [],
+    };
+
+    expect(parseSessionDaemonRestartReadiness(valid)).toEqual(valid);
+    expect(parseSessionDaemonRestartReadiness({ ...valid, sessionId: "must-not-cross-the-protocol" })).toBeUndefined();
+    expect(parseSessionDaemonRestartReadiness({ ...valid, safeToRestart: false })).toBeUndefined();
+    expect(parseSessionDaemonRestartReadiness({ ...valid, busySessions: 2 })).toBeUndefined();
+    expect(parseSessionDaemonRestartReadiness({ ...valid, reasons: ["running-terminals"] })).toBeUndefined();
+    expect(parseSessionDaemonRestartReadiness({ ...valid, loadedSessions: -1 })).toBeUndefined();
+  });
+
+  it("distinguishes malformed readiness responses from daemon unavailability", async () => {
+    const invalidClient = new SessionDaemonClient();
+    vi.spyOn(invalidClient, "request").mockResolvedValue({ statusCode: 200, headers: {}, body: "not json" });
+    const unavailableClient = new SessionDaemonClient();
+    vi.spyOn(unavailableClient, "request").mockRejectedValue(new Error("connect ECONNREFUSED"));
+
+    await expect(invalidClient.getRestartReadiness()).resolves.toEqual({
+      status: "invalid",
+      error: "session daemon restart readiness response was not valid JSON",
+    });
+    await expect(unavailableClient.getRestartReadiness()).resolves.toEqual({
+      status: "unavailable",
+      error: "connect ECONNREFUSED",
+    });
+  });
+});
+
+function restartReadinessResponse(readiness: unknown) {
+  return {
+    statusCode: 200,
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(readiness),
+  };
+}
 
 function runtimeResponse(profile: unknown) {
   return {

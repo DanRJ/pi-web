@@ -32,6 +32,12 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Windows deployment maintenance tests
+        if: runner.os == 'Windows'
+        run: |
+          npm run test:maintenance
+          powershell.exe -NoProfile -ExecutionPolicy RemoteSigned -File scripts/maintenance/windows/LocalDeployment.SelfTest.ps1
+
       - name: Verify
         run: npm run verify
 

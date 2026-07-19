@@ -48,6 +48,11 @@ export class TerminalService {
       .map(toInfo);
   }
 
+  /** Counts server-owned PTYs that have not emitted their exit event. */
+  runningCount(): number {
+    return [...this.terminals.values()].filter((terminal) => !terminal.exited).length;
+  }
+
   closeForCwd(cwd: string): void {
     if (cwd === "") throw new Error("cwd is required");
     for (const terminal of [...this.terminals.values()].filter((candidate) => candidate.cwd === cwd)) this.close(terminal.id);

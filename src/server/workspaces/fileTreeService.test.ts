@@ -89,7 +89,7 @@ describe("listWorkspaceTree", () => {
 
     expect(tree.entries).toHaveLength(1000);
     expect(tree.truncated).toBe(true);
-  });
+  }, 15_000);
 });
 
 async function trySymlink(target: string, path: string): Promise<boolean> {

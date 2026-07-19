@@ -7,7 +7,7 @@
     "src/server/sessions/showImageResizeWorker.ts",
     "extensions/pi-web.ts",
     "pi-web-plugins/**/pi-web-plugin.ts",
-    "scripts/*.mjs"
+    "scripts/**/*.mjs"
   ],
   "project": [
     "src/**/*.ts",
@@ -17,5 +17,8 @@
   "ignoreExportsUsedInFile": true,
   "ignoreDependencies": [
     "@fontsource/archivo"
+  ],
+  "ignoreBinaries": [
+    "powershell.exe"
   ]
 }

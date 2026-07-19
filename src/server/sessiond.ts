@@ -24,6 +24,7 @@ import { SESSIOND_RUNTIME_CAPABILITIES } from "../shared/capabilities.js";
 import { agentSessionDirEnvKeys, effectivePiWebConfig, maxUploadBytes } from "../config.js";
 import { createActiveAgentProfileDescriptor } from "../sessiond/activeAgentProfile.js";
 import { runSessionDaemonStartup } from "./sessiond/sessionDaemonStartup.js";
+import { registerRestartReadinessRoute } from "./sessiond/restartReadiness.js";
 
 const daemonEnvironment: NodeJS.ProcessEnv = Object.freeze({ ...process.env });
 const { config } = effectivePiWebConfig({ env: daemonEnvironment });
@@ -71,6 +72,7 @@ await runSessionDaemonStartup({
     registerSessionRoutes(app, sessions, eventHub);
     registerSessionSummaryRoutes(app, sessions);
     registerTerminalRoutes(app, terminals);
+    registerRestartReadinessRoute(app, sessions, terminals);
 
     app.get("/health", () => ({
       ok: true,

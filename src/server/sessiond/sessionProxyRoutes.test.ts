@@ -72,6 +72,13 @@ describe("machine-scoped session proxy routes", () => {
     ]);
   });
 
+  it("does not expose restart readiness through a machine proxy", async () => {
+    const response = await app.inject({ method: "GET", url: "/api/machines/local/sessiond/restart-readiness" });
+
+    expect(response.statusCode).toBe(404);
+    expect(daemon.requests).toEqual([]);
+  });
+
   it("forwards empty upstream responses without parsing a body", async () => {
     daemon.respondWith({ statusCode: 204, headers: {}, body: "" });
 

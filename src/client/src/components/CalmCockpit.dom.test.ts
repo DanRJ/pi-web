@@ -14,6 +14,10 @@ registerElement("app-session-header", AppSessionHeader);
 registerElement("chat-view", ChatView);
 registerElement("prompt-editor", PromptEditor);
 
+// jsdom does not implement this browser layout API; keep queued animation-frame
+// callbacks from surfacing an unrelated unhandled error after DOM cleanup.
+Object.defineProperty(HTMLElement.prototype, "scrollIntoView", { configurable: true, value: vi.fn() });
+
 afterEach(() => {
   document.body.replaceChildren();
   document.documentElement.removeAttribute("data-pi-web-theme");
