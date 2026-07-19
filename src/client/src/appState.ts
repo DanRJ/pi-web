@@ -2,6 +2,7 @@ import type { ExtensionUiNotification, ExtensionUiRequest, ExtensionUiResolution
 import type { AuthProviderOption, CommandOption, CommandResult, FileContentResponse, FileTreeEntry, GitDiffResponse, GitStatusResponse, Machine, MachineHealth, MachineRuntime, OAuthFlowState, PiWebStatusResponse, Project, QueuedSessionMessage, SessionActivity, SessionInfo, SessionStatus, TerminalCommandRun, Workspace, WorkspaceActivity } from "./api";
 import type { ChatLine } from "./components/shared";
 import type { QualifiedContributionId } from "./plugins/ids";
+import type { SelectedSessionNotificationInbox } from "./sessionNotifications";
 import type { WorkspaceUploadBatchState } from "./workspaceUploadState";
 
 export interface AppState {
@@ -18,7 +19,6 @@ export interface AppState {
   messagePageEnd: number;
   messagePageTotal: number;
   isLoadingEarlierMessages: boolean;
-  isReceivingPartialStream: boolean;
   /** Sessions with a prompt upload in flight, keyed by sessionId (client-owned). */
   sendingPrompts: Record<string, true>;
   /** Client-side queued sends waiting for a just-created backend session, keyed by sessionId. */
@@ -42,6 +42,8 @@ export interface AppState {
   sessionActivities: Record<string, SessionActivity>;
   workspaceActivities: Record<string, WorkspaceActivity>;
   machineActivities: Record<string, Record<string, WorkspaceActivity>>;
+  /** Authoritative projection plus browser-local optimistic overlays for the selected inbox. */
+  selectedNotificationInbox: SelectedSessionNotificationInbox | undefined;
   workspacesByProjectId: Record<string, Workspace[]>;
   workspaceDeletionRuns: Record<string, TerminalCommandRun>;
   commandDialog: Extract<CommandResult, { type: "select" }> | undefined;
@@ -96,6 +98,7 @@ export type WorkspaceScopedStateReset = Pick<AppState,
   | "extensionUiResolutions"
   | "extensionUiNotifications"
   | "startingSessionCount"
+  | "selectedNotificationInbox"
   | "fileTree"
   | "expandedDirs"
   | "selectedFilePath"
@@ -118,6 +121,7 @@ export function resetWorkspaceScopedState(): WorkspaceScopedStateReset {
     extensionUiResolutions: [],
     extensionUiNotifications: [],
     startingSessionCount: 0,
+    selectedNotificationInbox: undefined,
     fileTree: [],
     expandedDirs: {},
     selectedFilePath: undefined,
@@ -148,7 +152,6 @@ export function initialAppState(): AppState {
     messagePageEnd: 0,
     messagePageTotal: 0,
     isLoadingEarlierMessages: false,
-    isReceivingPartialStream: false,
     sendingPrompts: {},
     clientQueuedSessionMessages: {},
     extensionUiRequests: [],
@@ -167,6 +170,7 @@ export function initialAppState(): AppState {
     sessionActivities: {},
     workspaceActivities: {},
     machineActivities: {},
+    selectedNotificationInbox: undefined,
     workspacesByProjectId: {},
     workspaceDeletionRuns: {},
     commandDialog: undefined,

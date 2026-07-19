@@ -2,7 +2,7 @@ import { resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { PiSessionService } from "./piSessionService.js";
 import { SessionEventHub } from "../realtime/sessionEventHub.js";
-import { fakeRuntime, fakeSessionManager, runtimeCreator, sessionRecord } from "./piSessionService.testSupport.js";
+import { fakeRuntime, fakeSessionManager, runtimeCreator, sessionRecord, testModelRuntime } from "./piSessionService.testSupport.js";
 
 let service: PiSessionService | undefined;
 afterEach(async () => service?.dispose());
@@ -13,6 +13,7 @@ describe("PiSessionService dashboard snapshots", () => {
     const open = vi.fn(() => fakeSessionManager());
     service = new PiSessionService(new SessionEventHub(), {
       agentDir: "/tmp/pi-web-dashboard-test",
+      modelRuntime: testModelRuntime,
       sessionManager: { list, open, create: () => fakeSessionManager() },
       archiveStore: {
         list: () => Promise.resolve([{ sessionId: "archived", cwd: "/workspace", archivedAt: "now" }]),
@@ -34,6 +35,7 @@ describe("PiSessionService dashboard snapshots", () => {
     const transient = fakeRuntime("transient", { messages: [{ role: "user", content: "  Build\n the dashboard summary with tests.  " }] });
     service = new PiSessionService(new SessionEventHub(), {
       agentDir: "/tmp/pi-web-dashboard-test",
+      modelRuntime: testModelRuntime,
       createAgentRuntime: runtimeCreator(transient.runtime),
       sessionManager: { list: () => Promise.resolve([]), open: () => fakeSessionManager(), create: () => fakeSessionManager() },
     });
@@ -48,6 +50,7 @@ describe("PiSessionService dashboard snapshots", () => {
     const list = vi.fn().mockResolvedValue([sessionRecord("archived")]);
     service = new PiSessionService(new SessionEventHub(), {
       agentDir: "/tmp/pi-web-dashboard-test",
+      modelRuntime: testModelRuntime,
       sessionManager: { list, open: () => fakeSessionManager(), create: () => fakeSessionManager() },
       archiveStore: {
         list: () => Promise.resolve([{ sessionId: "archived", cwd: "/workspace", archivedAt: "now" }]),

@@ -1,4 +1,4 @@
-import { api as defaultApi, type CommandResult, type ExtensionUiResponse, type PromptAttachment, type QueuedSessionMessage, type SessionActivity, type SessionBulkFailure, type SessionCleanupExecuteResponse, type SessionInfo, type SessionRef, type SessionStatus, type Workspace } from "../api";
+import { api as defaultApi, type CommandResult, type ExtensionUiResponse, type PromptAttachment, type QueuedSessionMessage, type SessionActivity, type SessionBulkFailure, type SessionCleanupExecuteResponse, type SessionInfo, type SessionRef, type SessionStatus, type SessionStreamSnapshot, type Workspace } from "../api";
 import type { AppState } from "../appState";
 import { forgetCachedNewSession, isCachedNewSessionInfo, markCachedNewSessionInfo, mergeCachedNewSessions, rememberCachedNewSession, stripCachedNewSessionMarker } from "../cachedNewSessions";
 import { textMessage } from "../chatMessages";
@@ -11,7 +11,7 @@ import { SessionSocket, type GlobalSessionEvent, type SessionUiEvent } from "../
 import { isArchivableSessionInfo, isTransientNewSessionInfo, sessionPersistenceOptionsForRuntime } from "../sessionPersistence";
 import { isSessionActive } from "../../../shared/activity";
 import { PI_WEB_CAPABILITIES, supportsPiWebCapability } from "../../../shared/capabilities";
-import type { PromptAttachmentDelivery } from "../../../shared/apiTypes";
+import type { PromptAttachmentDelivery, SessionNotificationInboxEvent } from "../../../shared/apiTypes";
 import { InMemorySessionSelectionMemory, markSessionArchived, markSessionsArchived, selectPreferredSession, selectionAfterArchivingSession, selectionAfterArchivingSessions, shouldDeselectAfterArchivedCollapse, type SessionSelectionMemory } from "./sessionSelection";
 import { selectedMachineId, type GetState, type SetState, type UpdateUrl } from "./types";
 import { TrailingRefreshCoordinator } from "./trailingRefreshCoordinator";
@@ -20,15 +20,30 @@ const MESSAGE_PAGE_SIZE = 100;
 const BULK_FALLBACK_CONCURRENCY = 4;
 
 export interface SessionEventSocket {
-  connect(session: SessionRef, onEvent: (event: SessionUiEvent) => void, onReconnect?: () => void, machineId?: string): void;
+  connect(
+    session: SessionRef,
+    onEvent: (event: SessionUiEvent) => void,
+    onReconnect?: () => void,
+    machineId?: string,
+    onInitialOpen?: () => void,
+  ): void;
   setHandler(onEvent: (event: SessionUiEvent) => void): void;
   close(): void;
+}
+
+export interface SessionNotificationSessionBridge {
+  prepareSelectedSession(session: SessionInfo, machineId: string): void;
+  clearSelectedSession(): void;
+  refreshSelectedSession(session: SessionRef, machineId: string): Promise<void>;
+  applyInboxEvent(machineId: string, event: SessionNotificationInboxEvent): void;
+  shouldFilterLegacyNotification(machineId: string, notificationId: string | undefined): boolean;
 }
 
 export interface SessionControllerDependencies {
   api?: typeof defaultApi;
   socket?: SessionEventSocket;
   transcripts?: ChatTranscriptStore;
+  notifications?: SessionNotificationSessionBridge;
 }
 
 interface BulkSessionMutationResult {
@@ -87,12 +102,15 @@ export class SessionController {
   private readonly socket: SessionEventSocket;
   private readonly api: typeof defaultApi;
   private readonly transcripts: ChatTranscriptStore;
+  private readonly notifications: SessionNotificationSessionBridge | undefined;
   private selectionSeq = 0;
   private extensionUiRevision = 0;
   private extensionUiMutations: ExtensionUiMutation[] = [];
   private extensionUiReconciliationEpoch = 0;
   private extensionUiDiscoveriesInFlight = 0;
-  private catchupStreamSessionId: string | undefined;
+  // Join-time stream watermark captured with the seeded partial, so buffered
+  // events already represented by the snapshot are never applied twice.
+  private streamWatermark: { sessionId: string; seq: number } | undefined;
   private pendingTranscriptEvents: SessionUiEvent[] = [];
   private pendingStatusBySession = new Map<string, SessionStatus>();
   private pendingActivityBySession = new Map<string, SessionActivity>();
@@ -113,13 +131,14 @@ export class SessionController {
     this.socket = deps.socket ?? new SessionSocket();
     this.api = deps.api ?? defaultApi;
     this.transcripts = deps.transcripts ?? new ChatTranscriptStore();
+    this.notifications = deps.notifications;
   }
 
   applyGlobalEvent(event: GlobalSessionEvent): void {
     if (event.type === "status.update") this.queueStatusUpdate(event.status);
     else if (event.type === "activity.update") this.queueActivityUpdate(event.activity);
     else if (event.type === "session.created") this.applyCreatedSession(event.session);
-    else this.applySessionName(event.sessionId, event.name);
+    else if (event.type === "session.name") this.applySessionName(event.sessionId, event.name);
   }
 
   dispose() {
@@ -131,14 +150,15 @@ export class SessionController {
   clearActiveSession() {
     this.selectionSeq += 1;
     this.socket.close();
-    this.catchupStreamSessionId = undefined;
+    this.notifications?.clearSelectedSession();
+    this.streamWatermark = undefined;
     this.clearPendingUpdates();
     this.resetExtensionUiReconciliation();
     // Note: sendingPrompts is intentionally NOT cleared here. Deselecting a
     // session must not cancel the in-flight upload indicator of the session
     // that is still sending; the per-session entry is cleared by send()'s
     // finally block when the request settles.
-    this.setState({ selectedSession: undefined, messages: [], messagePageStart: 0, messagePageEnd: 0, messagePageTotal: 0, isLoadingEarlierMessages: false, isReceivingPartialStream: false, status: undefined, activity: undefined, availableThinkingLevels: [], extensionUiRequests: [], extensionUiResolutions: [], extensionUiNotifications: [] });
+    this.setState({ selectedSession: undefined, messages: [], messagePageStart: 0, messagePageEnd: 0, messagePageTotal: 0, isLoadingEarlierMessages: false, status: undefined, activity: undefined, availableThinkingLevels: [], extensionUiRequests: [], extensionUiResolutions: [], extensionUiNotifications: [] });
   }
 
   deselectSession(options?: { forgetRememberedSelection?: boolean | undefined; updateUrl?: boolean | undefined }) {
@@ -189,16 +209,17 @@ export class SessionController {
     this.sessionSelection.rememberSession({ ...session, cwd: this.workspaceSelectionKey(session.cwd) });
     const seq = ++this.selectionSeq;
     this.socket.close();
-    this.catchupStreamSessionId = undefined;
+    this.streamWatermark = undefined;
     this.clearPendingUpdates();
     this.resetExtensionUiReconciliation();
+    const machineId = selectedMachineId(this.getState());
+    this.notifications?.prepareSelectedSession(session, machineId);
     const transcriptKey = this.sessionCacheKey(session.id);
     const cached = this.transcripts.cachedView(transcriptKey);
     this.setState({
       selectedSession: session,
       ...cached,
       isLoadingEarlierMessages: false,
-      isReceivingPartialStream: false,
       status: session.archived === true ? undefined : this.getState().sessionStatuses[session.id],
       activity: session.archived === true ? undefined : this.getState().sessionActivities[session.id],
       availableThinkingLevels: [],
@@ -211,7 +232,7 @@ export class SessionController {
         const page = await this.api.messages(session, { limit: MESSAGE_PAGE_SIZE }, selectedMachineId(this.getState()));
         if (seq !== this.selectionSeq || this.getState().selectedSession?.id !== session.id) return;
         const history = this.transcripts.mergeHistory(transcriptKey, page);
-        this.setState({ ...history, isLoadingEarlierMessages: false, isReceivingPartialStream: false, status: undefined, activity: undefined });
+        this.setState({ ...history, isLoadingEarlierMessages: false, status: undefined, activity: undefined });
         if (options?.updateUrl !== false) this.updateUrl();
         return;
       }
@@ -220,9 +241,9 @@ export class SessionController {
         session,
         (event) => buffered.push(event),
         () => { void this.refreshSelectedSession(session.id); },
-        selectedMachineId(this.getState()),
+        machineId,
+        () => { void this.notifications?.refreshSelectedSession(session, machineId); },
       );
-      const machineId = selectedMachineId(this.getState());
       await this.requestSelectedSessionRefresh({ session, machineId, selectionSeq: seq });
       if (!this.isCurrentRefreshTarget({ session, machineId, selectionSeq: seq })) return;
       void this.refreshAvailableThinkingLevels();
@@ -793,6 +814,20 @@ export class SessionController {
     }
   }
 
+  async dismissWarning(dismissId: string) {
+    const state = this.getState();
+    const session = state.selectedSession;
+    if (session === undefined || isClientPendingStartSessionInfo(session)) return;
+    const machineId = selectedMachineId(state);
+    const selectionSeq = this.selectionSeq;
+    try {
+      const status = await this.api.dismissWarning(session, dismissId, machineId);
+      if (this.isCurrentSessionSelection(session.id, machineId, selectionSeq)) this.applyStatus(status);
+    } catch (error) {
+      if (this.isCurrentSessionSelection(session.id, machineId, selectionSeq)) this.setState({ error: String(error) });
+    }
+  }
+
   async stopActiveWork() {
     const session = this.getState().selectedSession;
     if (!session) return;
@@ -821,26 +856,28 @@ export class SessionController {
     return this.selectedSessionRefreshes.request(key, async () => {
       if (!this.isCurrentRefreshTarget(target)) return;
       this.flushPendingUpdates();
-      // A discovery snapshot is only authoritative up to this revision. Replay
-      // later socket/POST mutations after it returns so a delayed HTTP response
-      // cannot erase a dialog that became live during reconnect.
+      // Extension discovery and stream snapshots are independent additive
+      // reconciliations. Keep both: neither stale HTTP response may erase a
+      // live extension request, and the partial transcript must be seeded once.
       const extensionUiDiscovery = this.beginExtensionUiDiscovery();
       try {
-        const [page, status, extensionUi] = await Promise.all([
+        const [page, status, extensionUi, streamSnapshot] = await Promise.all([
           this.api.messages(target.session, { limit: MESSAGE_PAGE_SIZE }, target.machineId),
           this.api.status(target.session, target.machineId),
-          // Older remote Pi Web daemons do not have this additive endpoint yet.
-          // Preserve existing UI state if discovery is unavailable.
           this.api.extensionUiPending(target.session, target.machineId).catch(() => undefined),
+          this.api.streamSnapshot(target.session, target.machineId).catch((): SessionStreamSnapshot => ({ seq: 0, partial: null })),
+          this.notifications?.refreshSelectedSession(target.session, target.machineId) ?? Promise.resolve(),
         ]);
         if (!this.isCurrentRefreshTarget(target)) return;
         const history = this.transcripts.mergeHistory(key, page);
+        const messages = this.transcripts.seedStreamingPartial(history.messages, streamSnapshot.partial);
+        this.streamWatermark = { sessionId: target.session.id, seq: streamSnapshot.seq };
         this.setState({
           ...history,
+          messages,
           status,
           activity: this.getState().sessionActivities[target.session.id],
           ...(extensionUi === undefined ? {} : { extensionUiRequests: this.reconcileExtensionUiDiscovery(extensionUi.requests, extensionUiDiscovery.watermark) }),
-          ...this.setStreamCatchup(status.isStreaming ? target.session.id : undefined),
         });
         this.applyStatus(status);
       } finally {
@@ -928,7 +965,8 @@ export class SessionController {
     this.sessionSelection.rememberSession({ ...session, cwd: this.workspaceSelectionKey(session.cwd) });
     this.selectionSeq += 1;
     this.socket.close();
-    this.catchupStreamSessionId = undefined;
+    this.notifications?.clearSelectedSession();
+    this.streamWatermark = undefined;
     this.clearPendingUpdates();
     this.resetExtensionUiReconciliation();
     const state = this.getState();
@@ -942,7 +980,6 @@ export class SessionController {
       messagePageEnd: 0,
       messagePageTotal: 0,
       isLoadingEarlierMessages: false,
-      isReceivingPartialStream: false,
       status: undefined,
       activity,
       availableThinkingLevels: [],
@@ -1134,7 +1171,6 @@ export class SessionController {
       status: state.selectedSession?.id === status.sessionId ? status : state.status,
       activity: state.selectedSession?.id === status.sessionId && clearsStaleActivity ? undefined : state.activity,
     });
-    if (!status.isStreaming) this.finishStreamCatchup(status.sessionId);
   }
 
   /** Applies POST and realtime name changes through one idempotent state path. */
@@ -1154,14 +1190,19 @@ export class SessionController {
   }
 
   private applyEvent(event: SessionUiEvent) {
-    const selectedSessionId = this.getState().selectedSession?.id;
-    if (this.catchupStreamSessionId !== undefined && this.catchupStreamSessionId === selectedSessionId) {
-      if (event.type === "message.end" || event.type === "agent.end") {
-        this.finishStreamCatchup(this.catchupStreamSessionId);
-        return;
-      }
-      if (isTranscriptEvent(event)) return;
+    // Notification revisions use their own join snapshot. Handle them before the
+    // transcript watermark so a notification event sharing an already-seeded
+    // transcript sequence cannot be lost.
+    if (event.type === "notifications.inbox") {
+      this.notifications?.applyInboxEvent(selectedMachineId(this.getState()), event);
+      return;
     }
+    if (event.type === "command.output" && this.notifications?.shouldFilterLegacyNotification(selectedMachineId(this.getState()), event.notificationId) === true) return;
+
+    // Drop events already reflected in the seeded join snapshot (committed
+    // history + partial). Everything past the watermark applies exactly once,
+    // so live content streams directly on top of the seeded partial.
+    if (this.isStreamEventBelowWatermark(event)) return;
 
     // Status and activity arrive once per token (the server republishes them on
     // every transcript event). Buffer them alongside high-frequency transcript
@@ -1333,37 +1374,15 @@ export class SessionController {
     this.pendingFrame = undefined;
   }
 
-  // Stream catch-up is a single mode with two coupled facets that must never
-  // drift: the private `catchupStreamSessionId` guard (which suppresses live
-  // transcript events while we lack the in-flight message prefix) and the
-  // public `isReceivingPartialStream` flag (which drives the "Catching up…"
-  // badge). Route every mutation of the mode through this helper so the guard
-  // and the badge can never disagree. Catch-up only ever applies to the
-  // selected session, so an active session id always implies the badge is on.
-  private setStreamCatchup(sessionId: string | undefined): Pick<AppState, "isReceivingPartialStream"> {
-    this.catchupStreamSessionId = sessionId;
-    return { isReceivingPartialStream: sessionId !== undefined };
-  }
-
-  private finishStreamCatchup(sessionId: string) {
-    const isSelected = this.getState().selectedSession?.id === sessionId;
-    const wasCatchingUp = this.catchupStreamSessionId === sessionId || (isSelected && this.getState().isReceivingPartialStream);
-    if (!wasCatchingUp) return;
-    this.catchupStreamSessionId = undefined;
-    if (isSelected) this.setState({ isReceivingPartialStream: false });
-    void this.refreshMessages(sessionId);
-  }
-
-  private async refreshMessages(sessionId: string) {
-    try {
-      const session = this.getState().selectedSession;
-      if (session?.id !== sessionId) return;
-      const page = await this.api.messages(session, { limit: MESSAGE_PAGE_SIZE }, selectedMachineId(this.getState()));
-      if (this.getState().selectedSession?.id !== sessionId) return;
-      this.setState(this.transcripts.mergeHistory(this.sessionCacheKey(sessionId), page));
-    } catch (error) {
-      if (this.getState().selectedSession?.id === sessionId) this.setState({ error: String(error) });
-    }
+  // Watermark filter for join-time exactly-once application. An event is below
+  // the watermark when it belongs to the selected session's seeded snapshot
+  // (`seq <= watermark.seq`); such events are already reflected in the committed
+  // history + seeded partial and must be dropped. Events with no `seq` (which
+  // should not occur on the per-session socket) are never dropped.
+  private isStreamEventBelowWatermark(event: SessionUiEvent): boolean {
+    const watermark = this.streamWatermark;
+    if (watermark === undefined || watermark.sessionId !== this.getState().selectedSession?.id) return false;
+    return event.seq !== undefined && event.seq <= watermark.seq;
   }
 }
 
@@ -1538,10 +1557,6 @@ function sessionMessageCountPatch(state: AppState, sessionId: string, messageCou
     ...(sessions === undefined ? {} : { sessions }),
     ...(selectedSession !== state.selectedSession ? { selectedSession } : {}),
   };
-}
-
-function isTranscriptEvent(event: SessionUiEvent): boolean {
-  return ["message.append", "assistant.delta", "assistant.thinking.delta", "tool.start", "tool.update", "tool.end", "shell.start", "shell.chunk", "shell.end", "command.output", "session.error"].includes(event.type);
 }
 
 function isHighFrequencyTranscriptEvent(event: SessionUiEvent): boolean {
