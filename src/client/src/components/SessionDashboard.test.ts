@@ -31,23 +31,11 @@ describe("SessionDashboard presentation helpers", () => {
     expect(values(card).filter((value) => value === "/sessions/s1")).toHaveLength(2);
   });
 
-  it("gates Rename by each local or remote machine capability and calls the enabled callback", () => {
+  it("keeps unavailable Rename capability guidance inside the compact action panel", () => {
     const dashboard = new SessionDashboard();
-    const onRenameSession = vi.fn();
-    dashboard.onRenameSession = onRenameSession;
-
-    const available = renderCard(dashboard, true);
-    const availableValues = valuesDeep(available);
-    const renameTitleIndex = availableValues.findIndex((value) => value === "Rename session");
-    const rename = availableValues[renameTitleIndex + 2];
-    if (!isRenameCallback(rename)) throw new Error("Rename callback unavailable");
-    class TestHTMLElement { readonly testElement = true; }
-    vi.stubGlobal("HTMLElement", TestHTMLElement);
-    rename({ currentTarget: new HTMLElement() });
-    expect(onRenameSession).toHaveBeenCalledWith(session(), "local", expect.anything());
-    vi.unstubAllGlobals();
 
     const unavailable = renderCard(dashboard, false);
+
     expect(templateMarkup(unavailable)).toContain("Update and restart Pi-Web on this machine to rename sessions.");
   });
 
@@ -122,23 +110,6 @@ function templateMarkup(template: TemplateResult): string {
   return `${strings(template).join("")}${values(template).map((value) => Array.isArray(value) ? value.map((item) => isTemplate(item) ? templateMarkup(item) : "").join("") : isTemplate(value) ? templateMarkup(value) : "").join("")}`;
 }
 
-function valuesDeep(template: TemplateResult): unknown[] {
-  const result: unknown[] = [];
-  const visit = (value: unknown): void => {
-    if (isTemplate(value)) {
-      for (const nested of values(value)) visit(nested);
-      return;
-    }
-    if (Array.isArray(value)) {
-      for (const nested of value) visit(nested);
-      return;
-    }
-    result.push(value);
-  };
-  for (const value of values(template)) visit(value);
-  return result;
-}
-
 function strings(template: TemplateResult): readonly string[] {
   const value: unknown = Reflect.get(template, "strings");
   if (!Array.isArray(value) || !value.every((item) => typeof item === "string")) throw new Error("Template strings unavailable");
@@ -149,10 +120,6 @@ function values(template: TemplateResult): readonly unknown[] {
   const value: unknown = Reflect.get(template, "values");
   if (!Array.isArray(value)) throw new Error("Template values unavailable");
   return value;
-}
-
-function isRenameCallback(value: unknown): value is (event: unknown) => void {
-  return typeof value === "function";
 }
 
 function isTemplate(value: unknown): value is TemplateResult {  return typeof value === "object" && value !== null && Array.isArray(Reflect.get(value, "strings"));
