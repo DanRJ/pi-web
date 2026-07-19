@@ -1,5 +1,5 @@
 import type { TemplateResult } from "lit";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { SessionStatus } from "../api";
 import { PromptEditor } from "./PromptEditor";
 import { promptEditorStyles } from "./shared";
@@ -58,6 +58,49 @@ describe("PromptEditor Modernist controls", () => {
     expect(promptEditorStyles.cssText).toContain(".markdown-editor .cm-content { min-height: 38px; padding: 8px 44px 8px 8px;");
   });
 });
+
+describe("PromptEditor.send", () => {
+  it("sends the current draft through the normal follow-up path", () => {
+    const editor = new PromptEditor();
+    const onSend = vi.fn();
+    editor.onSend = onSend;
+    editor.canSteer = true;
+    setDraft(editor, "  explain this  ");
+
+    editor.send();
+
+    expect(onSend).toHaveBeenCalledWith("explain this", "followUp", undefined, undefined);
+    expect(readDraft(editor)).toBe("");
+  });
+
+  it.each([
+    { disabled: true, sending: false, draft: "hello" },
+    { disabled: false, sending: true, draft: "hello" },
+    { disabled: false, sending: false, draft: "   " },
+  ])("does not send an unavailable or empty prompt", ({ disabled, sending, draft }) => {
+    const editor = new PromptEditor();
+    const onSend = vi.fn();
+    editor.onSend = onSend;
+    editor.disabled = disabled;
+    editor.sending = sending;
+    setDraft(editor, draft);
+
+    editor.send();
+
+    expect(onSend).not.toHaveBeenCalled();
+    expect(readDraft(editor)).toBe(draft);
+  });
+});
+
+function setDraft(editor: PromptEditor, draft: string): void {
+  if (!Reflect.set(editor, "draft", draft)) throw new Error("Could not set prompt draft");
+}
+
+function readDraft(editor: PromptEditor): string {
+  const draft: unknown = Reflect.get(editor, "draft");
+  if (typeof draft !== "string") throw new Error("Prompt draft was unavailable");
+  return draft;
+}
 
 function status(overrides: Partial<SessionStatus> = {}): SessionStatus {
   return {

@@ -88,6 +88,7 @@ export interface TerminalCommandRunsInternalRuntime {
 
 export interface PluginPromptEditor {
   insertText(text: string): void;
+  send(): void;
   getText(): string;
   getSelection(): { start: number; end: number; text: string } | null;
 }

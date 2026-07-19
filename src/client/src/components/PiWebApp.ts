@@ -2006,6 +2006,9 @@ export class PiWebApp extends LitElement {
           selection: { anchor: sel.from + text.length },
         });
       },
+      send: () => {
+        this.promptEditor?.send();
+      },
       getText: () => {
         return this.promptEditor?.view?.state.doc.toString() ?? "";
       },

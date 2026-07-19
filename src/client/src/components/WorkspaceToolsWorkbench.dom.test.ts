@@ -316,7 +316,7 @@ function workspacePanelContext(patch: Partial<WorkspacePanelContext> = {}): Work
       deleteFile: vi.fn<WorkspacePanelContext["files"]["deleteFile"]>(() => Promise.reject(new Error("not implemented"))),
       moveFile: vi.fn<WorkspacePanelContext["files"]["moveFile"]>(() => Promise.reject(new Error("not implemented"))),
     },
-    prompt: patch.prompt ?? { insertText: vi.fn(), getText: vi.fn(() => ""), getSelection: vi.fn(() => null) },
+    prompt: patch.prompt ?? { insertText: vi.fn(), send: vi.fn(), getText: vi.fn(() => ""), getSelection: vi.fn(() => null) },
     terminal: patch.terminal ?? { open: vi.fn(), runCommand: vi.fn(() => Promise.reject(new Error("not implemented"))) },
     host: patch.host ?? { requestRender: vi.fn() },
     fileTree: patch.fileTree ?? [],

@@ -78,6 +78,10 @@ export interface PluginPromptEditor {
    *  If the editor is not focused, focuses it first.
    *  No-op if the editor is not mounted. */
   insertText(text: string): void;
+  /** Send the current prompt through the normal composer flow.
+   *  Preserves pending attachments and queues the prompt when the session is busy.
+   *  No-op if the editor is not mounted, disabled, already sending, or empty. */
+  send(): void;
   /** Get the current prompt text content. Returns "" if the editor is not mounted. */
   getText(): string;
   /** Get the current selection range, or null if no selection or editor not mounted. */

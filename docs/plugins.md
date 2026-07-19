@@ -503,6 +503,7 @@ The `prompt` helper on `PluginRuntimeContext` and `WorkspacePanelContext` provid
 | Method | Description |
 | --- | --- |
 | `insertText(text)` | Insert text at cursor position. When text is selected, replaces the selection. Focuses the editor first if not focused. |
+| `send()` | Send the current prompt through the normal composer flow. Pending attachments are included, and the prompt is queued when the session is busy. |
 | `getText()` | Returns the full prompt text. |
 | `getSelection()` | Returns `{ start, end, text }` if text is selected, or `null`. |
 
@@ -512,12 +513,15 @@ Usage:
 // Insert text at the cursor (e.g. a file mention)
 context.prompt.insertText("@file.txt");
 
+// Optionally send it as if the user pressed the composer send button
+context.prompt.send();
+
 // Read the current prompt and selection
 const text = context.prompt.getText();
 const selection = context.prompt.getSelection(); // { start, end, text } | null
 ```
 
-Use `focusPrompt()` on `PluginRuntimeContext` to move focus to the prompt editor. Workspace panels can call `context.prompt.insertText()` from explicit user interactions such as button clicks; panel contexts target the currently selected session's mounted prompt editor.
+Use `focusPrompt()` on `PluginRuntimeContext` to move focus to the prompt editor. Workspace panels can call `context.prompt.insertText()` and `context.prompt.send()` from explicit user interactions such as button clicks; panel contexts target the currently selected session's mounted prompt editor. `send()` is a no-op when that editor is unavailable, disabled, already sending, or has neither text nor attachments.
 
 #### Keyboard shortcuts
 

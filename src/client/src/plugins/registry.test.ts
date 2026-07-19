@@ -16,6 +16,7 @@ function createContext(statePatch: Partial<AppState> = {}) {
     state: { ...initialAppState(), ...statePatch },
     prompt: {
       insertText: vi.fn(),
+      send: vi.fn(),
       getText: vi.fn(() => ""),
       getSelection: vi.fn(() => null),
     },
@@ -107,6 +108,7 @@ describe("PluginRegistry", () => {
                 title: "Prompt",
                 render: (context) => {
                   context.prompt.insertText("@docs/example.md");
+                  context.prompt.send();
                   return html`<p>Prompt</p>`;
                 },
               },
@@ -116,11 +118,13 @@ describe("PluginRegistry", () => {
       },
     });
     const insertText = vi.fn();
-    const context = createWorkspacePanelContext("local", { insertText, getText: vi.fn(() => ""), getSelection: vi.fn(() => null) });
+    const send = vi.fn();
+    const context = createWorkspacePanelContext("local", { insertText, send, getText: vi.fn(() => ""), getSelection: vi.fn(() => null) });
 
     registry.getWorkspacePanels()[0]?.render(context);
 
     expect(insertText).toHaveBeenCalledWith("@docs/example.md");
+    expect(send).toHaveBeenCalledOnce();
   });
 
   it("rejects duplicate ids within the same namespace", () => {
@@ -639,7 +643,7 @@ function createWorkspaceLabelContext(machineId: string, workspace = testWorkspac
   };
 }
 
-function createWorkspacePanelContext(machineId: string, prompt: WorkspacePanelContext["prompt"] = { insertText: vi.fn(), getText: vi.fn(() => ""), getSelection: vi.fn(() => null) }): WorkspacePanelContext {
+function createWorkspacePanelContext(machineId: string, prompt: WorkspacePanelContext["prompt"] = { insertText: vi.fn(), send: vi.fn(), getText: vi.fn(() => ""), getSelection: vi.fn(() => null) }): WorkspacePanelContext {
   const workspace = testWorkspace();
   return {
     machine: { id: machineId, name: machineId, kind: machineId === "local" ? "local" : "remote" },

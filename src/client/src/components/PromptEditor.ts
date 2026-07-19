@@ -141,6 +141,11 @@ export class PromptEditor extends LitElement {
     this.reportFocusChange(false);
   }
 
+  /** Send the current draft through the same guarded path as the send button. */
+  send(): void {
+    this.submit("followUp");
+  }
+
   /** Get the underlying CM6 EditorView, or undefined if not yet mounted. */
   get view(): EditorView | undefined {
     return this.editor;
@@ -196,13 +201,13 @@ export class PromptEditor extends LitElement {
 
   private renderSendButton(template: "legacy" | "modernist", busy: boolean, queuesInput: boolean) {
     const modernist = template === "modernist";
-    return html`<button type="button" class=${`icon-button send-button${modernist ? " action-button" : ""}`} ?disabled=${busy} title=${queuesInput ? "Queue until the current activity finishes" : "Send message"} aria-label=${queuesInput ? "Queue message" : "Send message"} @click=${() => { this.send("followUp"); }}>${queuesInput ? renderQueueIcon() : renderSendIcon()}${modernist ? html`<span class="action-label" aria-hidden="true">${queuesInput ? "Queue" : "Send"}</span>` : null}</button>`;
+    return html`<button type="button" class=${`icon-button send-button${modernist ? " action-button" : ""}`} ?disabled=${busy} title=${queuesInput ? "Queue until the current activity finishes" : "Send message"} aria-label=${queuesInput ? "Queue message" : "Send message"} @click=${() => { this.send(); }}>${queuesInput ? renderQueueIcon() : renderSendIcon()}${modernist ? html`<span class="action-label" aria-hidden="true">${queuesInput ? "Queue" : "Send"}</span>` : null}</button>`;
   }
 
   private renderSteerButton(template: "legacy" | "modernist", busy: boolean) {
     if (!this.canSteer || this.isCompacting) return null;
     const modernist = template === "modernist";
-    return html`<button type="button" class=${`icon-button steer-button${modernist ? " action-button" : ""}`} ?disabled=${busy} title="Steer the current response before the next model call" aria-label="Steer current response" @click=${() => { this.send("steer"); }}>${renderSteerIcon()}${modernist ? html`<span class="action-label" aria-hidden="true">Steer</span>` : null}</button>`;
+    return html`<button type="button" class=${`icon-button steer-button${modernist ? " action-button" : ""}`} ?disabled=${busy} title="Steer the current response before the next model call" aria-label="Steer current response" @click=${() => { this.submit("steer"); }}>${renderSteerIcon()}${modernist ? html`<span class="action-label" aria-hidden="true">Steer</span>` : null}</button>`;
   }
 
   private renderStopButton(template: "legacy" | "modernist", stopClearsServerQueue: boolean) {
@@ -471,7 +476,7 @@ export class PromptEditor extends LitElement {
     if (!shouldSendPromptOnEnterShortcut(shiftKey, this.mobilePromptEnterMedia, readPromptEnterPreference())) {
       return insertNewlineContinueMarkup(view) || insertNewlineAndIndent(view);
     }
-    this.send(this.canSteer || this.isCompacting ? "followUp" : undefined);
+    this.submit(this.canSteer || this.isCompacting ? "followUp" : undefined);
     return true;
   }
 
@@ -503,7 +508,7 @@ export class PromptEditor extends LitElement {
     this.completions = [];
   }
 
-  private send(streamingBehavior?: "steer" | "followUp") {
+  private submit(streamingBehavior?: "steer" | "followUp") {
     if (this.disabled || this.sending) return;
     const text = this.draft.trim();
     const pending = this.attachments;
