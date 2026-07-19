@@ -367,7 +367,9 @@ describe("createShowImageToolDefinition", () => {
       stat,
     };
 
-    await expect(execute(root, "assets/diagram.png", undefined, { fileAccess })).rejects.toThrow("Path escapes workspace");
+    // Re-resolution may observe either the escaping replacement or the brief
+    // missing-parent state; both fail closed before the opened file is read.
+    await expect(execute(root, "assets/diagram.png", undefined, { fileAccess })).rejects.toThrow(/Path (?:escapes workspace|does not exist)/);
     await rm(assets, { recursive: true, force: true });
     await mkdir(parkedAssets);
   });
