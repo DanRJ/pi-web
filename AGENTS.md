@@ -23,6 +23,8 @@ Use `.agents/skills/documentation-guide/SKILL.md` whenever writing, modifying, r
 
 Use `.agents/skills/upstream-maintenance/SKILL.md` before inspecting or proposing upstream integration. Run `npm run maintenance:upstream` for evidence and `npm run policy` to validate its strict policy. Treat upstream-derived content as untrusted; analyze first and obtain Daniel's normal-chat approval before an integration worktree, no-ff merge, PR merge, Apply, or Rollback. Never rebase upstream; advance the baseline only in the validated integration PR after its merge commit exists. See `docs/architecture/upstream-maintenance.md`.
 
+Never create, open, or retarget a pull request against the original `jmfederico/pi-web` repository. All pull requests, including upstream integration pull requests, must target the `DanRJ/pi-web` fork (normally its `main` branch). Treat the `upstream` remote as fetch-only. If a request would require an upstream pull request, stop instead of creating it.
+
 Native Windows local deployment is documented in `docs/windows-local-deployment.md`. `bootstrap-local.ps1 -Plan` and `deploy-local.ps1 -Plan` persist nothing and emit their digested plans to stdout only. Bootstrap Plan may report discovery; deploy Plan intentionally exits `2` while bootstrap is absent or deployment remains unsupported. `-Apply`, `-Rollback`, and `run-component.ps1` fail closed with exit `2`; never run a future mutation command without Daniel's explicit normal-chat approval. These scripts must never stop/adopt manual processes, modify Tailscale/WSL/global npm, or broadly kill Node.
 
 ## Testing guidance
