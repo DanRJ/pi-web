@@ -61,10 +61,11 @@ export class AppMobileDestinationTabs extends LitElement {
   }
 
   static override styles = css`
-    :host { display: block; flex: 0 0 auto; min-width: 0; color: var(--pi-text); background: var(--pi-bg); font-family: var(--pi-control-font-family, system-ui, sans-serif); }
-    nav { border-top: var(--pi-divider-width, 2px) solid var(--pi-border); padding: 0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
-    .destinations { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); min-height: 3.625rem; }
-    button { display: flex; align-items: center; justify-content: center; gap: 0.25rem; min-width: 0; min-height: 2.75rem; border: 0; border-radius: 0; background: transparent; color: var(--pi-muted); padding: 0.25rem 0.125rem; font: 600 0.6875rem/1.1 var(--pi-control-font-family, system-ui, sans-serif); white-space: nowrap; cursor: pointer; }
+    :host { display: block; flex: 0 0 auto; width: 100%; max-width: 100%; min-width: 0; overflow: hidden; color: var(--pi-text); background: var(--pi-bg); font-family: var(--pi-control-font-family, system-ui, sans-serif); }
+    nav { box-sizing: border-box; width: 100%; max-width: 100%; min-width: 0; overflow: hidden; border-top: var(--pi-divider-width, 2px) solid var(--pi-border); padding: 0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
+    .destinations { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); width: 100%; max-width: 100%; min-width: 0; min-height: 3.625rem; }
+    button { box-sizing: border-box; display: flex; align-items: center; justify-content: center; gap: 0.25rem; width: 100%; max-width: 100%; min-width: 0; min-height: 2.75rem; overflow: hidden; border: 0; border-radius: 0; background: transparent; color: var(--pi-muted); padding: 0.25rem 0.125rem; font: 600 0.6875rem/1.1 var(--pi-control-font-family, system-ui, sans-serif); white-space: nowrap; cursor: pointer; }
+    button span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
     button[aria-current="page"] { box-shadow: inset 0 -0.1875rem 0 currentColor; color: var(--pi-accent); font-weight: 800; }
     button:focus-visible { outline: var(--pi-focus-ring-width, 2px) solid var(--pi-accent); outline-offset: calc(-1 * var(--pi-focus-ring-offset, 2px)); }
     svg { flex: 0 0 auto; width: 1.125rem; height: 1.125rem; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }

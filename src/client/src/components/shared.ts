@@ -52,7 +52,7 @@ export interface CompletionItem {
 
 export const appStyles = css`
   /* Mobile browsers already subtract browser controls from 100dvh; reserve bottom safe area only in standalone PWA modes. */
-  :host { --pi-app-safe-area-bottom: 0px; position: fixed; top: 0; right: 0; left: 0; display: block; height: 100dvh; box-sizing: border-box; overflow: hidden; padding: env(safe-area-inset-top) env(safe-area-inset-right) var(--pi-app-safe-area-bottom) env(safe-area-inset-left); color: var(--pi-text); background: var(--pi-bg); font: 14px var(--pi-body-font-family, system-ui, sans-serif); }
+  :host { --pi-app-safe-area-bottom: 0px; position: fixed; top: 0; right: 0; left: 0; display: block; width: 100%; max-width: 100vw; min-width: 0; height: 100dvh; box-sizing: border-box; overflow: hidden; padding: env(safe-area-inset-top) env(safe-area-inset-right) var(--pi-app-safe-area-bottom) env(safe-area-inset-left); color: var(--pi-text); background: var(--pi-bg); font: 14px var(--pi-body-font-family, system-ui, sans-serif); }
   :host([pwa-display-mode]) { --pi-app-safe-area-bottom: env(safe-area-inset-bottom); }
   @media (display-mode: standalone), (display-mode: fullscreen), (display-mode: minimal-ui) {
     :host { --pi-app-safe-area-bottom: env(safe-area-inset-bottom); }
@@ -62,7 +62,7 @@ export const appStyles = css`
   @media (max-width: 767px) {
     :host { height: var(--pi-visible-viewport-bottom, var(--pi-visible-viewport-height, 100dvh)); }
   }
-  .shell { --navigation-panel-size: var(--pi-navigation-panel-size, 340px); --workspace-panel-size: minmax(360px, 42vw); --navigation-panel-width: var(--navigation-panel-size); --workspace-panel-width: var(--workspace-panel-size); display: grid; grid-template-columns: var(--navigation-panel-width) 1px minmax(320px, 1fr) 1px var(--workspace-panel-width); height: 100%; min-height: 0; }
+  .shell { --navigation-panel-size: var(--pi-navigation-panel-size, 340px); --workspace-panel-size: minmax(360px, 42vw); --navigation-panel-width: var(--navigation-panel-size); --workspace-panel-width: var(--workspace-panel-size); display: grid; grid-template-columns: var(--navigation-panel-width) 1px minmax(320px, 1fr) 1px var(--workspace-panel-width); width: 100%; max-width: 100%; height: 100%; min-width: 0; min-height: 0; overflow: hidden; }
   aside { grid-column: 1; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
   aside app-navigation-panel { flex: 1 1 auto; min-height: 0; }
   header { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: var(--pi-space-2, 8px); padding: var(--pi-space-3, 12px); border-bottom: var(--pi-divider-width, 1px) solid var(--pi-border); }
@@ -182,8 +182,12 @@ export const appStyles = css`
     .shell[data-settings-destination] { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
     .shell.dashboard-page { grid-template-columns: minmax(0, 1fr); }
     aside, .navigation-panel-edge, .workspace-panel-edge { display: none; }
-    main { grid-column: 1; grid-row: 1; }
-    .shell > workspace-panel { grid-column: 1; grid-row: 1; display: none; min-height: 0; }
+    main { grid-column: 1; grid-row: 1; min-width: 0; overflow: hidden; }
+    .shell > app-mobile-destination-tabs,
+    .shell > main,
+    .shell > settings-dialog,
+    .shell > workspace-panel { max-width: 100%; min-width: 0; }
+    .shell > workspace-panel { grid-column: 1; grid-row: 1; display: none; min-height: 0; overflow: hidden; }
     .shell.dashboard-page main { grid-column: 1; grid-row: 1; display: flex; }
     .shell[data-settings-destination] > settings-dialog { grid-column: 1; grid-row: 1; display: block; min-width: 0; min-height: 0; }
     .shell[data-settings-destination] > main,
@@ -230,7 +234,7 @@ export const appStyles = css`
 `;
 
 export const workspacePanelStyles = css`
-  :host { display: flex; flex-direction: column; min-height: 0; color: var(--pi-text); background: var(--pi-bg); font: 13px system-ui, sans-serif; container-type: inline-size; }
+  :host { display: flex; flex-direction: column; width: 100%; max-width: 100%; min-width: 0; min-height: 0; overflow: hidden; color: var(--pi-text); background: var(--pi-bg); font: 13px system-ui, sans-serif; container-type: inline-size; }
   header { flex: 0 0 auto; min-width: 0; border-bottom: 1px solid var(--pi-border); }
   .workspace-header-scroll-frame { position: relative; min-width: 0; background: var(--pi-bg); }
   .workspace-header-scroll-frame::before, .workspace-header-scroll-frame::after { content: ""; position: absolute; top: 0; bottom: 0; z-index: 2; width: 18px; opacity: 0; pointer-events: none; transition: opacity .15s ease; }
@@ -370,7 +374,7 @@ export const listStyles = css`
 `;
 
 export const chatStyles = css`
-  :host { position: relative; z-index: 0; display: flex; flex-direction: column; min-height: 0; overflow: hidden; color: var(--pi-text); font: var(--pi-transcript-font-size, 0.875rem)/var(--pi-transcript-line-height, 1.45) var(--pi-body-font-family, system-ui, sans-serif); }
+  :host { position: relative; z-index: 0; display: flex; flex-direction: column; width: 100%; max-width: 100%; min-width: 0; min-height: 0; overflow: hidden; color: var(--pi-text); font: var(--pi-transcript-font-size, 0.875rem)/var(--pi-transcript-line-height, 1.45) var(--pi-body-font-family, system-ui, sans-serif); }
   .chat-wrap { position: relative; flex: 1 1 auto; min-height: 0; overflow: hidden; }
   .chat { height: 100%; min-height: 0; overflow: auto; overflow-anchor: none; padding: var(--pi-chat-padding, 1.625rem 1rem var(--pi-chat-bottom-clearance, 2rem)); box-sizing: border-box; }
   .chat.has-live-strip { --pi-chat-bottom-clearance: 4.75rem; }
@@ -585,8 +589,8 @@ export const chatStyles = css`
 `;
 
 export const formattedTextStyles = css`
-  :host { display: block; font: inherit; }
-  .formatted { white-space: normal; overflow-wrap: anywhere; font-size: inherit; line-height: var(--pi-transcript-line-height, 1.45); text-align: start; unicode-bidi: plaintext; }
+  :host { display: block; max-width: 100%; min-width: 0; overflow: hidden; font: inherit; }
+  .formatted { max-width: 100%; min-width: 0; white-space: normal; overflow-wrap: anywhere; font-size: inherit; line-height: var(--pi-transcript-line-height, 1.45); text-align: start; unicode-bidi: plaintext; }
   p, ul, ol, pre, blockquote, table, .code-block-wrapper { margin: 0 0 10px; }
   :is(p, ul, ol, pre, blockquote, table, .code-block-wrapper):last-child { margin-bottom: 0; }
   ul, ol { padding-left: 22px; }
@@ -674,8 +678,8 @@ export const actionPaletteStyles = css`
 `;
 
 export const promptEditorStyles = css`
-  :host { position: relative; z-index: 5; display: block; container-type: inline-size; color: var(--pi-text); font: 0.875rem var(--pi-body-font-family, system-ui, sans-serif); }
-  footer { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--pi-space-2, 0.5rem); padding: var(--pi-space-3, 0.75rem); border-top: var(--pi-divider-width, 1px) solid var(--pi-border); background: var(--pi-bg); }
+  :host { position: relative; z-index: 5; display: block; width: 100%; max-width: 100%; min-width: 0; container-type: inline-size; color: var(--pi-text); font: 0.875rem var(--pi-body-font-family, system-ui, sans-serif); }
+  footer { box-sizing: border-box; display: grid; grid-template-columns: minmax(0, 1fr); width: 100%; max-width: 100%; min-width: 0; gap: var(--pi-space-2, 0.5rem); padding: var(--pi-space-3, 0.75rem); border-top: var(--pi-divider-width, 1px) solid var(--pi-border); background: var(--pi-bg); }
   footer.shell-mode { border-top-color: var(--pi-success); background: var(--pi-success-bg); }
   .editor-wrap { position: relative; min-width: 0; }
   /* Classic and PI WEB retain the original single action row. Modernist has a
@@ -715,7 +719,7 @@ export const promptEditorStyles = css`
   .attachment-delivery { min-width: 0; max-width: 100%; }
   .attachment-delivery select { max-width: 100%; border: 1px solid var(--pi-border); border-radius: 8px; background: var(--pi-surface); color: var(--pi-text); padding: 5px 7px; font: var(--pi-control-font-size, 16px) var(--pi-control-font-family, system-ui, sans-serif); }
   .attachment-error { flex-basis: 100%; color: var(--pi-danger); font-size: 12px; }
-  button { border: var(--pi-divider-width, 1px) solid var(--pi-border); border-radius: var(--pi-radius-control, 0.5rem); background: var(--pi-surface); color: var(--pi-text); padding: 0.4375rem 0.5625rem; cursor: pointer; font-family: var(--pi-control-font-family, system-ui, sans-serif); }
+  button { box-sizing: border-box; border: var(--pi-divider-width, 1px) solid var(--pi-border); border-radius: var(--pi-radius-control, 0.5rem); background: var(--pi-surface); color: var(--pi-text); padding: 0.4375rem 0.5625rem; cursor: pointer; font-family: var(--pi-control-font-family, system-ui, sans-serif); }
   button:focus-visible, .markdown-editor .cm-focused { outline: var(--pi-focus-ring-width, 2px) solid var(--pi-accent); outline-offset: var(--pi-focus-ring-offset, 2px); }
   button:disabled, textarea:disabled, .markdown-editor-disabled .cm-editor { opacity: .5; cursor: not-allowed; }
   /* Modernist alone swaps to a grouped template. Display none keeps the
@@ -728,7 +732,7 @@ export const promptEditorStyles = css`
   :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .compact-status { display: grid; grid-template-columns: minmax(0, 1fr) max-content; gap: 0.5rem; font-size: 0.75rem; }
   :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .compact-status > button { max-width: none; }
   :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .select-model { display: inline-flex; min-width: 0; max-width: none; align-items: center; gap: 0.5rem; }
-  :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .action-execution { display: flex; align-items: center; gap: 0.5rem; }
+  :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .action-execution { display: flex; min-width: 0; max-width: 100%; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 0.5rem; }
   :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .action-button { display: inline-flex; min-height: 2.75rem; align-items: center; justify-content: center; gap: 0.5rem; border-width: 2px; border-radius: 0; padding: 0.5rem 0.75rem; font-family: var(--pi-body-font-family, system-ui, sans-serif); }
   :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .action-button .action-label { display: inline; }
   :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .icon-button.action-button { width: auto; height: 2.75rem; }
@@ -768,7 +772,7 @@ export const promptEditorStyles = css`
     :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .select-model { width: 100%; min-width: 0; padding: 0.5rem; justify-content: flex-start; }
     :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .action-button .action-label { display: none; }
   }
-  @container (max-width: 22rem) {
+  @container (max-width: 26rem) {
     :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .actions { grid-template-columns: minmax(0, 1fr); }
     :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .action-context { grid-column: 1; }
     :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .action-execution { grid-column: 1; justify-self: end; }
