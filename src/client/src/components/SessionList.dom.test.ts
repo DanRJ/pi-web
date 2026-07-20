@@ -36,6 +36,48 @@ describe("SessionList Rename menu", () => {
   });
 });
 
+describe("SessionList header actions menu", () => {
+  it("folds New session, Select, and Clean up behind the header + menu and closes after an action", async () => {
+    const list = document.createElement("session-list");
+    if (!(list instanceof SessionList)) throw new Error("Expected session list");
+    const onStart = vi.fn();
+    list.sessions = [session("current")];
+    list.canStart = true;
+    list.canCleanup = true;
+    list.onStart = onStart;
+    document.body.append(list);
+    await list.updateComplete;
+
+    expect(list.shadowRoot?.querySelector(".session-actions-menu")).toBeNull();
+
+    button(list, ".session-actions-toggle").click();
+    await list.updateComplete;
+
+    const items = [...(list.shadowRoot?.querySelectorAll<HTMLButtonElement>(".session-actions-menu button") ?? [])].map((item) => item.textContent.trim());
+    expect(items).toEqual(["New session", "Select sessions", "Clean up"]);
+
+    button(list, ".session-actions-menu button").click();
+    expect(onStart).toHaveBeenCalledOnce();
+    await list.updateComplete;
+    expect(list.shadowRoot?.querySelector(".session-actions-menu")).toBeNull();
+  });
+
+  it("omits Select when there are no current sessions to select", async () => {
+    const list = document.createElement("session-list");
+    if (!(list instanceof SessionList)) throw new Error("Expected session list");
+    list.sessions = [{ ...session("archived"), archived: true, archivedAt: "2026-06-09T00:00:00.000Z" }];
+    list.canStart = true;
+    document.body.append(list);
+    await list.updateComplete;
+
+    button(list, ".session-actions-toggle").click();
+    await list.updateComplete;
+
+    const items = [...(list.shadowRoot?.querySelectorAll<HTMLButtonElement>(".session-actions-menu button") ?? [])].map((item) => item.textContent.trim());
+    expect(items).toEqual(["New session", "Clean up"]);
+  });
+});
+
 function button(list: SessionList, selector: string): HTMLButtonElement {
   const element = list.shadowRoot?.querySelector<HTMLButtonElement>(selector);
   if (element === null || element === undefined) throw new Error(`Expected button: ${selector}`);
