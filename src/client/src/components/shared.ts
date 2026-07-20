@@ -480,7 +480,7 @@ export const chatStyles = css`
   :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .msg.user > .msg-header .label { color: var(--pi-muted); }
   /* The assistant header shares its prose edge: unlike the stock card header,
      it has no negative margins that could extend beyond the Modernist surface. */
-  :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .msg.assistant > .msg-header { margin: 0 0 0.5rem; padding: 0.4375rem 0 0.375rem; }
+  :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .msg.assistant > .msg-header { margin: 0 0 0.5rem; padding: 0.4375rem 0 0.375rem; background: var(--pi-bg); box-shadow: none; }
   :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .msg.system { border-left-width: var(--pi-accent-rule-width, 0.25rem); border-color: var(--pi-danger); background: transparent; }
   :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .msg.event-group[data-event-status="error"] { border-left-width: var(--pi-accent-rule-width, 0.25rem); border-left-color: var(--pi-text); }
   :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .msg.event-group > summary { top: -1.625rem; gap: 0.5rem; padding: 0.5rem 0.75rem; border-radius: var(--pi-chat-card-radius, 0.625rem) var(--pi-chat-card-radius, 0.625rem) 0 0; border-bottom-width: var(--pi-divider-width, 1px); }
