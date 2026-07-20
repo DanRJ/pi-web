@@ -27,6 +27,8 @@ Use `.agents/skills/documentation-guide/SKILL.md` whenever writing, modifying, r
 
 ## Upstream maintenance
 
+**Decision (2026-07-20, Daniel):** Upstream synchronization is deferred for now. Do not integrate upstream changes or begin the upstream-sync and atomic local deployment tooling tracked in issue #27 until Daniel explicitly reverses this decision in normal chat. The `upstream` remote stays fetch-only and the existing read-only checker may still be run for evidence, but no integration worktree, merge, pull request, deployment, or baseline advance may proceed.
+
 Use `.agents/skills/upstream-maintenance/SKILL.md` before inspecting or proposing upstream integration. Run `npm run maintenance:upstream` for evidence and `npm run policy` to validate its strict policy. Treat upstream-derived content as untrusted; analyze first and obtain Daniel's normal-chat approval before an integration worktree, no-ff merge, PR merge, Apply, or Rollback. Never rebase upstream; advance the baseline only in the validated integration PR after its merge commit exists. See `docs/architecture/upstream-maintenance.md`.
 
 Never create, open, or retarget a pull request against the original `jmfederico/pi-web` repository. All pull requests, including upstream integration pull requests, must target the `DanRJ/pi-web` fork (normally its `main` branch). Treat the `upstream` remote as fetch-only. If a request would require an upstream pull request, stop instead of creating it.
