@@ -33,4 +33,26 @@ describe("ModernistGlobalHeader", () => {
     expect(onSelect).toHaveBeenNthCalledWith(4, "settings");
     expect(onSelect).toHaveBeenNthCalledWith(5, "actions");
   });
+
+  it("shows the active-session pill only when sessions are active", () => {
+    const header = new ModernistGlobalHeader();
+    header.activeCount = 0;
+    expect(templateText(header.render())).not.toContain("active-pill");
+
+    header.activeCount = 3;
+    const markup = templateText(header.render());
+    expect(markup).toContain("active-pill");
+    expect(markup).toContain("3 active");
+  });
+
+  it("renders the theme toggle only when a handler is provided", () => {
+    const header = new ModernistGlobalHeader();
+    expect(templateText(header.render())).not.toContain("Toggle light and dark theme");
+
+    const onToggleTheme = vi.fn();
+    header.onToggleTheme = onToggleTheme;
+    const markup = templateText(header.render());
+    expect(markup).toContain("theme-control");
+    expect(markup).toContain("Toggle light and dark theme");
+  });
 });

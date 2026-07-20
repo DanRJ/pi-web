@@ -1132,8 +1132,20 @@ export class PiWebApp extends LitElement {
     return html`<modernist-global-header
       .activeDestination=${this.modernistGlobalDestination()}
       .refreshControl=${this.appShell.shouldShowAppRefreshInHeader() ? this.renderAppRefresh() : undefined}
+      .activeCount=${this.activeSessionCount()}
       .onSelect=${(destination: ModernistGlobalDestination) => { this.selectModernistGlobalDestination(destination); }}
+      .onToggleTheme=${this.handleToggleThemeAppearance}
     ></modernist-global-header>`;
+  }
+
+  private activeSessionCount(): number {
+    const statuses = this.state.sessionStatuses;
+    const activities = this.state.sessionActivities;
+    let count = 0;
+    for (const id of Object.keys(statuses)) {
+      if (isSessionActive(statuses[id], activities[id])) count += 1;
+    }
+    return count;
   }
 
   private restoreSettingsFocus(): void {
