@@ -207,8 +207,8 @@ export class WorkspaceToolsWorkbench extends LitElement {
     .workbench-pane { border-right: var(--pi-divider-width, 2px) solid var(--pi-border); }
     .git-pane { border-right: 0; }
     .workbench-center { flex-direction: column; }
-    .preview-pane, .terminal-pane { flex: 1 1 50%; border-right: 0; border-bottom: var(--pi-divider-width, 2px) solid var(--pi-border); }
-    .terminal-pane { border-bottom: 0; }
+    .preview-pane { flex: 1 1 auto; min-height: 0; border-right: 0; border-bottom: var(--pi-divider-width, 2px) solid var(--pi-border); }
+    .terminal-pane { flex: 0 0 auto; height: 16.25rem; min-height: 0; border-right: 0; border-bottom: 0; }
     .workbench-error { flex: 0 0 auto; padding: .5rem .75rem; border-bottom: var(--pi-divider-width, 2px) solid var(--pi-border); color: var(--pi-danger); }
     .terminal-placeholder { flex: 1 1 auto; min-height: 0; display: grid; place-content: center; justify-items: center; gap: .5rem; text-align: center; }
     .terminal-placeholder p { margin: 0; }
