@@ -788,11 +788,9 @@ export const promptEditorStyles = css`
     :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .select-model { width: 100%; min-width: 0; padding: 0.5rem; justify-content: flex-start; }
     :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .action-button .action-label { display: none; }
   }
-  @container (max-width: 26rem) {
-    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .actions { grid-template-columns: minmax(0, 1fr); }
-    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .action-context { grid-column: 1; }
-    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .action-execution { grid-column: 1; justify-self: end; }
-  }
+  /* Keep the Modernist composer on one row even on phones: context (attach +
+     model + thinking) and execution (steer/stop/send) stay side by side, and
+     the model label truncates via minmax(0, 1fr) rather than wrapping. */
   @media (prefers-reduced-motion: reduce) {
     :host-context(:root[data-pi-web-theme^="themes:modernist-"]) * { transition: none; animation: none; }
   }
