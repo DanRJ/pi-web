@@ -82,7 +82,7 @@ describe("PiWebApp mobile shell", () => {
     expect(chatStyles.cssText).toContain("width: 100%; max-width: 100%; min-width: 0;");
     expect(workspacePanelStyles.cssText).toContain("width: 100%; max-width: 100%; min-width: 0;");
     expect(formattedTextStyles.cssText).toContain("max-width: 100%; min-width: 0; overflow: hidden;");
-    expect(promptEditorStyles.cssText).toContain("@container (max-width: 26rem)");
+    expect(promptEditorStyles.cssText).not.toContain("@container (max-width: 26rem)");
     expect(promptEditorStyles.cssText).toContain("flex-wrap: wrap;");
   });
 
