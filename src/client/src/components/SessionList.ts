@@ -67,10 +67,12 @@ export class SessionList extends LitElement implements KeyboardNavigableSection 
   @state() private archivedExpanded = false;
   @state() private selectionScopes: ReadonlySet<SessionSelectionScope> = new Set();
   @state() private selectedSessionIds: ReadonlySet<string> = new Set();
+  @state() private headerActionsOpen = false;
 
   private readonly onDocumentClick = (event: MouseEvent) => {
     if (event.composedPath().includes(this)) return;
     this.openMenuSessionId = undefined;
+    this.headerActionsOpen = false;
   };
 
   override connectedCallback(): void {
@@ -89,7 +91,7 @@ export class SessionList extends LitElement implements KeyboardNavigableSection 
       if (!this.sessions.some((session) => session.archived === true)) this.archivedExpanded = false;
       this.pruneSelectedSessionIds();
     }
-    if (changed.has("collapsed") && this.collapsed) this.openMenuSessionId = undefined;
+    if (changed.has("collapsed") && this.collapsed) { this.openMenuSessionId = undefined; this.headerActionsOpen = false; }
     const previousSelected = changed.get("selected");
     if (changed.has("selected") && this.selected?.archived === true && (previousSelected?.id !== this.selected.id || previousSelected.archived !== true) && !this.archivedExpanded) {
       this.archivedExpanded = true;
@@ -139,6 +141,7 @@ export class SessionList extends LitElement implements KeyboardNavigableSection 
           ${this.renderCurrentSelectionButton(currentSessions)}
           ${this.renderCleanupButton()}
           ${this.renderStartButton()}
+          ${this.renderSessionActionsMenu(currentSessions)}
         </h2>
       `;
     }
@@ -151,6 +154,7 @@ export class SessionList extends LitElement implements KeyboardNavigableSection 
         <small class="section-count">${sessionCount}</small>
         ${this.renderCleanupButton()}
         ${this.renderStartButton()}
+        ${this.renderSessionActionsMenu(currentSessions)}
       </h2>
     `;
   }
@@ -168,6 +172,51 @@ export class SessionList extends LitElement implements KeyboardNavigableSection 
   private renderStartButton() {
     const title = this.startingCount > 0 ? "Start another session" : "Start a new session";
     return html`<button class="start-session-button" title=${title} aria-label=${title} ?disabled=${!this.canStart} @click=${(event: MouseEvent) => { event.stopPropagation(); this.onStart?.(); }}>+</button>`;
+  }
+
+  /** Modernist folds the header actions behind this single control; other themes hide it and keep the inline buttons. */
+  private renderSessionActionsMenu(currentSessions: SessionInfo[]) {
+    const open = this.headerActionsOpen;
+    const selectionActive = this.selectionScopes.has("current");
+    const canSelect = !this.collapsed && currentSessions.length > 0;
+    const startTitle = this.startingCount > 0 ? "Start another session" : "Start a new session";
+    return html`
+      <div class="session-actions">
+        <button
+          type="button"
+          class="session-actions-toggle"
+          aria-haspopup="menu"
+          aria-expanded=${String(open)}
+          aria-label="Session actions"
+          title="Session actions"
+          @click=${(event: MouseEvent) => { event.stopPropagation(); this.toggleHeaderActions(); }}
+          @keydown=${(event: KeyboardEvent) => { this.handleHeaderActionsKeydown(event); }}
+        >+</button>
+        ${open ? html`
+          <div class="session-actions-menu" role="menu" aria-label="Session actions" @click=${(event: MouseEvent) => { event.stopPropagation(); }}>
+            <button type="button" role="menuitem" title=${startTitle} ?disabled=${!this.canStart} @click=${() => { this.runHeaderAction(() => { this.onStart?.(); }); }}>New session</button>
+            ${canSelect ? html`<button type="button" role="menuitem" aria-pressed=${String(selectionActive)} @click=${() => { this.runHeaderAction(() => { this.toggleSelection("current", currentSessions); }); }}>${selectionActive ? "Close selection" : "Select sessions"}</button>` : null}
+            <button type="button" role="menuitem" title=${this.canCleanup ? "Preview session cleanup" : this.cleanupUnavailableMessage} @click=${() => { this.runHeaderAction(() => { this.onCleanup?.(); }); }}>Clean up</button>
+          </div>
+        ` : null}
+      </div>
+    `;
+  }
+
+  private toggleHeaderActions(): void {
+    this.headerActionsOpen = !this.headerActionsOpen;
+  }
+
+  private handleHeaderActionsKeydown(event: KeyboardEvent): void {
+    if (event.key === "Escape" && this.headerActionsOpen) {
+      event.stopPropagation();
+      this.headerActionsOpen = false;
+    }
+  }
+
+  private runHeaderAction(action: () => void): void {
+    this.headerActionsOpen = false;
+    action();
   }
 
   private renderStartingSession() {
@@ -439,6 +488,17 @@ export class SessionList extends LitElement implements KeyboardNavigableSection 
     .bulk-select-entry { box-sizing: border-box; flex: 0 0 auto; display: inline-grid; place-items: center; width: 30px; height: 30px; padding: 0; font-size: 13px; line-height: 1; text-transform: none; }
     .start-session-button { box-sizing: border-box; flex: 0 0 auto; display: inline-grid; place-items: center; min-width: 30px; height: 30px; padding: 0 9px; }
     .cleanup-entry { flex: 0 0 auto; padding: 5px 7px; font-size: 12px; text-transform: none; }
+    .session-actions { position: relative; display: none; flex: 0 0 auto; }
+    .session-actions-toggle { box-sizing: border-box; display: inline-grid; place-items: center; min-width: 30px; height: 30px; padding: 0 9px; }
+    .session-actions-toggle[aria-expanded="true"] { color: var(--pi-text); background: var(--pi-surface-hover); }
+    .session-actions-menu { position: absolute; z-index: 50; top: calc(100% + 4px); right: 0; box-sizing: border-box; min-width: 12rem; display: flex; flex-direction: column; padding: 4px; border: 1px solid var(--pi-border); border-radius: 0; background: var(--pi-surface); box-shadow: 0 8px 24px var(--pi-shadow); }
+    .session-actions-menu button { width: 100%; height: auto; padding: 8px 10px; border: 0; border-radius: 0; background: transparent; color: var(--pi-text); text-align: left; text-transform: none; }
+    .session-actions-menu button:hover:not(:disabled), .session-actions-menu button:focus-visible { background: var(--pi-surface-hover); }
+    .session-actions-menu button:disabled { color: var(--pi-muted); cursor: default; }
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) h2:not(.subheading) .bulk-select-entry,
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) h2:not(.subheading) .cleanup-entry,
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) h2:not(.subheading) .start-session-button { display: none; }
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .session-actions { display: inline-flex; }
     .bulk-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 0 6px; }
     .bulk-row button { padding: 5px 7px; font-size: 12px; }
     .bulk-row small { display: inline; min-width: 0; color: var(--pi-muted); }
