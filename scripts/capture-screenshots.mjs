@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 import { spawn, spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
@@ -63,7 +62,6 @@ async function main() {
   await removeLegacyDemoMedia(demoProject);
 
   const projectId = "pi-web-demo";
-  const workspaceId = createWorkspaceId(projectId, demoProject);
   await writeJson(projectsFile, {
     projects: [{ id: projectId, name: "pi-web", path: demoProject, createdAt: new Date().toISOString() }],
   });
@@ -73,12 +71,15 @@ async function main() {
   const apiPort = await getFreePort();
   const clientPort = await getFreePort();
   const debugPort = await getFreePort();
+  const sessiondPort = await getFreePort();
   const env = {
     ...process.env,
     PI_WEB_DATA_DIR: dataDir,
     PI_WEB_CONFIG: configPath,
     PI_WEB_PROJECTS_FILE: projectsFile,
     PI_WEB_SESSIOND_SOCKET: socketPath,
+    PI_WEB_SESSIOND_PORT: String(sessiondPort),
+    PI_WEB_SESSIOND_URL: `http://127.0.0.1:${sessiondPort}`,
     PI_WEB_HOST: "127.0.0.1",
     PI_WEB_PORT: String(apiPort),
     PI_WEB_ALLOWED_HOSTS: "true",
@@ -95,9 +96,10 @@ async function main() {
 
   console.log("Starting isolated PI WEB session daemon, API server, and Vite client…");
   startChild("sessiond", tsxBin, ["src/server/sessiond.ts"], { env, cwd: REPO_ROOT, logsDir });
-  await waitForFile(socketPath, 10_000);
+  await waitForPort(sessiondPort, 15_000);
   startChild("api", tsxBin, ["src/server/index.ts"], { env, cwd: REPO_ROOT, logsDir });
   await waitForHttp(`http://127.0.0.1:${apiPort}/api/projects`, 15_000);
+  const workspaceId = await resolveMainWorkspaceId(`http://127.0.0.1:${apiPort}`, projectId, demoProject);
   startChild("vite", viteBin, ["--host", "127.0.0.1", "--port", String(clientPort), "--strictPort", "true"], { env, cwd: REPO_ROOT, logsDir });
   await waitForHttp(`http://127.0.0.1:${clientPort}/`, 30_000);
 
@@ -462,7 +464,7 @@ function chromeArgs(debugPort, userDataDir) {
 
 function startChild(name, command, childArgs, { env, cwd, logsDir }) {
   const logPath = join(logsDir, `${name}.log`);
-  const child = spawn(command, childArgs, { cwd, env, stdio: ["ignore", "pipe", "pipe"] });
+  const child = spawn(command, childArgs, { cwd, env, stdio: ["ignore", "pipe", "pipe"], shell: process.platform === "win32" && command.endsWith(".cmd") });
   children.add(child);
   const chunks = [];
   const collect = (chunk) => {
@@ -521,6 +523,26 @@ async function waitForHttp(url, timeoutMs) {
     await sleep(150);
   }
   throw new Error(`Timed out waiting for ${url}: ${lastError instanceof Error ? lastError.message : String(lastError)}`);
+}
+
+async function waitForPort(port, timeoutMs) {
+  const { connect } = await import("node:net");
+  const start = Date.now();
+  let lastError;
+  while (Date.now() - start < timeoutMs) {
+    try {
+      await new Promise((resolve, reject) => {
+        const socket = connect(port, "127.0.0.1");
+        socket.once("connect", () => { socket.end(); resolve(); });
+        socket.once("error", reject);
+      });
+      return;
+    } catch (error) {
+      lastError = error;
+      await sleep(150);
+    }
+  }
+  throw new Error(`Timed out waiting for 127.0.0.1:${port}: ${lastError instanceof Error ? lastError.message : String(lastError)}`);
 }
 
 async function waitForFile(path, timeoutMs) {
@@ -627,8 +649,13 @@ class CDP {
   }
 }
 
-function createWorkspaceId(projectId, path) {
-  return createHash("sha1").update(`${projectId}:${path}`).digest("hex").slice(0, 12);
+async function resolveMainWorkspaceId(apiBase, projectId, projectPath) {
+  const response = await fetch(`${apiBase}/api/projects/${projectId}/workspaces`);
+  if (!response.ok) throw new Error(`Unable to list workspaces: ${response.status} ${response.statusText}`);
+  const workspaces = await response.json();
+  if (!Array.isArray(workspaces) || workspaces.length === 0) throw new Error("No workspaces reported for the demo project");
+  const main = workspaces.find((workspace) => workspace.isMain) ?? workspaces.find((workspace) => workspace.path === projectPath) ?? workspaces[0];
+  return main.id;
 }
 
 async function writeJson(path, value) {
