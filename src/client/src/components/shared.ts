@@ -473,6 +473,11 @@ export const chatStyles = css`
   .msg.event-group > summary .label { margin: 0; }
   .group-body { padding: 0 12px 12px; }
   :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .msg.assistant { padding-inline: 0; }
+  /* Modernist user message: a subtle, content-width surface bubble (#43),
+     not the full-width accent-tinted block. Keeps the Modernist square edge. */
+  :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .msg.user { width: fit-content; max-width: min(45rem, 100%); border-color: var(--pi-border); background: var(--pi-surface); }
+  :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .msg.user > .msg-header { border-bottom-color: color-mix(in srgb, var(--pi-border-muted) 35%, transparent); background: var(--pi-surface); }
+  :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .msg.user > .msg-header .label { color: var(--pi-muted); }
   /* The assistant header shares its prose edge: unlike the stock card header,
      it has no negative margins that could extend beyond the Modernist surface. */
   :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .msg.assistant > .msg-header { margin: 0 0 0.5rem; padding: 0.4375rem 0 0.375rem; }
