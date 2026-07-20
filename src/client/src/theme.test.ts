@@ -116,7 +116,7 @@ describe("Modernist structural token boundaries", () => {
 
   it("keeps assistant prose and sticky headers scoped to Modernist", () => {
     expect(chatStyles.cssText).toContain(':host-context(:root[data-pi-web-theme^="themes:modernist-"]) .msg.assistant { padding-inline: 0; }');
-    expect(chatStyles.cssText).toContain(':host-context(:root[data-pi-web-theme^="themes:modernist-"]) .msg.assistant > .msg-header { margin: 0 0 0.5rem; padding: 0.4375rem 0 0.375rem; }');
+    expect(chatStyles.cssText).toContain(':host-context(:root[data-pi-web-theme^="themes:modernist-"]) .msg.assistant > .msg-header { margin: 0 0 0.5rem; padding: 0.4375rem 0 0.375rem; background: var(--pi-bg); box-shadow: none; }');
     expect(chatStyles.cssText).toContain('.msg.event-group > summary { position: sticky; top: -26px;');
     expect(chatStyles.cssText).not.toContain('.msg.assistant { padding-inline: 0; }\n  .msg.user');
   });
