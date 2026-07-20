@@ -236,6 +236,9 @@ export class AppNavigationPanel extends LitElement {
     .dashboard-link { margin: 8px; border-width: var(--pi-divider-width, 1px); }
     button[aria-current="page"] { border-color: var(--pi-accent); color: var(--pi-accent); }
     machine-list, project-list, workspace-list { flex: 0 0 auto; max-height: 26%; min-height: 0; overflow: hidden; border-bottom: var(--pi-divider-width, 1px) solid var(--pi-border-muted); }
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) machine-list,
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) project-list,
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) workspace-list { border-bottom: 0; }
     session-list { flex: 1 1 auto; min-height: 0; overflow: hidden; }
     machine-list[collapsed],
     project-list[collapsed],
