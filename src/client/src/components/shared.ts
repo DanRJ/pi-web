@@ -371,6 +371,17 @@ export const listStyles = css`
   .workspace-detail-row .workspace-label { overflow: visible; white-space: normal; flex-wrap: wrap; }
   .workspace-detail-row .workspace-label-base, .workspace-detail-row .workspace-label-item, .workspace-detail-row .workspace-label-render { overflow: visible; text-overflow: clip; overflow-wrap: anywhere; white-space: normal; }
   @keyframes pulse { 0%, 100% { transform: scale(.75); opacity: .55; } 50% { transform: scale(1.2); opacity: 1; } }
+  /* Modernist left nav: flat tree, not boxed rows (#41). Section titles are not
+     bold; rows drop their box; selection reads as an accent-tint row, not an
+     accent border. Classic and PI WEB keep the boxed presentation. */
+  :host-context(:root[data-pi-web-theme^="themes:modernist-"]) h2 { font-weight: 400; }
+  :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .action-main,
+  :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .action-menu-toggle { border-color: transparent; background: transparent; }
+  :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .action-row:not(.selected):hover .action-main,
+  :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .action-row:not(.selected):hover .action-menu-toggle,
+  :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .action-menu-toggle:hover { background: color-mix(in srgb, var(--pi-text) 6%, transparent); }
+  :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .action-row.selected .action-main,
+  :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .action-row.selected .action-menu-toggle { border-color: transparent; background: var(--pi-selection-bg); color: var(--pi-accent); }
 `;
 
 export const chatStyles = css`
