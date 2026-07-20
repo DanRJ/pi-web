@@ -500,6 +500,12 @@ async function cleanup() {
 
 async function terminate(child) {
   if (child.exitCode !== null || child.signalCode !== null) return;
+  // On Windows the servers run behind .cmd shims spawned with shell:true, so the
+  // tracked handle is a cmd.exe wrapper whose real node children survive a plain
+  // child.kill(). taskkill /T kills the whole process tree by pid.
+  if (process.platform === "win32" && typeof child.pid === "number") {
+    spawnSync("taskkill", ["/PID", String(child.pid), "/T", "/F"], { stdio: "ignore" });
+  }
   child.kill("SIGTERM");
   await Promise.race([
     new Promise((resolve) => child.once("exit", resolve)),
