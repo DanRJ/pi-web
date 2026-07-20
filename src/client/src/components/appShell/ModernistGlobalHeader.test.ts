@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { templateClickHandlerForText, templateText } from "../../templateInspection.testSupport";
+import { templateClickHandlerForText, templateEventHandlerAfterMarker, templateText } from "../../templateInspection.testSupport";
 import { ModernistGlobalHeader } from "./ModernistGlobalHeader";
 
 describe("ModernistGlobalHeader", () => {
@@ -54,5 +54,48 @@ describe("ModernistGlobalHeader", () => {
     const markup = templateText(header.render());
     expect(markup).toContain("theme-control");
     expect(markup).toContain("Toggle light and dark theme");
+  });
+
+  it("renders the account control only when an auth handler is provided", () => {
+    const header = new ModernistGlobalHeader();
+    expect(templateText(header.render())).not.toContain('aria-label="Account"');
+
+    header.onConfigureAuth = vi.fn();
+    expect(templateText(header.render())).toContain('aria-label="Account"');
+  });
+
+  it("keeps the account menu closed until the control is activated", () => {
+    const header = new ModernistGlobalHeader();
+    header.onConfigureAuth = vi.fn();
+    expect(templateText(header.render())).not.toContain("Configure provider authentication");
+
+    templateEventHandlerAfterMarker(header.render(), 'aria-label="Account"')(new Event("click"));
+    const opened = templateText(header.render());
+    expect(opened).toContain("Configure provider authentication");
+    expect(opened).toContain("Remove provider authentication");
+    expect(opened).toContain('role="menu"');
+  });
+
+  it("routes each account menu item to its owner and closes the menu", () => {
+    const header = new ModernistGlobalHeader();
+    const onConfigureAuth = vi.fn();
+    const onRemoveAuth = vi.fn();
+    const onSelect = vi.fn();
+    header.onConfigureAuth = onConfigureAuth;
+    header.onRemoveAuth = onRemoveAuth;
+    header.onSelect = onSelect;
+
+    templateEventHandlerAfterMarker(header.render(), 'aria-label="Account"')(new Event("click"));
+    templateEventHandlerAfterMarker(header.render(), 'data-account-action="login"')(new Event("click"));
+    expect(onConfigureAuth).toHaveBeenCalledTimes(1);
+    expect(templateText(header.render())).not.toContain("Configure provider authentication");
+
+    templateEventHandlerAfterMarker(header.render(), 'aria-label="Account"')(new Event("click"));
+    templateEventHandlerAfterMarker(header.render(), 'data-account-action="logout"')(new Event("click"));
+    expect(onRemoveAuth).toHaveBeenCalledTimes(1);
+
+    templateEventHandlerAfterMarker(header.render(), 'aria-label="Account"')(new Event("click"));
+    templateEventHandlerAfterMarker(header.render(), 'data-account-action="settings"')(new Event("click"));
+    expect(onSelect).toHaveBeenCalledWith("settings");
   });
 });

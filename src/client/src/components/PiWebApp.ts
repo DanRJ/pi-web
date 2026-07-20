@@ -1135,6 +1135,8 @@ export class PiWebApp extends LitElement {
       .activeCount=${this.activeSessionCount()}
       .onSelect=${(destination: ModernistGlobalDestination) => { this.selectModernistGlobalDestination(destination); }}
       .onToggleTheme=${this.handleToggleThemeAppearance}
+      .onConfigureAuth=${() => { void this.auth.openLogin(); }}
+      .onRemoveAuth=${() => { void this.auth.openLogout(); }}
     ></modernist-global-header>`;
   }
 
