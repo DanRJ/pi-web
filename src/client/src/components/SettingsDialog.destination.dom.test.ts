@@ -57,7 +57,7 @@ describe("SettingsDialog destination scrolling", () => {
     expect(scrollTo).toHaveBeenCalledExactlyOnceWith({ top: 100, behavior: "auto" });
   });
 
-  it("keeps passive section restoration unfocused but focuses an intentional navigation jump", async () => {
+  it("scrolls passively without moving focus on section change and renders no in-page section rail", async () => {
     const scrollTo = installScrollSpy();
     const dialog = mountDestination();
     await settle(dialog);
@@ -70,21 +70,12 @@ describe("SettingsDialog destination scrolling", () => {
     expect(scrollTo).toHaveBeenCalledExactlyOnceWith({ top: 200, behavior: "auto" });
     expect(dialog.shadowRoot?.activeElement).not.toBe(plugins);
 
-    dialog.section = "general";
-    await settle(dialog);
-    scrollTo.mockClear();
-    dialog.onNavigate = (section) => { dialog.section = section; };
     const root = dialog.shadowRoot;
     if (root === null) throw new Error("Expected Settings destination shadow root");
-    const pluginsButton = [...root.querySelectorAll<HTMLButtonElement>(".settings-nav button")]
-      .find((button) => button.textContent.includes("Plugins"));
-    if (pluginsButton === undefined) throw new Error("Expected Plugins destination link");
-
-    pluginsButton.click();
-    await settle(dialog);
-
-    expect(scrollTo).toHaveBeenCalledExactlyOnceWith({ top: 200, behavior: "smooth" });
-    expect(dialog.shadowRoot?.activeElement).toBe(plugins);
+    // The Modernist destination is one grouped page: no permanent section rail,
+    // and a plain "Settings" heading with the machine-scope note.
+    expect(root.querySelector(".settings-nav")).toBeNull();
+    expect(root.querySelector(".settings-page-header h1")?.textContent).toBe("Settings");
   });
 });
 

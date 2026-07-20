@@ -184,16 +184,14 @@ export class SettingsDialog extends LitElement {
   private renderDestination(): TemplateResult {
     return html`
       <section class="destination-shell" aria-label="PI WEB settings">
-        <header class="settings-header">
-          <div><span class="eyebrow">Settings</span><h1>PI WEB</h1></div>
-          <button class="close-button" title="Close settings" aria-label="Close settings" @click=${() => this.onClose?.()}>×</button>
-        </header>
-        <div class="destination-body">
-          <nav class="settings-nav" aria-label="Settings sections">${this.renderNav()}</nav>
-          <main class="settings-content destination-content">
-            ${this.renderDestinationSections()}
-          </main>
-        </div>
+        <button class="close-button destination-close" title="Close settings" aria-label="Close settings" @click=${() => this.onClose?.()}>×</button>
+        <main class="settings-content destination-content" aria-label="Settings">
+          <div class="settings-page-header">
+            <h1>Settings</h1>
+            <p class="settings-scope">Machine: <strong>${settingsMachineTargetLabel(this.settingsTarget())}</strong> — some settings only apply here</p>
+          </div>
+          ${this.renderDestinationSections()}
+        </main>
       </section>
     `;
   }
@@ -204,17 +202,6 @@ export class SettingsDialog extends LitElement {
       this.renderNavButton("sessiond", "Session daemon", "Selected machine"),
       this.renderNavButton("packages", "Pi packages", "Selected machine"),
       this.renderNavButton("plugins", "PI WEB plugins", "Selected machine"),
-      this.renderNavButton("shortcuts", "Keyboard", "Gateway shortcuts"),
-    ];
-  }
-
-  private renderNav(): TemplateResult[] {
-    return [
-      this.renderNavButton("sessiond", "Agent", "Current session + daemon"),
-      this.renderNavButton("plugins", "Plugins", "Selected machine"),
-      this.renderNavButton("machines", "Machines", "Connections"),
-      this.renderNavButton("packages", "Packages", "Selected machine"),
-      this.renderNavButton("general", "General", "Gateway + files"),
       this.renderNavButton("shortcuts", "Keyboard", "Gateway shortcuts"),
     ];
   }
@@ -848,16 +835,16 @@ export class SettingsDialog extends LitElement {
     .settings-nav button.selected { border-color: var(--pi-accent); background: var(--pi-selection-bg); }
     .settings-nav small { color: var(--pi-muted); }
     .settings-content { min-width: 0; min-height: 0; overflow: auto; padding: 18px; }
-    .destination-shell { display: grid; grid-template-rows: auto minmax(0, 1fr); height: 100%; min-height: 0; background: var(--pi-bg); }
-    .destination-body { display: grid; grid-template-columns: minmax(14rem, 18rem) minmax(0, 1fr); min-height: 0; }
-    .destination-shell .settings-header { padding: 1.5rem 2rem; border-bottom-width: var(--pi-divider-width, 2px); }
-    .destination-shell .settings-nav { padding: 1rem; border-right-width: var(--pi-divider-width, 2px); background: var(--pi-bg); }
-    .destination-content { display: grid; align-content: start; gap: 2rem; padding: 2rem; scroll-behavior: smooth; }
+    .destination-shell { position: relative; display: grid; grid-template-rows: minmax(0, 1fr); height: 100%; min-height: 0; background: var(--pi-bg); }
+    .destination-close { position: absolute; top: 1rem; right: 1rem; z-index: 1; }
+    .destination-content { max-width: 760px; display: grid; align-content: start; gap: 2rem; padding: 2rem; scroll-behavior: smooth; }
+    .settings-page-header { display: grid; gap: .25rem; }
+    .settings-page-header h1 { font-size: 1.75rem; }
+    .settings-scope { margin: 0; color: var(--pi-muted); line-height: 1.45; }
+    .settings-scope strong { color: var(--pi-text); font-weight: var(--pi-heading-font-weight, 700); }
     .destination-section { min-width: 0; scroll-margin-top: 1rem; outline: none; }
     .destination-section:focus-visible { outline: var(--pi-focus-ring-width, 2px) solid var(--pi-accent); outline-offset: .5rem; }
     :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .destination-shell { font-size: 1rem; }
-    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .destination-shell .settings-header,
-    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .destination-shell .settings-nav { border-color: var(--pi-border); }
     :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .destination-shell button { border-radius: 0; min-height: 2.75rem; }
 
     @media (max-width: 767px) {
@@ -869,11 +856,8 @@ export class SettingsDialog extends LitElement {
       .settings-nav { display: flex; gap: 8px; padding: 8px; border-right: 0; border-bottom: var(--pi-divider-width, 1px) solid var(--pi-border); overflow-x: auto; overflow-y: hidden; }
       .settings-nav button { flex: 0 0 auto; width: auto; min-width: 128px; margin: 0; }
       .settings-content { padding: 14px 12px calc(18px + env(safe-area-inset-bottom)); }
-      .destination-body { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
-      .destination-shell .settings-header { padding: max(1rem, env(safe-area-inset-top)) 1rem 1rem; }
-      .destination-shell .settings-nav { display: flex; gap: .5rem; padding: .75rem 1rem; border-right: 0; border-bottom: var(--pi-divider-width, 2px) solid var(--pi-border); overflow-x: auto; overflow-y: hidden; }
-      .destination-shell .settings-nav button { flex: 0 0 auto; min-width: 8rem; margin: 0; }
-      .destination-content { gap: 1.5rem; padding: 1rem; }
+      .destination-close { top: max(.5rem, env(safe-area-inset-top)); right: .5rem; }
+      .destination-content { max-width: none; gap: 1.5rem; padding: max(1rem, env(safe-area-inset-top)) 1rem calc(1rem + env(safe-area-inset-bottom)); }
     }
   `;
 }

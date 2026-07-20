@@ -4,7 +4,7 @@ Modernist presents Settings as a full mobile and dashboard destination while ret
 
 ## Destination ownership
 
-The destination navigation order is Agent, Plugins, Machines, Packages, General, and Keyboard. A destination renders stable section anchors so a Settings URL can restore or navigate to one section without remounting the others. The active anchor is scrolled into view; intentional navigation may focus that section, while passive URL restoration must not move focus.
+Modernist presents the destination as one grouped, vertically scrolling page beside the shared hierarchy sidebar: a plain **Settings** heading with the machine-scope note, then the sections in a fixed order — Agent, Plugins, Machines, Packages, General, and Keyboard. There is no second settings-navigation rail; the grouped page is width-bounded so long content stays readable. Each section keeps a stable anchor so a Settings URL can restore or navigate to one section without remounting the others; the active anchor is scrolled into view without moving focus. Classic and PI WEB keep the dialog presentation with its section rail.
 
 On mobile, opening Settings records the currently visible Chat, Sessions, or Tools destination. Closing returns to that destination and restores the invoking control when it remains available. A model change from Agent Settings closes the destination before opening the existing picker and deliberately suppresses the Settings focus restoration, so focus cannot jump behind the picker. Authentication continues to use the existing selected-machine auth flow.
 
