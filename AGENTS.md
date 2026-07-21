@@ -4,7 +4,9 @@
 
 - Treat `DanRJ/pi-web` (`origin`) as the only GitHub repository for issue, pull-request, release, branch, and repository searches.
 - Never search or query `jmfederico/pi-web` (`upstream`) for project work.
-- The `upstream` remote is only for an explicitly requested source synchronization operation; it is not a project-management or research source.
+- Never mutate `jmfederico/pi-web` in any way. This prohibition includes creating, editing, closing, or commenting on issues or pull requests; changing labels, milestones, branches, releases, discussions, or repository settings; and pushing commits or tags.
+- Before running any command, API request, or tool call that explicitly targets `jmfederico/pi-web` or the `upstream` remote, stop and obtain Daniel's explicit confirmation for that exact operation in the current chat. Never infer permission from a general task, prior approval, repository configuration, or upstream-maintenance instructions.
+- The `upstream` remote is only for an explicitly requested source synchronization operation after that exact confirmation; it is not a project-management or research source.
 
 This project is expected to run locally using split systemd user services:
 
