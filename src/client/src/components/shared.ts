@@ -757,7 +757,7 @@ export const promptEditorStyles = css`
   :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .markdown-editor .cm-editor { border: 0; border-radius: 0; background: transparent; }
   :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .markdown-editor .cm-content { padding: 8px; }
   :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .mode-hint { right: 8px; max-width: calc(100% - 16px); }
-  :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .select-model, :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .select-thinking { background: var(--pi-surface); color: var(--pi-text-secondary, var(--pi-text)); }
+  :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .select-model, :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .select-thinking { background: var(--pi-surface); color: var(--pi-text); }
   :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .steer-button, :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .stop-button { background: transparent; color: var(--pi-text); }
   :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .send-button:not(:disabled) { border-color: var(--pi-accent); background: var(--pi-accent); color: var(--pi-bg); font-family: Archivo, var(--pi-body-font-family, system-ui, sans-serif); font-weight: 800; }
   :host-context(:root[data-pi-web-theme^="themes:modernist-"]) button:focus-visible, :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .markdown-editor .cm-focused { outline: 2px solid var(--pi-accent); outline-offset: 2px; }

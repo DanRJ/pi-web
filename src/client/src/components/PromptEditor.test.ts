@@ -59,7 +59,7 @@ describe("PromptEditor Modernist controls", () => {
     expect(promptEditorStyles.cssText).not.toContain("footer { width: min(48rem, 100%);");
     expect(promptEditorStyles.cssText).not.toContain("padding: 0 1rem 1rem;");
     expect(promptEditorStyles.cssText).toContain(".editor-attach { position: static; width: auto; min-width: 5.5rem;");
-    expect(promptEditorStyles.cssText).toContain(".select-thinking { background: var(--pi-surface); color: var(--pi-text-secondary, var(--pi-text)); }");
+    expect(promptEditorStyles.cssText).toContain(".select-thinking { background: var(--pi-surface); color: var(--pi-text); }");
     expect(promptEditorStyles.cssText).toContain("@container (max-width: 38rem)");
     expect(promptEditorStyles.cssText).toContain(".modernist-actions { grid-template-columns: minmax(0, 1fr); overflow: visible; }");
     expect(promptEditorStyles.cssText).toContain(".action-context { max-width: 100%; overflow: visible; }");
