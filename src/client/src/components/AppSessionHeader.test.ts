@@ -1,7 +1,7 @@
 import type { TemplateResult } from "lit";
 import { describe, expect, it, vi } from "vitest";
 import type { SessionInfo, SessionStatus } from "../api";
-import { AppSessionHeader, sessionStatusPresentation } from "./AppSessionHeader";
+import { AppSessionHeader, sessionStateLabel, sessionStatusPresentation } from "./AppSessionHeader";
 
 describe("sessionStatusPresentation", () => {
   it("uses the truthful precedence order and never invents a detail", () => {
@@ -72,9 +72,19 @@ describe("AppSessionHeader", () => {
 
     expect(templateMarkup(header.render())).toContain('class="session-stop-control"');
     expect(templateMarkup(header.render())).toContain('role="status"');
-    expect(templateMarkup(header.render())).toContain("status-label-short");
+    expect(valuesDeep(header.render())).toContain("idle");
     expect(AppSessionHeader.styles.cssText).toContain(".session-detail, .session-stop-control { display: none; }");
     expect(AppSessionHeader.styles.cssText).toContain("button { min-width: 2.75rem; min-height: 2.75rem; height: 2.75rem; }");
+  });
+
+  it("reduces runtime activity to the running, waiting, and idle badge labels", () => {
+    expect(sessionStateLabel("working")).toBe("running");
+    expect(sessionStateLabel("shell")).toBe("running");
+    expect(sessionStateLabel("tool")).toBe("running");
+    expect(sessionStateLabel("compacting")).toBe("running");
+    expect(sessionStateLabel("waiting")).toBe("waiting");
+    expect(sessionStateLabel("idle")).toBe("idle");
+    expect(sessionStateLabel("error")).toBe("idle");
   });
 
   it("omits Rename when the effective runtime lacks the capability", () => {
@@ -181,6 +191,25 @@ function nestedTemplateMarkup(value: unknown): string {
   if (isTemplateResult(value)) return templateMarkup(value);
   if (Array.isArray(value)) return value.map((item) => nestedTemplateMarkup(item)).join("");
   return "";
+}
+
+function valuesDeep(template: TemplateResult | null): unknown[] {
+  if (template === null) return [];
+  const result: unknown[] = [];
+  visit(template);
+  return result;
+
+  function visit(value: unknown): void {
+    if (Array.isArray(value)) {
+      value.forEach(visit);
+      return;
+    }
+    if (!isTemplateResult(value)) {
+      result.push(value);
+      return;
+    }
+    templateValues(value).forEach(visit);
+  }
 }
 
 function templateWithMarker(template: TemplateResult | null, marker: string): TemplateResult | undefined {

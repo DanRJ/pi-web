@@ -1,9 +1,7 @@
 import { LitElement, css, html, type PropertyValues } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import type { Machine, MachineHealth, WorkspaceActivity } from "../api";
-import { machineActivityIndicator } from "../workspaceActivity";
 import { actionMenuPanelStyle } from "./actionMenu";
-import { renderActionActivityIndicator } from "./activityBadge";
 import type { KeyboardNavigableSection } from "./navigationFocus";
 import { activateSelectableRow, focusSelectedOrFirstSelectableRow, handleSelectableRowKeyboard } from "./selectableRow";
 import { listStyles } from "./shared";
@@ -64,7 +62,7 @@ export class MachineList extends LitElement implements KeyboardNavigableSection 
 
   private renderMachine(machine: Machine) {
     const status = this.statuses[machine.id]?.status ?? machine.status ?? "unknown";
-    const statusLabel = status === "online" ? "online" : status === "offline" ? "offline" : status === "error" ? "error" : "unknown";
+    const statusLabel = status === "offline" ? "offline" : status === "error" ? "error" : status === "unknown" ? "unknown" : undefined;
     const hasRemoveAction = canRemoveMachine(machine) && this.onRemove !== undefined;
     return html`
       <div
@@ -75,19 +73,16 @@ export class MachineList extends LitElement implements KeyboardNavigableSection 
         @keydown=${(event: KeyboardEvent) => { this.handleMachineKeydown(event, machine); }}
       >
         <div class="action-main">
-          <span class="action-name machine-primary"><span class="machine-primary-label">${machine.name}</span></span><small>${machine.kind === "local" ? "Local Pi Web" : machine.baseUrl ?? "Remote Pi Web"} · ${statusLabel}</small>
-          ${this.renderActivity(machine)}
+          <span class="action-name machine-primary">
+            ${machineIcon(machine.kind)}
+            <span class="machine-primary-label">${machine.name}</span>
+            ${status === "online" ? html`<span class="machine-online" role="img" title="Machine online" aria-label="Online"></span>` : null}
+          </span>
+          <small>${machine.kind === "local" ? "Local Pi Web" : machine.baseUrl ?? "Remote Pi Web"}${statusLabel === undefined ? "" : ` · ${statusLabel}`}</small>
         </div>
         ${hasRemoveAction ? this.renderMachineMenu(machine) : null}
       </div>
     `;
-  }
-
-  private renderActivity(machine: Machine) {
-    const status = this.statuses[machine.id]?.status ?? machine.status;
-    if (status === "offline" || status === "error") return undefined;
-    const kind = machineActivityIndicator(this.activities[machine.id]);
-    return renderActionActivityIndicator(kind, kind === "terminal" ? "Machine terminal active" : "Machine active");
   }
 
   private renderMachineMenu(machine: Machine) {
@@ -151,8 +146,14 @@ export class MachineList extends LitElement implements KeyboardNavigableSection 
     listStyles,
     css`
       .machine-row.no-actions .action-main { border-radius: 8px; }
-      .machine-primary { display: flex; align-items: baseline; gap: 6px; }
+      .machine-row.selected .action-main,
+      .machine-row.selected .action-menu-toggle,
+      .machine-row.selected.no-actions .action-main { border-radius: 0; }
+      .machine-row.selected:focus-visible { border-radius: 0; }
+      .machine-primary { display: flex; align-items: center; gap: 6px; }
       .machine-primary-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+      .machine-icon { flex: 0 0 auto; width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+      .machine-online { flex: 0 0 auto; width: 7px; height: 7px; border-radius: 50%; background: var(--pi-machine-online, #f97316); }
       .machine-menu-panel button.danger { color: var(--pi-danger); }
       .machine-menu-panel button.danger:hover, .machine-menu-panel button.danger:focus { background: color-mix(in srgb, var(--pi-danger) 14%, transparent); }
     `,
@@ -165,4 +166,11 @@ export function canRemoveMachine(machine: Machine): boolean {
 
 function machineMenuId(machineId: string): string {
   return `machine-menu-${machineId.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
+}
+
+function machineIcon(kind: Machine["kind"]) {
+  if (kind === "local") {
+    return html`<svg class="machine-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="13" rx="1"></rect><path d="M8 21h8M12 17v4"></path></svg>`;
+  }
+  return html`<svg class="machine-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="3" width="16" height="7" rx="1"></rect><rect x="4" y="14" width="16" height="7" rx="1"></rect><path d="M8 6.5h.01M8 17.5h.01M12 6.5h5M12 17.5h5"></path></svg>`;
 }

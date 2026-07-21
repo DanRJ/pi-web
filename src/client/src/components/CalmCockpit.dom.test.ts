@@ -68,13 +68,14 @@ describe("Calm Cockpit rendered controls", () => {
 
     const badge = () => header.shadowRoot?.querySelector<HTMLElement>(".status-badge");
     expect(badge()?.className).toContain("waiting");
-    expect(badge()?.textContent).toContain("Waiting");
-    expect(badge()?.getAttribute("aria-label")).toBe("Waiting");
+    expect(badge()?.textContent).toContain("waiting");
+    expect(badge()?.getAttribute("aria-label")).toBe("waiting");
 
     header.waitingForUser = false;
     await header.updateComplete;
     expect(badge()?.className).toContain("working");
-    expect(badge()?.textContent).toContain("Working");
+    expect(badge()?.textContent).toContain("running");
+    expect(badge()?.getAttribute("aria-label")).toBe("running");
   });
 
   it("renders queue ownership and native event disclosure semantics without fabricating rows", async () => {
