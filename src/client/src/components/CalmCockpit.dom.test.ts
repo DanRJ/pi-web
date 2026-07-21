@@ -5,6 +5,8 @@ import type { SessionInfo, SessionStatus } from "../api";
 import { AppSessionHeader } from "./AppSessionHeader";
 import { ChatView } from "./ChatView";
 import { PromptEditor } from "./PromptEditor";
+import { saveDraft } from "../promptDraftStorage";
+import { machineSessionKey } from "../machineKeys";
 
 const longTitle = "Modernize the session shell while retaining queue ownership and accessible controls";
 
@@ -21,6 +23,7 @@ Object.defineProperty(HTMLElement.prototype, "scrollIntoView", { configurable: t
 afterEach(() => {
   document.body.replaceChildren();
   document.documentElement.removeAttribute("data-pi-web-theme");
+  try { localStorage.clear(); } catch { /* jsdom localStorage may be unavailable */ }
 });
 
 describe("Calm Cockpit rendered controls", () => {
@@ -198,6 +201,19 @@ describe("Calm Cockpit rendered controls", () => {
     expect(editor.view).toBe(view);
     expect(editor.view?.state.doc.toString()).toBe("keep this draft");
     expect(Reflect.get(editor, "completions")).toBe(completions);
+  });
+
+  it("places the cursor at the end of a restored draft when the editor mounts", async () => {
+    const draft = "half-written message";
+    saveDraft(machineSessionKey("local", "draft-session"), draft);
+    const editor = createRegisteredElement("prompt-editor", PromptEditor);
+    editor.machineId = "local";
+    editor.sessionId = "draft-session";
+    document.body.append(editor);
+    await editor.updateComplete;
+
+    expect(editor.view?.state.doc.toString()).toBe(draft);
+    expect(editor.view?.state.selection.main.head).toBe(draft.length);
   });
 
   it("keeps idle, streaming, compacting, sending, disabled, and delivery states truthful", async () => {
