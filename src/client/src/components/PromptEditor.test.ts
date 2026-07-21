@@ -53,9 +53,13 @@ describe("PromptEditor Modernist controls", () => {
     // stretching across the footer; execution controls use the remaining room.
     expect(promptEditorStyles.cssText).toContain(".modernist-actions { grid-template-columns: minmax(0, 1fr) max-content; gap: 0.5rem; align-items: center; overflow: hidden; }");
     expect(promptEditorStyles.cssText).toContain(".action-context { display: flex; align-items: center; gap: 0.5rem; min-width: 0; max-width: 28rem; overflow: hidden; }");
-    expect(promptEditorStyles.cssText).toContain("footer { width: min(48rem, 100%); margin: 0 auto;");
-    expect(promptEditorStyles.cssText).toContain("border-radius: 1rem;");
+    // The composer itself keeps the original full-width footer; only its
+    // context controls are content-sized.
+    expect(promptEditorStyles.cssText).toContain("footer { box-sizing: border-box; display: grid; grid-template-columns: minmax(0, 1fr); width: 100%; max-width: 100%;");
+    expect(promptEditorStyles.cssText).not.toContain("footer { width: min(48rem, 100%);");
+    expect(promptEditorStyles.cssText).not.toContain("padding: 0 1rem 1rem;");
     expect(promptEditorStyles.cssText).toContain(".editor-attach { position: static; width: auto; min-width: 5.5rem;");
+    expect(promptEditorStyles.cssText).toContain(".select-thinking { background: var(--pi-surface); color: var(--pi-text-secondary, var(--pi-text)); }");
     expect(promptEditorStyles.cssText).toContain("@container (max-width: 38rem)");
     expect(promptEditorStyles.cssText).toContain(".modernist-actions { grid-template-columns: minmax(0, 1fr); overflow: visible; }");
     expect(promptEditorStyles.cssText).toContain(".action-context { max-width: 100%; overflow: visible; }");

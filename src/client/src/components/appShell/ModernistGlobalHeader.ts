@@ -60,11 +60,11 @@ export class ModernistGlobalHeader extends LitElement {
         >PI WEB</a>
         <nav aria-label="Global destinations">
           ${GLOBAL_DESTINATIONS.map((destination) => this.renderDestination(destination))}
-        </nav>
-        <div class="header-actions">
           ${this.activeCount > 0
             ? html`<span class="active-pill" title=${`${String(this.activeCount)} active ${this.activeCount === 1 ? "session" : "sessions"}`}><span class="active-dot" aria-hidden="true"></span>${this.activeCount} active</span>`
             : null}
+        </nav>
+        <div class="header-actions">
           ${this.onToggleTheme === undefined ? null : html`<button type="button" class="theme-control" aria-label="Toggle light and dark theme" title="Toggle light and dark theme" @click=${() => { this.onToggleTheme?.(); }}>${themeIcon()}</button>`}
           ${this.refreshControl}
           ${this.renderAccount()}
@@ -133,14 +133,14 @@ export class ModernistGlobalHeader extends LitElement {
   static override styles = css`
     :host { display: block; min-width: 0; color: var(--pi-text); background: var(--pi-bg); font-family: var(--pi-control-font-family, system-ui, sans-serif); }
     header { box-sizing: border-box; display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 0.75rem; min-width: 0; height: 56px; padding-inline: 1rem; border-bottom: var(--pi-divider-width, 2px) solid var(--pi-border); }
-    nav { justify-self: center; display: flex; align-self: stretch; min-width: 0; }
+    nav { justify-self: center; display: flex; align-self: stretch; align-items: center; min-width: 0; }
     button { min-width: 0; border: 0; border-radius: 0; background: transparent; color: var(--pi-muted); padding: 0 0.75rem; font: 600 1rem var(--pi-control-font-family, system-ui, sans-serif); white-space: nowrap; cursor: pointer; }
     button:hover { color: var(--pi-text); background: var(--pi-surface-hover); }
     .brand { justify-self: start; align-self: stretch; display: inline-flex; align-items: center; padding: 0; color: var(--pi-text); font-family: var(--pi-heading-font-family, inherit); font-size: 1rem; font-weight: var(--pi-heading-font-weight, 700); letter-spacing: var(--pi-navigation-heading-letter-spacing, 0.04em); text-decoration: none; white-space: nowrap; }
     .brand:hover { color: var(--pi-accent); }
     .brand[aria-current="page"], nav button[aria-current="page"] { box-shadow: inset 0 -0.1875rem 0 var(--pi-accent); color: var(--pi-text); }
     button:focus-visible, .brand:focus-visible { outline: var(--pi-focus-ring-width, 2px) solid var(--pi-accent); outline-offset: calc(-1 * var(--pi-focus-ring-offset, 2px)); }
-    .active-pill { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 0.375rem; padding: 0.1875rem 0.5rem; border: var(--pi-divider-width, 2px) solid var(--pi-border); color: var(--pi-muted); font: 600 0.6875rem var(--pi-control-font-family, system-ui, sans-serif); letter-spacing: 0.02em; white-space: nowrap; }
+    .active-pill { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 0.375rem; margin-left: 0.25rem; padding: 0.1875rem 0.5rem; border: var(--pi-divider-width, 2px) solid var(--pi-border); color: var(--pi-muted); font: 600 0.6875rem var(--pi-control-font-family, system-ui, sans-serif); letter-spacing: 0.02em; white-space: nowrap; }
     .active-dot { flex: 0 0 auto; width: 0.4375rem; height: 0.4375rem; border-radius: 50%; background: var(--pi-accent); }
     .header-actions { justify-self: end; display: flex; align-items: center; gap: 0.25rem; min-width: 0; }
     .theme-control, .account-control { display: inline-grid; place-items: center; width: 2.25rem; height: 2.25rem; padding: 0; color: var(--pi-muted); }

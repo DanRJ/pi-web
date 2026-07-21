@@ -41,12 +41,12 @@ export class AppSessionHeader extends LitElement {
       <header aria-label="Session controls">
         <div class="session-context">
           <strong title=${session.path}>${sessionLabel(session)}</strong>
-          <span class="session-detail" title=${branch ?? "No workspace selected"}>${branch ?? "No workspace"}</span>
-          <span class="session-detail">${model ?? "Model unavailable"}</span>
+          <span class="session-detail branch-detail" title=${branch ?? "No workspace selected"}>${branchIcon()}<span class="session-detail-label">${branch ?? "No workspace"}</span></span>
+          <span class="session-detail"><span class="session-detail-label">${model ?? "Model unavailable"}</span></span>
         </div>
         <div class="session-actions">
           <span class=${`status-badge ${shellStatus.kind}`} role="status" title=${shellStatus.detail ?? visibleStatus} aria-label=${shellStatus.detail === undefined ? visibleStatus : `${visibleStatus}: ${shellStatus.detail}`}>
-            <span>${visibleStatus}</span>
+            ${statusIcon(shellStatus.kind)}<span>${visibleStatus}</span>
           </span>
           ${!this.canRename ? null : session.archived === true
             ? html`<button type="button" class="rename-control" aria-label="Rename session" title="Restore this session before renaming." disabled>Rename</button><span class="rename-unavailable">Restore this session before renaming.</span>`
@@ -67,16 +67,22 @@ export class AppSessionHeader extends LitElement {
     .session-context { flex: 1 1 auto; overflow: hidden; }
     .session-actions { flex: 0 0 auto; }
     strong { min-width: 0; overflow: hidden; font-family: var(--pi-heading-font-family, inherit); font-size: 0.9375rem; font-weight: var(--pi-heading-font-weight, 700); letter-spacing: -0.015em; text-overflow: ellipsis; white-space: nowrap; }
-    .session-detail { min-width: 0; max-width: 16rem; overflow: hidden; border: 1px solid var(--pi-border-muted); color: var(--pi-muted); padding: 0.1875rem 0.5rem; font-size: 0.75rem; text-overflow: ellipsis; white-space: nowrap; }
-    .status-badge { display: inline-flex; align-items: center; border: 1px solid var(--pi-text); color: var(--pi-text); padding: 0.1875rem 0.5rem; font-family: var(--pi-heading-font-family, inherit); font-size: 0.6875rem; font-weight: 600; letter-spacing: 0.02em; white-space: nowrap; }
-    .status-badge.working, .status-badge.shell, .status-badge.tool, .status-badge.compacting { border-color: var(--pi-accent); color: var(--pi-accent); }
-    .status-badge.error { border-width: var(--pi-divider-width, 2px); }
+    .session-detail { display: inline-flex; align-items: center; gap: 0.3125rem; min-width: 0; max-width: 16rem; overflow: hidden; background: var(--pi-surface); color: var(--pi-text-secondary, var(--pi-text)); padding: 0.1875rem 0.5rem; font-size: 0.75rem; white-space: nowrap; }
+    .session-detail-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+    .branch-icon { flex: 0 0 auto; width: 0.75rem; height: 0.75rem; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+    .status-badge { display: inline-flex; align-items: center; gap: 0.375rem; background: var(--pi-surface); color: var(--pi-text-secondary, var(--pi-text)); padding: 0.1875rem 0.5rem; font-family: var(--pi-heading-font-family, inherit); font-size: 0.6875rem; font-weight: 600; letter-spacing: 0.02em; text-transform: capitalize; white-space: nowrap; }
+    .status-badge.working, .status-badge.shell, .status-badge.tool, .status-badge.compacting { background: var(--pi-selection-bg); color: var(--pi-accent); }
+    .status-badge.error { background: var(--pi-selection-bg); color: var(--pi-danger); }
+    .status-icon { width: 0.75rem; height: 0.75rem; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+    .status-badge.working .status-icon, .status-badge.shell .status-icon, .status-badge.tool .status-icon, .status-badge.compacting .status-icon { animation: spin 1s linear infinite; }
     button { display: inline-grid; place-items: center; min-width: 2.25rem; height: 2.25rem; border: 1px solid var(--pi-border); border-radius: var(--pi-radius-control, 0.5rem); background: var(--pi-surface); color: var(--pi-text); padding: 0.375rem; cursor: pointer; font: 600 0.75rem var(--pi-control-font-family, system-ui, sans-serif); }
     button:hover { background: var(--pi-surface-hover); }
     button:focus-visible { outline: var(--pi-focus-ring-width, 2px) solid var(--pi-accent); outline-offset: var(--pi-focus-ring-offset, 2px); }
     .session-stop-control, .rename-control { padding-inline: 0.5625rem; white-space: nowrap; }
     .session-stop-control { border-color: var(--pi-danger); color: var(--pi-danger); }
     .rename-unavailable { color: var(--pi-muted); font-size: .75rem; white-space: nowrap; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @media (prefers-reduced-motion: reduce) { .status-badge.working .status-icon, .status-badge.shell .status-icon, .status-badge.tool .status-icon, .status-badge.compacting .status-icon { animation: none; } }
     @media (max-width: 767px) {
       header { padding: var(--pi-space-2, 0.5rem) var(--pi-space-3, 0.75rem); }
       .session-detail, .session-stop-control { display: none; }
@@ -95,6 +101,18 @@ export class AppSessionHeader extends LitElement {
       :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .session-context { flex: 1 1 0; }
     }
   `;
+}
+
+function branchIcon() {
+  return html`<svg class="branch-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="5" r="2"></circle><circle cx="6" cy="19" r="2"></circle><circle cx="18" cy="7" r="2"></circle><path d="M6 7v10M8 17c5 0 8-3 8-8"></path></svg>`;
+}
+
+function statusIcon(kind: SessionShellStatus) {
+  if (kind === "error") return html`<svg class="status-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"></path></svg>`;
+  if (kind === "waiting" || kind === "idle") return html`<svg class="status-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8v4l3 2"></path><circle cx="12" cy="12" r="9"></circle></svg>`;
+  if (kind === "shell") return html`<svg class="status-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 18h16M7 9l3 3-3 3"></path></svg>`;
+  if (kind === "tool") return html`<svg class="status-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m14 6 4 4-8 8-4-4zM5 5l2 2"></path></svg>`;
+  return html`<svg class="status-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9"></path></svg>`;
 }
 
 function sessionLabel(session: SessionInfo): string {

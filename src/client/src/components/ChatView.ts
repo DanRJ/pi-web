@@ -7,7 +7,7 @@ import { groupChatMessages, summarizeChatGroup, type ChatGroup } from "../chatGr
 import { writeClipboardText } from "../clipboard";
 import { capturePrependScrollAnchor, PREPEND_RESTORE_SETTLE_FRAMES, restorePrependScrollAnchor, type PrependScrollAnchor } from "../chatScrollAnchoring";
 import { shouldRequestEarlierMessages } from "../chatHistoryLoading";
-import { ChatScrollController, distanceFromScrollBottom, findFirstVisibleArticle, isNearScrollBottom, shouldShowJumpToLatest, type ChatAnchorScrollPosition, type ChatScrollRestoreResult } from "../chatScrollPosition";
+import { ChatScrollController, distanceFromScrollBottom, isNearScrollBottom, shouldShowJumpToLatest, type ChatAnchorScrollPosition, type ChatScrollRestoreResult } from "../chatScrollPosition";
 import { sessionStatusPresentation } from "../sessionStatusPresentation";
 import type { ExtensionUiNotification, ExtensionUiRequest, ExtensionUiResolution, ExtensionUiResponse, QueuedSessionMessage, SessionActivity, SessionStatus, SessionWarningSeverity } from "../api";
 import {
@@ -28,7 +28,6 @@ import {
 } from "../sessionNotifications";
 import type { ChatLine, ChatPart } from "./shared";
 import { chatStyles } from "./shared";
-import "./ConversationMeter";
 import "./FormattedText";
 import "./ToolExecutionView";
 import "./ExtensionUiCards";
@@ -66,15 +65,6 @@ function isSessionNotificationTarget(value: unknown): value is SessionNotificati
     && typeof Reflect.get(value, "machineId") === "string"
     && typeof Reflect.get(value, "cwd") === "string"
     && typeof Reflect.get(value, "sessionId") === "string";
-}
-
-function clampPercent(value: number): number {
-  return clampNumber(value, 0, 100);
-}
-
-function clampNumber(value: number, min: number, max: number): number {
-  if (!Number.isFinite(value)) return min;
-  return Math.min(max, Math.max(min, value));
 }
 
 function isChatScrollKey(key: string): boolean {
@@ -256,7 +246,6 @@ export class ChatView extends LitElement {
   @state() private zoomedImage: { src: string; alt: string } | undefined = undefined;
   @state() private expandedMetaKey: string | undefined;
   @state() private copiedMessageKey: string | undefined;
-  @state() private currentConversationIndex: number | undefined;
   @state() private collapsedNotificationTargetKeys: ReadonlySet<string> = new Set();
   @state() private retainedEmptyNotificationTrayTargetKey: string | undefined;
   private pendingNotificationFocus: PendingNotificationFocus | undefined;
@@ -266,7 +255,6 @@ export class ChatView extends LitElement {
   private suppressLoadMoreRequests = false;
   private loadMoreCheckFrame: number | undefined;
   private scrollToBottomFrame: number | undefined;
-  private conversationRailFrame: number | undefined;
   private groupedMessagesInput?: ChatLine[];
   private groupedMessagesStart = 0;
   private groupedMessagesCache: ChatGroup[] = [];
@@ -330,7 +318,6 @@ export class ChatView extends LitElement {
     if (this.restoreScrollFrame !== undefined) cancelAnimationFrame(this.restoreScrollFrame);
     if (this.loadMoreCheckFrame !== undefined) cancelAnimationFrame(this.loadMoreCheckFrame);
     if (this.scrollToBottomFrame !== undefined) cancelAnimationFrame(this.scrollToBottomFrame);
-    if (this.conversationRailFrame !== undefined) cancelAnimationFrame(this.conversationRailFrame);
     window.removeEventListener("resize", this.onViewportResize);
     window.removeEventListener("pagehide", this.onPageHide);
     window.visualViewport?.removeEventListener("resize", this.onViewportResize);
@@ -389,7 +376,6 @@ export class ChatView extends LitElement {
       if (this.followingLatestUntilBottom) this.continueFollowingLatest();
       else if (this.pinnedToBottom) this.scrollToBottom();
     }
-    if (changed.has("messages") || changed.has("messageStart") || changed.has("messageTotal") || changed.has("hasMore") || changed.has("loadingMore")) this.scheduleConversationRailUpdate();
     if (changed.has("messages") || changed.has("messageStart") || changed.has("hasMore") || changed.has("loadingMore")) this.continuePendingScrollRestore();
     if (changed.has("messages") || changed.has("hasMore") || changed.has("loadingMore")) this.requestLoadMoreIfNeeded();
     if (changed.has("messages") || changed.has("messageStart") || changed.has("messageEnd") || changed.has("hasMore") || changed.has("loadingMore") || changed.has("isSendingPrompt") || changed.has("isReceivingPartialStream") || changed.has("isCompacting") || changed.has("status") || changed.has("activity")) this.refreshJumpToLatest();
@@ -418,7 +404,6 @@ export class ChatView extends LitElement {
       ${this.renderTopNotices()}
       ${this.renderNotificationLiveRegions()}
       <div class=${`chat-wrap${hasLiveStrip ? " has-live-strip" : ""}${this.showJumpToLatest ? " has-jump-to-latest" : ""}`}>
-        ${this.renderConversationRail()}
         <div class=${`chat${hasLiveStrip ? " has-live-strip" : ""}${this.showJumpToLatest ? " has-jump-to-latest" : ""}`} @scroll=${() => { this.onScroll(); }} @wheel=${(event: WheelEvent) => { this.onWheel(event); }} @pointerdown=${(event: PointerEvent) => { this.onPointerDown(event); }} @pointerup=${this.onPointerUp} @pointercancel=${this.onPointerUp} @keydown=${(event: KeyboardEvent) => { this.onKeydown(event); }} @keyup=${(event: KeyboardEvent) => { this.onKeyup(event); }} @touchstart=${(event: TouchEvent) => { this.onTouchStart(event); }} @touchmove=${(event: TouchEvent) => { this.onTouchMove(event); }}>
           ${this.renderHistoryBoundary()}
           ${repeat(
@@ -731,26 +716,6 @@ export class ChatView extends LitElement {
     return null;
   }
 
-  private renderConversationRail() {
-    if (!this.messages.length || this.messageTotal <= 0) return null;
-    const total = this.conversationDisplayTotal();
-    const position = this.conversationPositionPercent(total);
-    const loadedPercent = this.hasMore ? clampPercent((this.messages.length / total) * 100) : 100;
-    return html`<conversation-meter .positionPercent=${position} .loadedPercent=${loadedPercent}></conversation-meter>`;
-  }
-
-  private conversationDisplayTotal(): number {
-    if (!this.hasMore && this.messageStart === 0) return Math.max(1, this.messages.length);
-    return Math.max(1, this.messageTotal, this.messageStart + this.messages.length);
-  }
-
-  private conversationPositionPercent(total = this.conversationDisplayTotal()): number {
-    if (total <= 1) return 100;
-    const fallbackIndex = this.pinnedToBottom ? this.messageStart + this.messages.length - 1 : this.messageStart;
-    const index = clampNumber(this.currentConversationIndex ?? fallbackIndex, 0, total - 1);
-    return clampPercent((index / (total - 1)) * 100);
-  }
-
   private renderHistoryBoundary() {
     const range = this.historyRangeLabel();
     if (this.loadingMore) return html`<div class="history-boundary"><span>Loading earlier messages…</span>${range}</div>`;
@@ -963,7 +928,6 @@ export class ChatView extends LitElement {
     this.requestLoadMoreIfNeeded();
     this.updatePinnedToBottomFromScroll();
     this.refreshJumpToLatest();
-    this.scheduleConversationRailUpdate();
     if (!this.suppressScrollSave) this.scheduleScrollPositionSave();
   }
 
@@ -1284,42 +1248,12 @@ export class ChatView extends LitElement {
     });
   }
 
-  private scheduleConversationRailUpdate(): void {
-    if (this.conversationRailFrame !== undefined) return;
-    this.conversationRailFrame = requestAnimationFrame(() => {
-      this.conversationRailFrame = undefined;
-      this.updateConversationRailPosition();
-    });
-  }
-
-  private updateConversationRailPosition(): void {
-    if (!this.messages.length || this.messageTotal <= 0) {
-      this.currentConversationIndex = undefined;
-      return;
-    }
-    const total = this.conversationDisplayTotal();
-    const article = this.firstVisibleArticle();
-    const index = Number(article?.dataset["index"]);
-    if (Number.isFinite(index)) {
-      this.currentConversationIndex = clampNumber(index, 0, Math.max(0, total - 1));
-      return;
-    }
-    this.currentConversationIndex = clampNumber(this.pinnedToBottom ? this.messageStart + this.messages.length - 1 : this.messageStart, 0, Math.max(0, total - 1));
-  }
-
   private scrollMarkers(): HTMLElement[] {
     return Array.from(this.renderRoot.querySelectorAll<HTMLElement>(".scroll-marker"));
   }
 
   private scrollMarkerAt(markerId: string): HTMLElement | undefined {
     return this.scrollMarkers().find((marker) => marker.dataset["markerId"] === markerId);
-  }
-
-  private firstVisibleArticle(): HTMLElement | undefined {
-    const chat = this.chat;
-    if (chat === undefined) return undefined;
-    const primaryArticles = Array.from(this.renderRoot.querySelectorAll<HTMLElement>("article.msg"));
-    return findFirstVisibleArticle(chat, primaryArticles) ?? findFirstVisibleArticle(chat, this.articles());
   }
 
   private articles(): HTMLElement[] {

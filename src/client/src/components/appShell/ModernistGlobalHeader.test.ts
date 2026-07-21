@@ -40,8 +40,9 @@ describe("ModernistGlobalHeader", () => {
     expect(onSelect).toHaveBeenNthCalledWith(5, "actions");
   });
 
-  it("shows the active-session pill only when sessions are active", () => {
+  it("shows the active-session pill next to Actions only when sessions are active", () => {
     const header = new ModernistGlobalHeader();
+    header.onToggleTheme = vi.fn();
     header.activeCount = 0;
     expect(templateText(header.render())).not.toContain("active-pill");
 
@@ -49,6 +50,8 @@ describe("ModernistGlobalHeader", () => {
     const markup = templateText(header.render());
     expect(markup).toContain("active-pill");
     expect(markup).toContain("3 active");
+    expect(markup.indexOf("Actions")).toBeLessThan(markup.indexOf("active-pill"));
+    expect(markup.indexOf("active-pill")).toBeLessThan(markup.indexOf("theme-control"));
   });
 
   it("renders the theme toggle only when a handler is provided", () => {

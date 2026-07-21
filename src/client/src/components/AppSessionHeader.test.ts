@@ -29,6 +29,20 @@ describe("AppSessionHeader", () => {
     expect(markup).not.toContain("Toggle light and dark theme");
   });
 
+  it("uses filled metadata labels and identifies the branch with an icon", () => {
+    const header = new AppSessionHeader();
+    header.session = session();
+
+    const markup = templateMarkup(header.render());
+    expect(markup).toContain('class="session-detail branch-detail"');
+    expect(markup).toContain('class="branch-icon"');
+    expect(AppSessionHeader.styles.cssText).toContain("strong { min-width: 0; overflow: hidden; font-family:");
+    expect(AppSessionHeader.styles.cssText).not.toContain("strong { min-width: 0; overflow: hidden; background:");
+    expect(AppSessionHeader.styles.cssText).toContain(".session-detail { display: inline-flex; align-items: center; gap: 0.3125rem;");
+    expect(AppSessionHeader.styles.cssText).toContain("background: var(--pi-surface); color: var(--pi-text-secondary, var(--pi-text));");
+    expect(AppSessionHeader.styles.cssText).not.toContain("border: 1px solid var(--pi-border-muted); color:");
+  });
+
   it("only renders an accessible Stop control when stopping active work is supported", () => {
     const header = new AppSessionHeader();
     const onStop = vi.fn();
@@ -65,7 +79,9 @@ describe("AppSessionHeader", () => {
 
     expect(templateMarkup(header.render())).toContain('class="session-stop-control"');
     expect(templateMarkup(header.render())).toContain('role="status"');
+    expect(templateMarkup(header.render())).toContain('class="status-icon"');
     expect(valuesDeep(header.render())).toContain("idle");
+    expect(AppSessionHeader.styles.cssText).toContain(".status-badge.working, .status-badge.shell, .status-badge.tool, .status-badge.compacting { background: var(--pi-selection-bg); color: var(--pi-accent); }");
     expect(AppSessionHeader.styles.cssText).toContain(".session-detail, .session-stop-control { display: none; }");
     expect(AppSessionHeader.styles.cssText).toContain("button { min-width: 2.75rem; min-height: 2.75rem; height: 2.75rem; }");
   });

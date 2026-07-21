@@ -742,8 +742,7 @@ export const promptEditorStyles = css`
      inactive duplicate out of both keyboard focus and the accessibility tree. */
   :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .legacy-composer { display: none; }
   :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .modernist-composer { display: grid; }
-  :host-context(:root[data-pi-web-theme^="themes:modernist-"]) { box-sizing: border-box; padding: 0 1rem 1rem; background: var(--pi-bg); }
-  :host-context(:root[data-pi-web-theme^="themes:modernist-"]) footer { width: min(48rem, 100%); margin: 0 auto; gap: 0.5rem; padding: 0.75rem; border: 2px solid var(--pi-border); border-radius: 1rem; background: var(--pi-surface); box-shadow: 0 8px 24px var(--pi-shadow-soft); }
+  :host-context(:root[data-pi-web-theme^="themes:modernist-"]) footer { gap: 0.5rem; padding: 0.75rem; border-top-width: 2px; }
   :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .modernist-actions { grid-template-columns: minmax(0, 1fr) max-content; gap: 0.5rem; align-items: center; overflow: hidden; }
   :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .action-context { display: flex; align-items: center; gap: 0.5rem; min-width: 0; max-width: 28rem; overflow: hidden; }
   :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .compact-status { display: flex; flex: 0 1 auto; gap: 0.5rem; min-width: 0; font-size: 0.75rem; }
@@ -758,7 +757,7 @@ export const promptEditorStyles = css`
   :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .markdown-editor .cm-editor { border: 0; border-radius: 0; background: transparent; }
   :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .markdown-editor .cm-content { padding: 8px; }
   :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .mode-hint { right: 8px; max-width: calc(100% - 16px); }
-  :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .select-model, :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .select-thinking { background: var(--pi-surface); color: var(--pi-muted); }
+  :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .select-model, :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .select-thinking { background: var(--pi-surface); color: var(--pi-text-secondary, var(--pi-text)); }
   :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .steer-button, :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .stop-button { background: transparent; color: var(--pi-text); }
   :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .send-button:not(:disabled) { border-color: var(--pi-accent); background: var(--pi-accent); color: var(--pi-bg); font-family: Archivo, var(--pi-body-font-family, system-ui, sans-serif); font-weight: 800; }
   :host-context(:root[data-pi-web-theme^="themes:modernist-"]) button:focus-visible, :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .markdown-editor .cm-focused { outline: 2px solid var(--pi-accent); outline-offset: 2px; }
@@ -786,8 +785,6 @@ export const promptEditorStyles = css`
     button { padding: 5px 7px; }
   }
   @container (max-width: 38rem) {
-    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) { padding: 0 0.5rem 0.5rem; }
-    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) footer { border-radius: 0.875rem; }
     :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .modernist-actions { grid-template-columns: minmax(0, 1fr); overflow: visible; }
     :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .action-context { max-width: 100%; overflow: visible; }
     :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .action-button { width: 2.75rem; height: 2.75rem; min-width: 2.75rem; padding: 0; }
