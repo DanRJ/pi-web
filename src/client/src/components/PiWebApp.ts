@@ -2709,7 +2709,6 @@ export class PiWebApp extends LitElement {
               .renameUnavailableMessage=${this.renameUnavailableMessage()}
               .onRename=${(opener: HTMLElement) => { const selected = state.selectedSession; if (selected !== undefined) this.openSessionRenameDialog(selected, selectedMachineId(state), opener); }}
               .onStop=${this.handleStopActiveWork}
-              .onToggleTheme=${this.handleToggleThemeAppearance}
             ></app-session-header>
             ${this.renderChatView(state, state.selectedSession)}
             <prompt-editor .sessionId=${state.selectedSession.id} .cwd=${state.selectedWorkspace?.path} .machineId=${selectedMachineId(state)} .projectId=${state.selectedWorkspace?.projectId} .workspaceId=${state.selectedWorkspace?.id} .workspaceScopedFileSuggestions=${this.supportsWorkspaceFileSuggestions()} .disabled=${state.selectedSession.archived === true} .canSteer=${state.status?.isStreaming === true} .isCompacting=${state.status?.isCompacting === true} .canStop=${this.canStopActiveWork(state.status)} .clearsServerQueue=${this.stopClearsServerQueue(state.status)} .status=${state.status} .availableThinkingLevels=${state.availableThinkingLevels} .sending=${state.sendingPrompts[state.selectedSession.id] === true} .onSend=${this.handleSendPrompt} .onStop=${this.handleStopActiveWork} .onSelectModel=${this.handleSelectModel} .onSelectThinking=${this.handleSelectThinking} .onFocusChange=${this.handlePromptFocusChange}></prompt-editor>

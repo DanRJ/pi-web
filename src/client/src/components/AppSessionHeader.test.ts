@@ -20,20 +20,13 @@ describe("sessionStatusPresentation", () => {
 });
 
 describe("AppSessionHeader", () => {
-  it("renders an accessible theme control and calls its callback", () => {
+  it("does not duplicate the global theme control in the session header", () => {
     const header = new AppSessionHeader();
-    const onToggleTheme = vi.fn();
     header.session = session();
-    header.onToggleTheme = onToggleTheme;
 
-    const template = header.render();
-    expect(templateStrings(template).join("")).toContain('aria-label="Toggle light and dark theme"');
-
-    // Template extraction is proportionate here: this narrow test verifies the
-    // Lit callback binding without introducing a browser custom-element harness.
-    const callback = callbackAfterMarker(template, 'aria-label="Toggle light and dark theme"');
-    callback();
-    expect(onToggleTheme).toHaveBeenCalledOnce();
+    const markup = templateMarkup(header.render());
+    expect(markup).not.toContain("theme-control");
+    expect(markup).not.toContain("Toggle light and dark theme");
   });
 
   it("only renders an accessible Stop control when stopping active work is supported", () => {
@@ -65,7 +58,7 @@ describe("AppSessionHeader", () => {
     expect(templateMarkup(header.render())).not.toContain("clear queued server messages");
   });
 
-  it("keeps a textual compact status and Stop beside title and theme controls", () => {
+  it("keeps a textual compact status and Stop beside the session title", () => {
     const header = new AppSessionHeader();
     header.session = session();
     header.canStop = true;

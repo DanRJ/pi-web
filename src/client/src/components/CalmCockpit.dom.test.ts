@@ -54,7 +54,7 @@ describe("Calm Cockpit rendered controls", () => {
     document.body.append(header);
     await header.updateComplete;
 
-    expect(header.shadowRoot?.querySelectorAll(".session-actions button")).toHaveLength(2);
+    expect(header.shadowRoot?.querySelectorAll(".session-actions button")).toHaveLength(1);
     expect(AppSessionHeader.styles.cssText).toContain("button { min-width: 2.75rem; min-height: 2.75rem; height: 2.75rem; }");
   });
 

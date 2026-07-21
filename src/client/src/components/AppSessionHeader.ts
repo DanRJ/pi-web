@@ -24,7 +24,6 @@ export class AppSessionHeader extends LitElement {
   @property({ type: String }) renameUnavailableMessage = "Update and restart Pi-Web on this machine to rename sessions.";
   @property({ attribute: false }) onRename?: (opener: HTMLElement) => void;
   @property({ attribute: false }) onStop?: () => void;
-  @property({ attribute: false }) onToggleTheme?: () => void;
 
   override render() {
     const session = this.session;
@@ -56,7 +55,6 @@ export class AppSessionHeader extends LitElement {
             ? html`<button type="button" class="session-stop-control" aria-label="Stop session work and clear queued server messages" title="Stop work and clear queued server messages" @click=${() => { this.onStop?.(); }}>Stop</button>`
             : html`<button type="button" class="session-stop-control" aria-label="Stop session work" title="Stop session work" @click=${() => { this.onStop?.(); }}>Stop</button>`)
             : null}
-          <button type="button" class="theme-control" aria-label="Toggle light and dark theme" title="Toggle light and dark theme" @click=${() => { this.onToggleTheme?.(); }}>${themeIcon()}</button>
         </div>
       </header>
     `;
@@ -79,7 +77,6 @@ export class AppSessionHeader extends LitElement {
     .session-stop-control, .rename-control { padding-inline: 0.5625rem; white-space: nowrap; }
     .session-stop-control { border-color: var(--pi-danger); color: var(--pi-danger); }
     .rename-unavailable { color: var(--pi-muted); font-size: .75rem; white-space: nowrap; }
-    svg { width: 1rem; height: 1rem; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
     @media (max-width: 767px) {
       header { padding: var(--pi-space-2, 0.5rem) var(--pi-space-3, 0.75rem); }
       .session-detail, .session-stop-control { display: none; }
@@ -111,8 +108,4 @@ export function sessionStateLabel(kind: SessionShellStatus): "running" | "waitin
   if (kind === "waiting") return "waiting";
   if (kind === "idle" || kind === "error") return "idle";
   return "running";
-}
-
-function themeIcon() {
-  return html`<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v3M12 19v3M4.9 4.9 7 7M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1 7 17M17 7l2.1-2.1"></path></svg>`;
 }
