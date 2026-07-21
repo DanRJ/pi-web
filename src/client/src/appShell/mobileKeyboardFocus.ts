@@ -75,6 +75,19 @@ export function updateMobileKeyboardFocus(
   return { baselineWidth, baselineHeight, active: reduction >= minimumReduction };
 }
 
+/**
+ * True when a recognized keyboard just closed while the composer still holds
+ * focus. Android hides the soft keyboard without blurring the editor, so the
+ * caller releases focus to clear the lingering caret and focus ring.
+ */
+export function keyboardDismissedWhileComposerFocused(
+  previous: MobileKeyboardFocusState,
+  next: MobileKeyboardFocusState,
+  composerFocused: boolean,
+): boolean {
+  return previous.active && !next.active && composerFocused;
+}
+
 function isUsableViewport(viewport: VisualViewportSnapshot): boolean {
   return Number.isFinite(viewport.width) && viewport.width > 0
     && Number.isFinite(viewport.height) && viewport.height > 0

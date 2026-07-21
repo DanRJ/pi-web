@@ -36,7 +36,7 @@ import { loadExternalPlugins } from "../plugins/external";
 import { PluginRegistry, installPluginRuntimeScope, installWorkspacePanelScope } from "../plugins/registry";
 import { queryNamespace, readNamespacedString, setNamespacedQueryKey } from "../namespacedQueryArgs";
 import { AppShellController } from "../appShell/appShellController";
-import { initialMobileKeyboardFocusState, updateMobileKeyboardFocus, type VisualViewportSnapshot } from "../appShell/mobileKeyboardFocus";
+import { initialMobileKeyboardFocusState, keyboardDismissedWhileComposerFocused, updateMobileKeyboardFocus, type VisualViewportSnapshot } from "../appShell/mobileKeyboardFocus";
 import { BrowserResumeController } from "../appShell/browserResumeController";
 import { mobileDestinationFromMainView, type MobileDestination } from "../appShell/mobileDestination";
 import { NavigationSectionsController, type NavigationSection } from "../appShell/navigationState";
@@ -2492,12 +2492,18 @@ export class PiWebApp extends LitElement {
   }
 
   private refreshMobileKeyboardFocus(): void {
-    this.mobileKeyboardFocus = updateMobileKeyboardFocus(this.mobileKeyboardFocus, {
+    const previous = this.mobileKeyboardFocus;
+    this.mobileKeyboardFocus = updateMobileKeyboardFocus(previous, {
       isMobile: this.appShell.isMobileNavigationLayout,
       isChatDestination: this.mobileDestination === "chat",
       composerFocused: this.composerFocused,
       viewport: this.visualViewportSnapshot,
     });
+    // Android hides the soft keyboard without blurring CodeMirror, leaving a
+    // lingering caret and focus ring. Release focus when the keyboard closes.
+    if (keyboardDismissedWhileComposerFocused(previous, this.mobileKeyboardFocus, this.composerFocused)) {
+      this.promptEditor?.blurInput();
+    }
   }
 
   /** A hidden destination must never leave its CodeMirror input owning an IME. */
