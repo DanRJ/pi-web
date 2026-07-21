@@ -3,17 +3,23 @@ import { templateClickHandlerForText, templateEventHandlerAfterMarker, templateT
 import { ModernistGlobalHeader } from "./ModernistGlobalHeader";
 
 describe("ModernistGlobalHeader", () => {
-  it("exposes the complete global destination set with one truthful active destination", () => {
+  it("centers the global destinations and uses the PI WEB brand for Dashboard", () => {
     const header = new ModernistGlobalHeader();
     header.activeDestination = "tools";
 
     const markup = templateText(header.render());
 
+    expect(markup).toContain('aria-label="Open dashboard"');
+    expect(markup).toContain('href="?page=dashboard"');
+    expect(markup).toContain("PI WEB");
     expect(markup).toContain('nav aria-label="Global destinations"');
-    for (const label of ["Dashboard", "Chat", "Tools", "Settings", "Actions"]) expect(markup).toContain(label);
+    for (const label of ["Chat", "Tools", "Settings", "Actions"]) expect(markup).toContain(label);
+    expect(markup).not.toContain(">Dashboard</button>");
     expect(markup).toContain('data-destination=tools');
     expect(markup).toContain('aria-current=page');
     expect(markup).not.toContain('aria-haspopup=dialog');
+    expect(ModernistGlobalHeader.styles.cssText).toContain("grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr)");
+    expect(ModernistGlobalHeader.styles.cssText).toContain("font: 600 1rem");
   });
 
   it("forwards each semantic destination through its sole callback", () => {
@@ -23,7 +29,7 @@ describe("ModernistGlobalHeader", () => {
     const template = header.render();
 
     // This narrow extraction tests Lit click wiring; the component has no DOM-independent action seam.
-    for (const label of ["Dashboard", "Chat", "Tools", "Settings", "Actions"]) {
+    for (const label of ["PI WEB", "Chat", "Tools", "Settings", "Actions"]) {
       templateClickHandlerForText(template, label)(new Event("click"));
     }
 
