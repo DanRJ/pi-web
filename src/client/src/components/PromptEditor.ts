@@ -314,6 +314,7 @@ export class PromptEditor extends LitElement {
       parent: this.editorHost,
       state: EditorState.create({
         doc: this.draft,
+        selection: EditorSelection.cursor(this.draft.length),
         extensions: [
           history(),
           markdown(),
