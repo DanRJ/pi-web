@@ -47,7 +47,13 @@ export class SessionStorageSessionSelectionMemory implements SessionSelectionMem
 
 export function selectPreferredSession(sessions: SessionInfo[], options?: { targetSessionId?: string | undefined; latestSessionId?: string | undefined }): SessionInfo | undefined {
   const targetSessionId = options?.targetSessionId;
-  if (targetSessionId !== undefined && targetSessionId !== "") return sessionByIdOrPrefix(sessions, targetSessionId);
+  if (targetSessionId !== undefined && targetSessionId !== "") {
+    // A restored route may point at a session id that no longer matches the
+    // freshly loaded list. Fall through to the remembered/first session rather
+    // than stranding the user on the empty "select a session" screen.
+    const target = sessionByIdOrPrefix(sessions, targetSessionId);
+    if (target !== undefined) return target;
+  }
 
   const latestSessionId = options?.latestSessionId;
   if (latestSessionId !== undefined && latestSessionId !== "") return sessions.find((session) => session.id === latestSessionId) ?? sessions.find((session) => session.archived !== true);

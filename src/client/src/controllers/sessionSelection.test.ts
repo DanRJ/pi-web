@@ -16,6 +16,18 @@ describe("selectPreferredSession", () => {
     expect(selectPreferredSession([session], { targetSessionId: "abc" })).toBe(session);
   });
 
+  it("falls back to the remembered session when a restored target id is no longer present", () => {
+    const sessions = [testSession("s1"), testSession("s2")];
+
+    expect(selectPreferredSession(sessions, { targetSessionId: "gone", latestSessionId: "s2" })?.id).toBe("s2");
+  });
+
+  it("falls back to the first available session when neither the target nor latest id is present", () => {
+    const sessions = [{ ...testSession("s1"), archived: true }, testSession("s2")];
+
+    expect(selectPreferredSession(sessions, { targetSessionId: "gone", latestSessionId: "also-gone" })?.id).toBe("s2");
+  });
+
   it("remembers the latest selected session when no explicit target is provided", () => {
     const sessions = [testSession("s1"), testSession("s2")];
 
@@ -40,11 +52,6 @@ describe("selectPreferredSession", () => {
     expect(selectPreferredSession(sessions, { latestSessionId: "old" })?.id).toBe("s2");
   });
 
-  it("returns undefined for an invalid explicit target", () => {
-    const sessions = [testSession("s1"), testSession("s2")];
-
-    expect(selectPreferredSession(sessions, { targetSessionId: "old", latestSessionId: "s2" })).toBeUndefined();
-  });
 });
 
 describe("InMemorySessionSelectionMemory", () => {
