@@ -34,6 +34,19 @@ describe("ChatView Jump to latest", () => {
     expect(Reflect.get(view, "showJumpToLatest")).toBe(false);
   });
 
+  it("positions Latest above the mounted activity strip", async () => {
+    const view = await mountedView();
+    view.isReceivingPartialStream = true;
+    chatViewport(view, 300, 1000, 400);
+    refreshJump(view);
+    await view.updateComplete;
+
+    const wrap = view.shadowRoot?.querySelector<HTMLElement>(".chat-wrap");
+    expect(wrap?.classList.contains("has-live-strip")).toBe(true);
+    expect(wrap?.classList.contains("has-jump-to-latest")).toBe(true);
+    expect(ChatView.styles.cssText).toContain(".chat-wrap.has-live-strip .jump-to-latest { bottom: 4rem; }");
+  });
+
   it.each(["touch", "pen"] as const)("keeps the focused composer and activates exactly once for a %s Jump to latest while keyboard focus mode is active", async (pointerType) => {
     const composer = document.createElement("textarea");
     let composerFocused = false;

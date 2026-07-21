@@ -417,7 +417,7 @@ export class ChatView extends LitElement {
     return html`
       ${this.renderTopNotices()}
       ${this.renderNotificationLiveRegions()}
-      <div class=${this.showJumpToLatest ? "chat-wrap has-jump-to-latest" : "chat-wrap"}>
+      <div class=${`chat-wrap${hasLiveStrip ? " has-live-strip" : ""}${this.showJumpToLatest ? " has-jump-to-latest" : ""}`}>
         ${this.renderConversationRail()}
         <div class=${`chat${hasLiveStrip ? " has-live-strip" : ""}${this.showJumpToLatest ? " has-jump-to-latest" : ""}`} @scroll=${() => { this.onScroll(); }} @wheel=${(event: WheelEvent) => { this.onWheel(event); }} @pointerdown=${(event: PointerEvent) => { this.onPointerDown(event); }} @pointerup=${this.onPointerUp} @pointercancel=${this.onPointerUp} @keydown=${(event: KeyboardEvent) => { this.onKeydown(event); }} @keyup=${(event: KeyboardEvent) => { this.onKeyup(event); }} @touchstart=${(event: TouchEvent) => { this.onTouchStart(event); }} @touchmove=${(event: TouchEvent) => { this.onTouchMove(event); }}>
           ${this.renderHistoryBoundary()}

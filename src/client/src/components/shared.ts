@@ -450,7 +450,7 @@ export const chatStyles = css`
   .live-strip { position: absolute; left: 1rem; right: 1rem; bottom: 0.75rem; z-index: 20; display: flex; align-items: center; gap: 0.5rem; min-width: 0; box-sizing: border-box; border: var(--pi-divider-width, 1px) solid var(--pi-border); border-radius: var(--pi-pill-radius, 999px); background: var(--pi-bg-overlay); color: var(--pi-muted); padding: 0.375rem 0.625rem; font-size: 0.75rem; pointer-events: none; box-shadow: 0 8px 28px var(--pi-shadow); backdrop-filter: blur(6px); }
   .live-strip.active { border-color: var(--pi-success-border); color: var(--pi-success); background: var(--pi-success-bg-overlay); }
   .live-strip.error { border-color: var(--pi-danger); color: var(--pi-danger); }
-  .chat-wrap.has-jump-to-latest .live-strip { bottom: 4rem; }
+  .chat-wrap.has-live-strip .jump-to-latest { bottom: 4rem; }
   .activity-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .dot { width: 0.5rem; height: 0.5rem; border-radius: 50%; background: currentColor; opacity: .45; flex: 0 0 auto; }
   .live-strip.active .dot { animation: pulse 1s ease-in-out infinite; opacity: 1; }
