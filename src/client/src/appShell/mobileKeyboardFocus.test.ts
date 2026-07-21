@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { initialMobileKeyboardFocusState, updateMobileKeyboardFocus, type MobileKeyboardFocusInput, type MobileKeyboardFocusState, type VisualViewportSnapshot } from "./mobileKeyboardFocus";
+import { initialMobileKeyboardFocusState, keyboardDismissedWhileComposerFocused, updateMobileKeyboardFocus, type MobileKeyboardFocusInput, type MobileKeyboardFocusState, type VisualViewportSnapshot } from "./mobileKeyboardFocus";
+
+const activeState: MobileKeyboardFocusState = { baselineWidth: 390, baselineHeight: 800, active: true };
+const inactiveState: MobileKeyboardFocusState = { baselineWidth: 390, baselineHeight: 800, active: false };
 
 const stableViewport: VisualViewportSnapshot = { hasVisualViewport: true, width: 390, height: 800, offsetTop: 0, scale: 1 };
 
@@ -12,6 +15,15 @@ function update(state: MobileKeyboardFocusState, overrides: Partial<MobileKeyboa
     ...overrides,
   });
 }
+
+describe("keyboardDismissedWhileComposerFocused", () => {
+  it("fires only when a recognized keyboard closes while the composer still holds focus", () => {
+    expect(keyboardDismissedWhileComposerFocused(activeState, inactiveState, true)).toBe(true);
+    expect(keyboardDismissedWhileComposerFocused(activeState, inactiveState, false)).toBe(false);
+    expect(keyboardDismissedWhileComposerFocused(inactiveState, inactiveState, true)).toBe(false);
+    expect(keyboardDismissedWhileComposerFocused(activeState, activeState, true)).toBe(false);
+  });
+});
 
 describe("mobile keyboard focus classifier", () => {
   it("requires focused mobile Chat plus a real, unzoomed viewport height reduction at both boundaries", () => {
