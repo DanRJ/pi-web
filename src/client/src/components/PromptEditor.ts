@@ -182,7 +182,7 @@ export class PromptEditor extends LitElement {
 
   private renderAttachButton(template: "legacy" | "modernist", busy: boolean) {
     const modernist = template === "modernist";
-    return html`<button type="button" class=${`${template}-composer editor-attach icon-button${modernist ? " action-button" : ""}`} ?disabled=${busy} title="Attach files" aria-label="Attach files" @click=${() => { this.attachmentInput?.click(); }}>${renderAttachIcon()}${modernist ? html`<span class="action-label" aria-hidden="true">Attach</span>` : null}</button>`;
+    return html`<button type="button" class=${`${template}-composer editor-attach icon-button${modernist ? " action-button" : ""}`} ?disabled=${busy} title="Attach files" aria-label="Attach files" @pointerdown=${(event: PointerEvent) => { event.preventDefault(); }} @click=${() => { this.attachmentInput?.click(); }}>${renderAttachIcon()}${modernist ? html`<span class="action-label" aria-hidden="true">Attach</span>` : null}</button>`;
   }
 
   private renderCompactStatus(template: "legacy" | "modernist") {
