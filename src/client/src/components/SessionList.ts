@@ -9,6 +9,7 @@ import { actionMenuPanelStyle } from "./actionMenu";
 import { renderActionActivityIndicator, type ActivityIndicatorKind } from "./activityBadge";
 import type { KeyboardNavigableSection } from "./navigationFocus";
 import { activateSelectableRow, focusSelectedOrFirstSelectableRow, handleSelectableRowKeyboard } from "./selectableRow";
+import { renderSessionIcon } from "./hierarchyIcons";
 import { listStyles } from "./shared";
 
 function sessionLabel(session: SessionInfo): string {
@@ -302,7 +303,10 @@ export class SessionList extends LitElement implements KeyboardNavigableSection 
       >
         <div class="action-main ${selectionActive ? "selecting" : ""}">
           ${showsCheckbox ? html`<input class="session-checkbox" type="checkbox" aria-label=${`Select ${sessionLabel(session)}`} .checked=${bulkSelected} @click=${(event: MouseEvent) => { event.stopPropagation(); }} @change=${() => { this.toggleSelected(session.id); }}>` : null}
-          <span class="action-name-line"><span class="action-name" dir="auto">${row.depth > 0 ? html`<span class="tree-marker">↳</span>` : null}${sessionLabel(session)}${row.depth > 2 ? html` <span class="badge">depth ${row.depth}</span>` : null}${row.hasMissingParent ? html` <span class="badge">parent unavailable</span>` : null}</span></span><small>${this.renderSessionMetaPrefix(session, status, activity)}${String(session.messageCount)} messages</small>
+          <div class="hierarchy-row-content">
+            ${renderSessionIcon()}
+            <div class="hierarchy-row-text"><span class="action-name-line"><span class="action-name" dir="auto">${row.depth > 0 ? html`<span class="tree-marker">↳</span>` : null}${sessionLabel(session)}${row.depth > 2 ? html` <span class="badge">depth ${row.depth}</span>` : null}${row.hasMissingParent ? html` <span class="badge">parent unavailable</span>` : null}</span></span><small>${this.renderSessionMetaPrefix(session, status, activity)}${String(session.messageCount)} messages</small></div>
+          </div>
           ${this.renderActivity(session)}
         </div>
         <div class="action-menu">

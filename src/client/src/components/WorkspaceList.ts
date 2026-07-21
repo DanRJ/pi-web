@@ -7,6 +7,7 @@ import { actionMenuPanelStyle } from "./actionMenu";
 import { renderActionActivityIndicator } from "./activityBadge";
 import type { KeyboardNavigableSection } from "./navigationFocus";
 import { activateSelectableRow, focusSelectedOrFirstSelectableRow, handleSelectableRowKeyboard } from "./selectableRow";
+import { renderWorkspaceIcon } from "./hierarchyIcons";
 import { listStyles } from "./shared";
 import { renderWorkspaceLabelInlineItems } from "./workspaceLabel";
 
@@ -98,15 +99,20 @@ export class WorkspaceList extends LitElement implements KeyboardNavigableSectio
 
   private renderWorkspaceMain(label: string, items: WorkspaceLabelItem[], workspace: Workspace): TemplateResult {
     return html`
-      <span class="workspace-primary">
-        <span class="workspace-primary-label">${label}</span>
-        ${this.isDeleting(workspace) ? html`<span class="workspace-status">Deleting…</span>` : null}
-      </span>
-      ${items.length === 0 ? null : html`
-        <small class="workspace-secondary">
-          <span class="workspace-label">${renderWorkspaceLabelInlineItems(items)}</span>
-        </small>
-      `}
+      <div class="hierarchy-row-content">
+        ${renderWorkspaceIcon()}
+        <div class="hierarchy-row-text">
+          <span class="workspace-primary">
+            <span class="workspace-primary-label">${label}</span>
+            ${this.isDeleting(workspace) ? html`<span class="workspace-status">Deleting…</span>` : null}
+          </span>
+          ${items.length === 0 ? null : html`
+            <small class="workspace-secondary">
+              <span class="workspace-label">${renderWorkspaceLabelInlineItems(items)}</span>
+            </small>
+          `}
+        </div>
+      </div>
       ${this.renderActivity(workspace)}
     `;
   }

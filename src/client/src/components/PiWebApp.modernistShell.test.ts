@@ -16,7 +16,9 @@ describe("PiWebApp Modernist desktop shell", () => {
 
     const header = renderPrivateTemplate(app, "renderModernistGlobalHeader");
     const select = property(header, ".onSelect=");
+    const openNotifications = property(header, ".onOpenNotifications=");
     if (!isDestinationSelect(select)) throw new Error("Modernist global navigation callback unavailable");
+    if (!isVoidCallback(openNotifications)) throw new Error("Modernist notification callback unavailable");
 
     select("settings");
     expect(Reflect.get(app, "settingsSection")).toBe("sessiond");
@@ -32,6 +34,10 @@ describe("PiWebApp Modernist desktop shell", () => {
     select("actions");
     expect(Reflect.get(app, "state")).toMatchObject({ actionPaletteOpen: true });
     expect(property(renderPrivateTemplate(app, "renderModernistGlobalHeader"), ".activeDestination=")).toBe("dashboard");
+
+    select("tools");
+    openNotifications();
+    expect(Reflect.get(app, "state")).toMatchObject({ mainView: "chat" });
   });
 
   it("uses the global header and Modernist hierarchy only for the desktop composition", () => {
@@ -67,10 +73,10 @@ describe("PiWebApp Modernist desktop shell", () => {
     expect(templateText(app.render())).toContain("<workspace-panel");
   });
 
-  it("defines a 56px header, 264px Modernist default sidebar, and no Chat sidecar track in CSS structure", () => {
+  it("defines a 60px header, 264px Modernist default sidebar, and no Chat sidecar track in CSS structure", () => {
     // CSS structure is the testable layout contract; this does not claim browser geometry measurement.
     expect(MODERNIST_NAVIGATION_PANEL_DEFAULT_WIDTH).toBe(264);
-    expect(appStyles.cssText).toContain("grid-template-rows: 56px minmax(0, 1fr)");
+    expect(appStyles.cssText).toContain("grid-template-rows: 60px minmax(0, 1fr)");
     expect(appStyles.cssText).toContain(".shell.modernist-desktop-shell:not(.modernist-tools-expanded):not([data-settings-destination]) > workspace-panel { display: none; }");
     expect(appStyles.cssText).toContain(".shell.modernist-desktop-shell > .workspace-panel-edge { display: none; }");
     expect(appStyles.cssText).toContain(".shell.modernist-desktop-shell main > app-session-header { min-width: 0; overflow: hidden;");
@@ -115,5 +121,9 @@ function isTemplate(value: unknown): value is TemplateResult {
 }
 
 function isDestinationSelect(value: unknown): value is (destination: ModernistGlobalDestination) => void {
+  return typeof value === "function";
+}
+
+function isVoidCallback(value: unknown): value is () => void {
   return typeof value === "function";
 }

@@ -29,6 +29,10 @@ describe("canRemoveMachine", () => {
     await list.updateComplete;
 
     expect(list.shadowRoot?.querySelectorAll(".machine-icon")).toHaveLength(2);
+    const localRow = list.shadowRoot?.querySelector(".machine-hierarchy-row");
+    expect(localRow?.children[0]?.classList.contains("machine-status-slot")).toBe(true);
+    expect(localRow?.children[1]?.classList.contains("machine-icon")).toBe(true);
+    expect(localRow?.children[2]?.classList.contains("hierarchy-row-text")).toBe(true);
     const online = list.shadowRoot?.querySelector<HTMLElement>(".machine-online");
     expect(online?.getAttribute("role")).toBe("img");
     expect(online?.getAttribute("aria-label")).toBe("Online");

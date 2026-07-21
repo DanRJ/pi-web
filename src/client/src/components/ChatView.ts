@@ -299,6 +299,17 @@ export class ChatView extends LitElement {
     this.onClearServerQueue?.();
   };
 
+  /** Expands and focuses the notification tray for the selected session. */
+  openNotifications(): void {
+    const inbox = this.notificationInbox;
+    if (inbox === undefined) return;
+    this.collapsedNotificationTargetKeys = setNotificationTrayCollapsed(this.collapsedNotificationTargetKeys, inbox, false);
+    if (notificationInboxTotalCount(inbox) === 0) this.retainedEmptyNotificationTrayTargetKey = notificationTargetKey(inbox);
+    void this.updateComplete.then(() => {
+      this.renderRoot.querySelector<HTMLElement>("[data-notification-focus='header']")?.focus();
+    });
+  }
+
   override connectedCallback(): void {
     super.connectedCallback();
     window.addEventListener("resize", this.onViewportResize);

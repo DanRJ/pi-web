@@ -73,12 +73,16 @@ export class MachineList extends LitElement implements KeyboardNavigableSection 
         @keydown=${(event: KeyboardEvent) => { this.handleMachineKeydown(event, machine); }}
       >
         <div class="action-main">
-          <span class="action-name machine-primary">
+          <div class="hierarchy-row-content machine-hierarchy-row">
+            <span class="machine-status-slot">${status === "online" ? html`<span class="machine-online" role="img" title="Machine online" aria-label="Online"></span>` : null}</span>
             ${machineIcon(machine.kind)}
-            <span class="machine-primary-label">${machine.name}</span>
-            ${status === "online" ? html`<span class="machine-online" role="img" title="Machine online" aria-label="Online"></span>` : null}
-          </span>
-          <small>${machine.kind === "local" ? "Local Pi Web" : machine.baseUrl ?? "Remote Pi Web"}${statusLabel === undefined ? "" : ` · ${statusLabel}`}</small>
+            <div class="hierarchy-row-text">
+              <span class="action-name machine-primary">
+                <span class="machine-primary-label">${machine.name}</span>
+              </span>
+              <small>${machine.kind === "local" ? "Local Pi Web" : machine.baseUrl ?? "Remote Pi Web"}${statusLabel === undefined ? "" : ` · ${statusLabel}`}</small>
+            </div>
+          </div>
         </div>
         ${hasRemoveAction ? this.renderMachineMenu(machine) : null}
       </div>
@@ -150,10 +154,12 @@ export class MachineList extends LitElement implements KeyboardNavigableSection 
       .machine-row.selected .action-menu-toggle,
       .machine-row.selected.no-actions .action-main { border-radius: 0; }
       .machine-row.selected:focus-visible { border-radius: 0; }
+      .machine-hierarchy-row { grid-template-columns: 7px 14px minmax(0, 1fr); }
+      .machine-status-slot { display: grid; place-items: center; width: 7px; height: 14px; }
       .machine-primary { display: flex; align-items: center; gap: 6px; }
       .machine-primary-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
       .machine-icon { flex: 0 0 auto; width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
-      .machine-online { flex: 0 0 auto; width: 7px; height: 7px; border-radius: 50%; background: var(--pi-machine-online, #f97316); }
+      .machine-online { width: 7px; height: 7px; border-radius: 50%; background: var(--pi-machine-online, #f97316); }
       .machine-menu-panel button.danger { color: var(--pi-danger); }
       .machine-menu-panel button.danger:hover, .machine-menu-panel button.danger:focus { background: color-mix(in srgb, var(--pi-danger) 14%, transparent); }
     `,

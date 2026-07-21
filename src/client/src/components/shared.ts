@@ -125,10 +125,10 @@ export const appStyles = css`
      The legacy workspace width/collapse values remain stored; this composition
      simply does not consume that sidecar track while it is expanded. */
   @media (min-width: 1181px) {
-    /* Modernist desktop owns a separate 56px global row, a hierarchy sidebar,
+    /* Modernist desktop owns a separate 60px global row, a hierarchy sidebar,
        and one post-navigation content track. Workspace state stays mounted in
        Chat without creating an implicit sidecar grid track. */
-    .shell.modernist-desktop-shell { grid-template-columns: var(--navigation-panel-width) var(--pi-divider-width, 2px) minmax(0, 1fr); grid-template-rows: 56px minmax(0, 1fr); }
+    .shell.modernist-desktop-shell { grid-template-columns: var(--navigation-panel-width) var(--pi-divider-width, 2px) minmax(0, 1fr); grid-template-rows: 60px minmax(0, 1fr); }
     .shell.modernist-desktop-shell > modernist-global-header { grid-column: 1 / -1; grid-row: 1; display: block; min-width: 0; }
     .shell.modernist-desktop-shell > aside { grid-column: 1; grid-row: 2; }
     .shell.modernist-desktop-shell > .navigation-panel-edge { grid-column: 2; grid-row: 2; }
@@ -333,8 +333,11 @@ export const listStyles = css`
   .action-name { display: -webkit-box; max-height: 2.5em; overflow: hidden; overflow-wrap: anywhere; line-height: 1.25; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
   .action-row:not(.selected):hover .action-main { background: var(--pi-surface-hover); }
   .workspace-row .action-main { border-radius: var(--pi-radius-control, 8px) 0 0 var(--pi-radius-control, 8px); }
-  .workspace-primary { min-width: 0; display: flex; align-items: baseline; gap: 6px; }
+  .workspace-primary { min-width: 0; display: flex; align-items: center; gap: 6px; }
   .workspace-primary-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .hierarchy-row-content { min-width: 0; display: grid; grid-template-columns: 14px minmax(0, 1fr); column-gap: 6px; align-items: start; }
+  .hierarchy-row-text { min-width: 0; display: grid; }
+  .hierarchy-icon { display: block; width: 14px; height: 14px; margin-top: 2px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
   .workspace-status { flex: 0 0 auto; color: var(--pi-warning); font-size: 12px; }
   .workspace-secondary { margin-top: 3px; }
   .workspace-menu-panel { width: max-content; min-width: min(120px, calc(100vw - 16px)); padding: 8px; }
@@ -754,7 +757,6 @@ export const promptEditorStyles = css`
   :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .icon-button.action-button { width: auto; height: 2.75rem; }
   :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .editor-attach { position: static; width: auto; min-width: 5.5rem; padding-inline: 0.75rem; background: var(--pi-surface); color: var(--pi-text); }
   :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .editor-attach .action-label { display: inline; }
-  :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .markdown-editor .cm-editor { border: 0; border-radius: 0; background: transparent; }
   :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .markdown-editor .cm-content { padding: 8px; }
   :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .mode-hint { right: 8px; max-width: calc(100% - 16px); }
   :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .select-model, :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .select-thinking { background: var(--pi-surface); color: var(--pi-text); }
@@ -762,7 +764,8 @@ export const promptEditorStyles = css`
   :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .send-button:not(:disabled) { border-color: var(--pi-accent); background: var(--pi-accent); color: var(--pi-bg); font-family: Archivo, var(--pi-body-font-family, system-ui, sans-serif); font-weight: 800; }
   :host-context(:root[data-pi-web-theme^="themes:modernist-"]) button:focus-visible, :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .markdown-editor .cm-focused { outline: 2px solid var(--pi-accent); outline-offset: 2px; }
   :host-context(:root[data-pi-web-theme^="themes:modernist-"]) button:disabled, :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .markdown-editor-disabled .cm-editor { opacity: .45; }
-  :host-context(:root[data-pi-web-theme^="themes:modernist-"]) textarea, :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .markdown-editor .cm-editor, :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .attachment-chip, :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .attachment-file-preview, :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .attachment-remove, :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .attachment-delivery select { border-width: 2px; border-radius: 0; }
+  :host-context(:root[data-pi-web-theme^="themes:modernist-"]) textarea, :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .markdown-editor .cm-editor { border: 1px solid var(--pi-border); border-radius: 0; background: var(--pi-surface); }
+  :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .attachment-chip, :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .attachment-file-preview, :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .attachment-remove, :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .attachment-delivery select { border-width: 2px; border-radius: 0; }
   :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .attachment-delivery select { max-width: 100%; }
   @media (max-width: 640px) {
     footer { gap: 8px; padding: 8px; }

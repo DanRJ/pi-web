@@ -6,6 +6,7 @@ import { actionMenuPanelStyle } from "./actionMenu";
 import { renderActionActivityIndicator } from "./activityBadge";
 import type { KeyboardNavigableSection } from "./navigationFocus";
 import { activateSelectableRow, focusSelectedOrFirstSelectableRow, handleSelectableRowKeyboard } from "./selectableRow";
+import { renderProjectIcon } from "./hierarchyIcons";
 import { listStyles } from "./shared";
 
 @customElement("project-list")
@@ -64,7 +65,10 @@ export class ProjectList extends LitElement implements KeyboardNavigableSection 
                 @keydown=${(event: KeyboardEvent) => { this.handleProjectKeydown(event, project); }}
               >
                 <div class="action-main">
-                  <span class="workspace-primary"><span class="workspace-primary-label">${project.name}</span></span><small>${project.path}</small>
+                  <div class="hierarchy-row-content">
+                    ${renderProjectIcon()}
+                    <div class="hierarchy-row-text"><span class="workspace-primary"><span class="workspace-primary-label">${project.name}</span></span><small>${project.path}</small></div>
+                  </div>
                   ${this.renderActivity(project)}
                 </div>
                 <div class="action-menu">

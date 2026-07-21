@@ -24,6 +24,8 @@ export class ModernistGlobalHeader extends LitElement {
   /** Count of currently active (running) sessions; the pill hides at zero. */
   @property({ attribute: false }) activeCount = 0;
   @property({ attribute: false }) onSelect?: (destination: ModernistGlobalDestination) => void;
+  /** Opens notifications for the currently selected session. */
+  @property({ attribute: false }) onOpenNotifications?: () => void;
   @property({ attribute: false }) onToggleTheme?: () => void;
   /** Opens the provider login flow (pi `/login`); the account cluster hides when absent. */
   @property({ attribute: false }) onConfigureAuth?: () => void;
@@ -65,6 +67,7 @@ export class ModernistGlobalHeader extends LitElement {
             : null}
         </nav>
         <div class="header-actions">
+          ${this.onOpenNotifications === undefined ? null : html`<button type="button" class="notification-control" aria-label="Open session notifications" title="Open session notifications" @click=${() => { this.onOpenNotifications?.(); }}>${notificationIcon()}</button>`}
           ${this.onToggleTheme === undefined ? null : html`<button type="button" class="theme-control" aria-label="Toggle light and dark theme" title="Toggle light and dark theme" @click=${() => { this.onToggleTheme?.(); }}>${themeIcon()}</button>`}
           ${this.refreshControl}
           ${this.renderAccount()}
@@ -132,19 +135,21 @@ export class ModernistGlobalHeader extends LitElement {
 
   static override styles = css`
     :host { display: block; min-width: 0; color: var(--pi-text); background: var(--pi-bg); font-family: var(--pi-control-font-family, system-ui, sans-serif); }
-    header { box-sizing: border-box; display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 0.75rem; min-width: 0; height: 56px; padding-inline: 1rem; border-bottom: var(--pi-divider-width, 2px) solid var(--pi-border); }
+    header { box-sizing: border-box; display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 0.75rem; min-width: 0; height: 60px; padding-inline: 1rem; border-bottom: var(--pi-divider-width, 2px) solid var(--pi-border); }
     nav { justify-self: center; display: flex; align-self: stretch; align-items: center; min-width: 0; }
-    button { min-width: 0; border: 0; border-radius: 0; background: transparent; color: var(--pi-muted); padding: 0 0.75rem; font: 600 1rem var(--pi-control-font-family, system-ui, sans-serif); white-space: nowrap; cursor: pointer; }
-    button:hover { color: var(--pi-text); background: var(--pi-surface-hover); }
-    .brand { justify-self: start; align-self: stretch; display: inline-flex; align-items: center; padding: 0; color: var(--pi-text); font-family: var(--pi-heading-font-family, inherit); font-size: 1rem; font-weight: var(--pi-heading-font-weight, 700); letter-spacing: var(--pi-navigation-heading-letter-spacing, 0.04em); text-decoration: none; white-space: nowrap; }
+    button { min-width: 0; border: 0; border-radius: 0; background: transparent; color: var(--pi-text); padding: 0 0.625rem; font: 400 0.875rem var(--pi-control-font-family, system-ui, sans-serif); white-space: nowrap; cursor: pointer; }
+    button:hover { color: var(--pi-accent); background: transparent; }
+    .brand { justify-self: start; align-self: stretch; display: inline-flex; align-items: center; padding: 0; color: var(--pi-text); font-family: var(--pi-heading-font-family, inherit); font-size: 1.25rem; font-weight: 800; letter-spacing: var(--pi-navigation-heading-letter-spacing, 0.025em); text-decoration: none; white-space: nowrap; }
     .brand:hover { color: var(--pi-accent); }
-    .brand[aria-current="page"], nav button[aria-current="page"] { box-shadow: inset 0 -0.1875rem 0 var(--pi-accent); color: var(--pi-text); }
+    .brand[aria-current="page"] { color: var(--pi-accent); }
+    nav button[aria-current="page"] { color: var(--pi-accent); }
     button:focus-visible, .brand:focus-visible { outline: var(--pi-focus-ring-width, 2px) solid var(--pi-accent); outline-offset: calc(-1 * var(--pi-focus-ring-offset, 2px)); }
-    .active-pill { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 0.375rem; margin-left: 0.25rem; padding: 0.1875rem 0.5rem; border: var(--pi-divider-width, 2px) solid var(--pi-border); color: var(--pi-muted); font: 600 0.6875rem var(--pi-control-font-family, system-ui, sans-serif); letter-spacing: 0.02em; white-space: nowrap; }
-    .active-dot { flex: 0 0 auto; width: 0.4375rem; height: 0.4375rem; border-radius: 50%; background: var(--pi-accent); }
-    .header-actions { justify-self: end; display: flex; align-items: center; gap: 0.25rem; min-width: 0; }
-    .theme-control, .account-control { display: inline-grid; place-items: center; width: 2.25rem; height: 2.25rem; padding: 0; color: var(--pi-muted); }
-    .theme-control svg, .account-control svg { width: 1rem; height: 1rem; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+    .active-pill { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 0.375rem; margin-left: 0.875rem; padding: 0.375rem 0.75rem; border: 1px solid var(--pi-accent); color: var(--pi-accent); font: 600 0.75rem var(--pi-control-font-family, system-ui, sans-serif); letter-spacing: 0.02em; white-space: nowrap; }
+    .active-dot { flex: 0 0 auto; width: 0.3125rem; height: 0.3125rem; border-radius: 50%; background: currentColor; }
+    .header-actions { justify-self: end; display: flex; align-items: center; gap: 1rem; min-width: 0; }
+    .notification-control, .theme-control, .account-control { display: inline-grid; place-items: center; width: 2.5rem; height: 2.5rem; border: 1px solid var(--pi-border); padding: 0; color: var(--pi-text-secondary, var(--pi-text)); }
+    .notification-control:hover, .theme-control:hover, .account-control:hover { border-color: var(--pi-accent); color: var(--pi-accent); background: transparent; }
+    .notification-control svg, .theme-control svg, .account-control svg { width: 1rem; height: 1rem; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
     .account { position: relative; flex: 0 0 auto; display: inline-flex; }
     .account-control[aria-expanded="true"] { color: var(--pi-text); background: var(--pi-surface-hover); }
     .account-menu { position: absolute; z-index: 10000; top: calc(100% + 0.25rem); right: 0; box-sizing: border-box; min-width: 15rem; display: flex; flex-direction: column; padding: 0.25rem; border: var(--pi-divider-width, 2px) solid var(--pi-border); background: var(--pi-surface); box-shadow: 0 0.5rem 1.5rem var(--pi-shadow); }
@@ -152,6 +157,10 @@ export class ModernistGlobalHeader extends LitElement {
     .account-menu button:hover, .account-menu button:focus-visible { color: var(--pi-text); background: var(--pi-surface-hover); }
     .account-menu-divider { margin: 0.25rem 0; border-top: var(--pi-divider-width, 2px) solid var(--pi-border); }
   `;
+}
+
+function notificationIcon() {
+  return html`<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"></path><path d="M10 21h4"></path></svg>`;
 }
 
 function themeIcon() {

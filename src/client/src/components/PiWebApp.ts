@@ -1127,6 +1127,11 @@ export class PiWebApp extends LitElement {
     this.selectMainView(this.state.workspaceTool);
   }
 
+  private openSelectedSessionNotifications(): void {
+    this.selectModernistGlobalDestination("chat");
+    void this.updateComplete.then(() => { this.chatView?.openNotifications(); });
+  }
+
   private renderModernistGlobalHeader() {
     if (!this.isModernistDesktopComposition()) return null;
     return html`<modernist-global-header
@@ -1134,6 +1139,7 @@ export class PiWebApp extends LitElement {
       .refreshControl=${this.appShell.shouldShowAppRefreshInHeader() ? this.renderAppRefresh() : undefined}
       .activeCount=${this.activeSessionCount()}
       .onSelect=${(destination: ModernistGlobalDestination) => { this.selectModernistGlobalDestination(destination); }}
+      .onOpenNotifications=${() => { this.openSelectedSessionNotifications(); }}
       .onToggleTheme=${this.handleToggleThemeAppearance}
       .onConfigureAuth=${() => { void this.auth.openLogin(); }}
       .onRemoveAuth=${() => { void this.auth.openLogout(); }}

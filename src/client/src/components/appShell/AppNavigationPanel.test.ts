@@ -13,6 +13,13 @@ describe("shouldShowMachinesSection", () => {
     expect(shouldShowMachinesSection([machine("local"), machine("remote-a")])).toBe(true);
   });
 
+  it("stacks Modernist hierarchy sections at their content height and scrolls the panel as a whole", () => {
+    const styles = AppNavigationPanel.styles.cssText;
+    expect(styles).toContain(":host([hierarchy]) { overflow-y: auto; }");
+    expect(styles).toContain(":host([hierarchy]) session-list { flex: 0 0 auto; max-height: none; min-height: auto; overflow: visible; }");
+    expect(styles).not.toContain("flex: 0 1 25%; max-height: 25%;");
+  });
+
   it("keeps a lone local Machine in the Modernist hierarchy and preserves section focus order", () => {
     const panel = new AppNavigationPanel();
     panel.hierarchy = true;

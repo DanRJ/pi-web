@@ -201,6 +201,20 @@ describe("ChatView notification tray wiring", () => {
     expect(headerFocus).not.toHaveBeenCalled();
   });
 
+  it("opens a collapsed selected-session tray from the global notification control", () => {
+    const view = withNotificationInbox(new ChatView());
+    const inbox = requireNotificationInbox(view);
+    const rendered = renderNotificationTray(view);
+    if (rendered === null) throw new Error("expected a notification tray");
+    templateEventHandlerAfterMarker(rendered, "notification-toggle")(new Event("click"));
+
+    view.openNotifications();
+
+    const collapsedTargetKeys: unknown = Reflect.get(view, "collapsedNotificationTargetKeys");
+    if (!(collapsedTargetKeys instanceof Set)) throw new Error("Expected collapsed notification target keys");
+    expect(notificationTrayIsCollapsed(collapsedTargetKeys, inbox)).toBe(false);
+  });
+
   it("keeps a collapsed tray closed for new arrivals and isolates matching session ids by exact chat", () => {
     const view = withNotificationInbox(new ChatView());
     const inbox = requireNotificationInbox(view);

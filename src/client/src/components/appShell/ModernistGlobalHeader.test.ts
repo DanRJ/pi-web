@@ -19,7 +19,9 @@ describe("ModernistGlobalHeader", () => {
     expect(markup).toContain('aria-current=page');
     expect(markup).not.toContain('aria-haspopup=dialog');
     expect(ModernistGlobalHeader.styles.cssText).toContain("grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr)");
-    expect(ModernistGlobalHeader.styles.cssText).toContain("font: 600 1rem");
+    expect(ModernistGlobalHeader.styles.cssText).toContain("font: 400 0.875rem");
+    expect(ModernistGlobalHeader.styles.cssText).toContain("font-size: 1.25rem; font-weight: 800;");
+    expect(ModernistGlobalHeader.styles.cssText).toContain('nav button[aria-current="page"] { color: var(--pi-accent); }');
   });
 
   it("forwards each semantic destination through its sole callback", () => {
@@ -52,6 +54,25 @@ describe("ModernistGlobalHeader", () => {
     expect(markup).toContain("3 active");
     expect(markup.indexOf("Actions")).toBeLessThan(markup.indexOf("active-pill"));
     expect(markup.indexOf("active-pill")).toBeLessThan(markup.indexOf("theme-control"));
+  });
+
+  it("renders notifications, theme, and account as ordered square icon controls", () => {
+    const header = new ModernistGlobalHeader();
+    const onOpenNotifications = vi.fn();
+    header.onOpenNotifications = onOpenNotifications;
+    header.onToggleTheme = vi.fn();
+    header.onConfigureAuth = vi.fn();
+
+    const template = header.render();
+    const markup = templateText(template);
+    expect(markup.indexOf("notification-control")).toBeLessThan(markup.indexOf("theme-control"));
+    expect(markup.indexOf("theme-control")).toBeLessThan(markup.indexOf("account-control"));
+    expect(ModernistGlobalHeader.styles.cssText).toContain("width: 2.5rem; height: 2.5rem; border: 1px solid var(--pi-border);");
+
+    // Direct extraction is proportionate here: this narrow test verifies the
+    // Lit notification-button wiring without introducing a shadow-DOM harness.
+    templateEventHandlerAfterMarker(template, 'aria-label="Open session notifications"')(new Event("click"));
+    expect(onOpenNotifications).toHaveBeenCalledOnce();
   });
 
   it("renders the theme toggle only when a handler is provided", () => {

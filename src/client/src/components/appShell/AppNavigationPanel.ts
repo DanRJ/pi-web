@@ -231,6 +231,7 @@ export class AppNavigationPanel extends LitElement {
     header strong { flex: 0 0 auto; font-family: var(--pi-heading-font-family, inherit); font-weight: var(--pi-heading-font-weight, 700); letter-spacing: var(--pi-navigation-heading-letter-spacing, normal); }
     machine-switcher { flex: 1 1 auto; min-width: 0; }
     :host([compact]) header { display: none; }
+    :host([hierarchy]) { overflow-y: auto; }
     :host([hierarchy]) header, :host([hierarchy]) .dashboard-link { display: none; }
     .header-actions { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; }
     .dashboard-link { margin: 8px; border-width: var(--pi-divider-width, 1px); }
@@ -252,8 +253,7 @@ export class AppNavigationPanel extends LitElement {
     :host([compact]) project-list[collapsed],
     :host([compact]) workspace-list[collapsed],
     :host([compact]) session-list[collapsed] { flex: 0 0 auto; min-height: auto; overflow: hidden; }
-    :host([hierarchy]) machine-list, :host([hierarchy]) project-list, :host([hierarchy]) workspace-list { flex: 0 1 25%; max-height: 25%; }
-    :host([hierarchy]) session-list { flex: 1 1 auto; }
+    :host([hierarchy]) machine-list, :host([hierarchy]) project-list, :host([hierarchy]) workspace-list, :host([hierarchy]) session-list { flex: 0 0 auto; max-height: none; min-height: auto; overflow: visible; }
     :host([hierarchy]) machine-list[collapsed], :host([hierarchy]) project-list[collapsed], :host([hierarchy]) workspace-list[collapsed], :host([hierarchy]) session-list[collapsed] { flex: 0 0 auto; min-height: auto; overflow: hidden; }
     button { border: 1px solid var(--pi-border); border-radius: var(--pi-radius-control, 8px); background: var(--pi-surface); color: var(--pi-text); padding: 7px 9px; cursor: pointer; font-family: var(--pi-control-font-family, system-ui, sans-serif); }
     button:focus-visible { outline: var(--pi-focus-ring-width, 2px) solid var(--pi-accent); outline-offset: var(--pi-focus-ring-offset, 2px); }

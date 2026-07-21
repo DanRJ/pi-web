@@ -59,6 +59,9 @@ describe("PromptEditor Modernist controls", () => {
     expect(promptEditorStyles.cssText).not.toContain("footer { width: min(48rem, 100%);");
     expect(promptEditorStyles.cssText).not.toContain("padding: 0 1rem 1rem;");
     expect(promptEditorStyles.cssText).toContain(".editor-attach { position: static; width: auto; min-width: 5.5rem;");
+    expect(promptEditorStyles.cssText).toContain(".markdown-editor .cm-editor { border: 1px solid var(--pi-border); border-radius: 0; background: var(--pi-surface); }");
+    expect(promptEditorStyles.cssText).not.toContain(".markdown-editor .cm-editor { border: 0;");
+    expect(promptEditorStyles.cssText).not.toContain(":not(:focus-within) .modernist-actions");
     expect(promptEditorStyles.cssText).toContain(".select-thinking { background: var(--pi-surface); color: var(--pi-text); }");
     expect(promptEditorStyles.cssText).toContain("@container (max-width: 38rem)");
     expect(promptEditorStyles.cssText).toContain(".modernist-actions { grid-template-columns: minmax(0, 1fr); overflow: visible; }");
