@@ -77,11 +77,21 @@ describe("PromptEditor Modernist controls", () => {
 });
 
 describe("PromptEditor.send", () => {
-  it("keeps the mobile editor focused while pressing Send", () => {
+  it.each([
+    "legacy-composer editor-attach icon-button",
+    "select-model",
+    "select-thinking icon-button",
+    "icon-button send-button",
+    "icon-button steer-button",
+    "icon-button stop-button",
+  ])("keeps the mobile editor focused while pressing %s", (buttonClass) => {
     const editor = new PromptEditor();
+    editor.canSteer = true;
+    editor.canStop = true;
+    editor.status = status();
     // TemplateResult handler extraction is proportionate here because Vitest has no DOM
     // environment and this narrowly verifies the mobile pointer wiring's observable effect.
-    const pointerDown = templateEventHandlerAfterValue(editor.render(), "icon-button send-button", "@pointerdown=");
+    const pointerDown = templateEventHandlerAfterValue(editor.render(), buttonClass, "@pointerdown=");
     const event = new Event("pointerdown", { cancelable: true });
 
     pointerDown(event);
