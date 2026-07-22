@@ -1,6 +1,7 @@
 import type { TemplateResult } from "lit";
 import { describe, expect, it, vi } from "vitest";
 import type { SessionStatus } from "../api";
+import { templateEventHandlerAfterValue } from "../templateInspection.testSupport";
 import { PromptEditor } from "./PromptEditor";
 import { promptEditorStyles } from "./shared";
 
@@ -44,7 +45,7 @@ describe("PromptEditor Modernist controls", () => {
     expect(candidate.call(editor, new Map([["status", status({ thinkingLevel: "high" })]]))).toBe(true);
   });
 
-  it("gives Modernist 44px controls unclipped responsive rows", () => {
+  it("keeps Modernist mobile controls on one responsive row", () => {
     // This structural contract protects CodeMirror from being remounted or
     // widened by a long model name while the keyboard viewport is reduced.
     expect(promptEditorStyles.cssText).toContain(".modernist-composer { display: none; }");
@@ -64,18 +65,30 @@ describe("PromptEditor Modernist controls", () => {
     expect(promptEditorStyles.cssText).not.toContain(":not(:focus-within) .modernist-actions");
     expect(promptEditorStyles.cssText).toContain(".select-thinking { background: var(--pi-surface); color: var(--pi-text); }");
     expect(promptEditorStyles.cssText).toContain("@container (max-width: 38rem)");
-    expect(promptEditorStyles.cssText).toContain(".modernist-actions { grid-template-columns: minmax(0, 1fr); overflow: visible; }");
-    expect(promptEditorStyles.cssText).toContain(".action-context { max-width: 100%; overflow: visible; }");
+    expect(promptEditorStyles.cssText).toContain(".modernist-actions { grid-template-columns: minmax(0, 1fr) max-content; gap: 0.25rem; overflow: hidden; }");
+    expect(promptEditorStyles.cssText).toContain(".action-context { max-width: 100%; gap: 0.25rem; overflow: hidden; }");
     expect(promptEditorStyles.cssText).toContain(".editor-attach { width: 2.75rem; min-width: 2.75rem; }");
     expect(promptEditorStyles.cssText).toContain(".action-button { width: 2.75rem; height: 2.75rem; min-width: 2.75rem; padding: 0; }");
-    expect(promptEditorStyles.cssText).not.toContain("max-width: min(38vw, 12rem); min-width: 0;");
-    expect(promptEditorStyles.cssText).toContain(".action-execution { display: flex; min-width: 0; max-width: 100%; flex-wrap: wrap;");
+    expect(promptEditorStyles.cssText).toContain(".select-model { flex: 1 1 0; width: auto; min-width: 0; max-width: 12rem;");
+    expect(promptEditorStyles.cssText).toContain(".action-execution { display: flex; min-width: 0; max-width: 100%; flex-wrap: nowrap;");
     expect(promptEditorStyles.cssText).not.toContain("@container (max-width: 26rem)");
     expect(promptEditorStyles.cssText).toContain(".markdown-editor .cm-content { min-height: 38px; padding: 8px 44px 8px 8px;");
   });
 });
 
 describe("PromptEditor.send", () => {
+  it("keeps the mobile editor focused while pressing Send", () => {
+    const editor = new PromptEditor();
+    // TemplateResult handler extraction is proportionate here because Vitest has no DOM
+    // environment and this narrowly verifies the mobile pointer wiring's observable effect.
+    const pointerDown = templateEventHandlerAfterValue(editor.render(), "icon-button send-button", "@pointerdown=");
+    const event = new Event("pointerdown", { cancelable: true });
+
+    pointerDown(event);
+
+    expect(event.defaultPrevented).toBe(true);
+  });
+
   it("sends the current draft through the normal follow-up path", () => {
     const editor = new PromptEditor();
     const onSend = vi.fn();

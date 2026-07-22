@@ -201,7 +201,7 @@ export class PromptEditor extends LitElement {
 
   private renderSendButton(template: "legacy" | "modernist", busy: boolean, queuesInput: boolean) {
     const modernist = template === "modernist";
-    return html`<button type="button" class=${`icon-button send-button${modernist ? " action-button" : ""}`} ?disabled=${busy} title=${queuesInput ? "Queue until the current activity finishes" : "Send message"} aria-label=${queuesInput ? "Queue message" : "Send message"} @click=${() => { this.send(); }}>${queuesInput ? renderQueueIcon() : renderSendIcon()}${modernist ? html`<span class="action-label" aria-hidden="true">${queuesInput ? "Queue" : "Send"}</span>` : null}</button>`;
+    return html`<button type="button" class=${`icon-button send-button${modernist ? " action-button" : ""}`} ?disabled=${busy} title=${queuesInput ? "Queue until the current activity finishes" : "Send message"} aria-label=${queuesInput ? "Queue message" : "Send message"} @pointerdown=${(event: PointerEvent) => { event.preventDefault(); }} @click=${() => { this.send(); }}>${queuesInput ? renderQueueIcon() : renderSendIcon()}${modernist ? html`<span class="action-label" aria-hidden="true">${queuesInput ? "Queue" : "Send"}</span>` : null}</button>`;
   }
 
   private renderSteerButton(template: "legacy" | "modernist", busy: boolean) {

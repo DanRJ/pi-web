@@ -751,7 +751,7 @@ export const promptEditorStyles = css`
   :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .compact-status { display: flex; flex: 0 1 auto; gap: 0.5rem; min-width: 0; font-size: 0.75rem; }
   :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .compact-status > button { max-width: 18rem; }
   :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .select-model { display: inline-flex; min-width: 0; max-width: 18rem; align-items: center; gap: 0.5rem; }
-  :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .action-execution { display: flex; min-width: 0; max-width: 100%; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 0.5rem; }
+  :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .action-execution { display: flex; min-width: 0; max-width: 100%; flex-wrap: nowrap; align-items: center; justify-content: flex-end; gap: 0.5rem; }
   :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .action-button { display: inline-flex; min-height: 2.75rem; align-items: center; justify-content: center; gap: 0.5rem; border-width: 2px; border-radius: 0; padding: 0.5rem 0.75rem; font-family: var(--pi-body-font-family, system-ui, sans-serif); }
   :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .action-button .action-label { display: inline; }
   :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .icon-button.action-button { width: auto; height: 2.75rem; }
@@ -788,17 +788,15 @@ export const promptEditorStyles = css`
     button { padding: 5px 7px; }
   }
   @container (max-width: 38rem) {
-    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .modernist-actions { grid-template-columns: minmax(0, 1fr); overflow: visible; }
-    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .action-context { max-width: 100%; overflow: visible; }
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .modernist-actions { grid-template-columns: minmax(0, 1fr) max-content; gap: 0.25rem; overflow: hidden; }
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .action-context { max-width: 100%; gap: 0.25rem; overflow: hidden; }
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .action-execution { gap: 0.25rem; }
     :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .action-button { width: 2.75rem; height: 2.75rem; min-width: 2.75rem; padding: 0; }
-    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .action-context,
-    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .compact-status { gap: 0.25rem; }
-    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .select-model { width: auto; max-width: min(38vw, 12rem); padding: 0.25rem; justify-content: flex-start; }
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .compact-status { flex: 1 1 0; gap: 0.25rem; overflow: hidden; }
+    :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .select-model { flex: 1 1 0; width: auto; min-width: 0; max-width: 12rem; padding: 0.25rem; justify-content: flex-start; font-size: 0.6875rem; }
     :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .action-button .action-label { display: none; }
     :host-context(:root[data-pi-web-theme^="themes:modernist-"]) .editor-attach { width: 2.75rem; min-width: 2.75rem; }
   }
-  /* On narrow containers, separate context and execution into two compact rows
-     so every control keeps its touch target instead of being clipped. */
   @media (prefers-reduced-motion: reduce) {
     :host-context(:root[data-pi-web-theme^="themes:modernist-"]) * { transition: none; animation: none; }
   }
