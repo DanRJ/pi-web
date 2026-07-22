@@ -27,6 +27,28 @@ describe("ExtensionUiCards", () => {
     expect(onRespond).toHaveBeenCalledWith({ id: "confirm-1", confirmed: true } satisfies ExtensionUiResponse);
   });
 
+  it("renders select options as full-width rows inside a constrained card", () => {
+    const cards = new ExtensionUiCards();
+    cards.requests = [{ id: "select-1", state: "pending", method: "select", title: "Choose", options: ["First", "A much longer second option that may wrap"] }];
+
+    const rendered = cards.render();
+    const styles = ExtensionUiCards.styles.cssText;
+    expect(templateMarkup(rendered)).toContain('class="extension-card select-card"');
+    expect(templateMarkup(rendered)).toContain('class="select-options"');
+    expect(templateMarkup(rendered)).toContain('class="select-footer"');
+    expect(styles).toContain(".select-card { box-sizing: border-box; width: 100%; max-width: 50rem;");
+    expect(styles).toContain("border: 1px solid color-mix(in srgb, var(--pi-accent) 55%, var(--pi-border)); background: transparent;");
+    expect(styles).toContain(".select-title { padding: var(--pi-space-4, 1rem); border-bottom: 1px solid color-mix(in srgb, var(--pi-accent) 55%, var(--pi-border));");
+    expect(styles).toContain(".select-options { display: grid;");
+    expect(styles).toContain(".select-options button { box-sizing: border-box; width: 100%; min-height: 3rem;");
+    expect(styles).toContain("border: 1px solid var(--pi-border); background: var(--pi-surface);");
+    expect(styles).toContain(".select-footer button.quiet { min-height: 2.5rem;");
+    expect(styles).toContain("border: 1px solid transparent; border-radius: 0;");
+    expect(styles).toContain(".select-footer button.quiet:not(:disabled):hover, .select-footer button.quiet:focus-visible { border-color: color-mix(in srgb, var(--pi-accent) 55%, var(--pi-border)); background: var(--pi-selection-bg);");
+    expect(styles).toContain(".select-options button:not(:disabled):hover, .select-options button:focus-visible { border-color: var(--pi-accent); background: var(--pi-selection-bg);");
+    expect(templateValuesDeep(rendered)).toEqual(expect.arrayContaining(["First", "A much longer second option that may wrap"]));
+  });
+
   it("sends cancellation for a pending dialog", () => {
     const cards = new ExtensionUiCards();
     const onRespond = vi.fn();
